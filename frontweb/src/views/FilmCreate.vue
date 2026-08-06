@@ -2731,10 +2731,15 @@ function _findStyleOption(val) {
 }
 
 /** 传给图像/视频 AI 用的英文 prompt（效果最好）；
- *  找不到 promptEn 时降级到 prompt，再降级到原始值 */
+ *  找不到 promptEn 时降级到 prompt，再降级到原始值；
+ *  custom 时返回用户填写的自定义描述，避免把字面量 "custom" 写入提示词 */
 function getSelectedStylePrompt() {
   const val = (generationStyle.value || '').toString().trim()
   if (!val) return undefined
+  if (val === CUSTOM_STYLE_VALUE) {
+    const text = (customStylePrompt.value || '').toString().trim()
+    return text || undefined
+  }
   const opt = _findStyleOption(val)
   if (opt) return opt.promptEn || opt.prompt || val
   return val
@@ -2744,6 +2749,10 @@ function getSelectedStylePrompt() {
 function getSelectedStylePromptZh() {
   const val = (generationStyle.value || '').toString().trim()
   if (!val) return undefined
+  if (val === CUSTOM_STYLE_VALUE) {
+    const text = (customStylePrompt.value || '').toString().trim()
+    return text || undefined
+  }
   const opt = _findStyleOption(val)
   if (opt) return opt.prompt || opt.promptEn || val
   return val
