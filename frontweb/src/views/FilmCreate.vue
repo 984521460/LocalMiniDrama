@@ -379,6 +379,7 @@
           </el-select>
           <StylePickerButton
             v-model="generationStyle"
+            v-model:custom-prompt="customStylePrompt"
             :options="generationStyleOptions"
             @change="() => saveProjectSettings(true)"
           />
@@ -2641,6 +2642,7 @@ import {
   getStylePromptZh,
   stylePromptMetadataForSave,
   backfillDramaStylePromptMetadataIfNeeded,
+  CUSTOM_STYLE_VALUE,
 } from '@/constants/styleOptions'
 import { useNavigation } from '@/composables/filmCreate/useNavigation'
 import { runGenerateStoryFromPremise } from '@/composables/useStoryGeneration'
@@ -2715,6 +2717,7 @@ const isStoryGenRunning = computed(() => {
   )
 })
 const generationStyle = ref('')
+const customStylePrompt = ref('')
 const projectAspectRatio = ref('16:9')
 const videoClipDuration = ref(5)
 
@@ -2747,7 +2750,7 @@ function getSelectedStylePromptZh() {
 }
 
 function projectStylePromptMetadata() {
-  return stylePromptMetadataForSave(generationStyle.value)
+  return stylePromptMetadataForSave(generationStyle.value, customStylePrompt.value)
 }
 
 const scriptContent = computed({
@@ -4543,6 +4546,11 @@ async function loadDrama() {
     storyStyle.value = (d.metadata && d.metadata.story_style) ? d.metadata.story_style : ''
     storyType.value = d.genre || ''
     generationStyle.value = d.style || ''
+    if ((d.style || '') === CUSTOM_STYLE_VALUE) {
+      customStylePrompt.value = (d.metadata?.style_prompt_zh || d.metadata?.style_prompt_en || '').toString()
+    } else {
+      customStylePrompt.value = ''
+    }
     projectAspectRatio.value = (d.metadata && d.metadata.aspect_ratio) ? d.metadata.aspect_ratio : '16:9'
     videoClipDuration.value = (d.metadata && d.metadata.video_clip_duration) ? Number(d.metadata.video_clip_duration) : 5
     storyboardIncludeNarration.value = !!(d.metadata && d.metadata.storyboard_include_narration)
@@ -4970,6 +4978,7 @@ async function onGenerateStory() {
     storyEpisodeCount: storyEpisodeCount.value,
     scriptTitle: scriptTitle.value,
     generationStyle: generationStyle.value,
+    customStylePrompt: customStylePrompt.value,
     projectAspectRatio: projectAspectRatio.value,
     store,
     router,
@@ -8073,6 +8082,7 @@ function applyRouteToStore() {
     scriptLanguage.value = 'zh'
     scriptStoryboardStyle.value = ''
     generationStyle.value = ''
+    customStylePrompt.value = ''
   }
 }
 
