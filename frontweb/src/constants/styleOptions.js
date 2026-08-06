@@ -217,6 +217,8 @@ export function findStyleOption(val) {
 export function getStylePromptEn(val) {
   const v = (val || '').toString().trim()
   if (!v) return undefined
+  // 无第二参数时无法拿到用户描述；勿把短标识 custom 当提示词
+  if (v === CUSTOM_STYLE_VALUE) return undefined
   const opt = findStyleOption(v)
   if (opt) return opt.promptEn || opt.prompt || v
   return v
@@ -230,6 +232,7 @@ export function getStylePromptEn(val) {
 export function getStylePromptZh(val) {
   const v = (val || '').toString().trim()
   if (!v) return undefined
+  if (v === CUSTOM_STYLE_VALUE) return undefined
   const opt = findStyleOption(v)
   if (opt) return opt.prompt || opt.promptEn || v
   return v

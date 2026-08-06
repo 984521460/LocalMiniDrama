@@ -5,6 +5,8 @@ import {
   stylePromptMetadataForSave,
   findStyleOption,
   getStyleLabel,
+  getStylePromptEn,
+  getStylePromptZh,
 } from '../src/constants/styleOptions.js'
 
 test('preset returns zh/en prompts', () => {
@@ -55,4 +57,9 @@ test('getStyleLabel covers custom and presets', () => {
 
 test('findStyleOption does not treat custom as preset', () => {
   assert.equal(findStyleOption(CUSTOM_STYLE_VALUE), null)
+})
+
+test('getStylePrompt helpers do not return literal custom', () => {
+  assert.equal(getStylePromptEn(CUSTOM_STYLE_VALUE), undefined)
+  assert.equal(getStylePromptZh(CUSTOM_STYLE_VALUE), undefined)
 })
