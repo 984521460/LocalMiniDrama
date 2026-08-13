@@ -71,6 +71,20 @@ describe('pickProxyVideoUrl Agnes completed task', () => {
       'https://platform-outputs.agnes-ai.space/videos/agnes-video-v2.0/2026/06/15/video_7237611b.mp4'
     );
   });
+
+  it('reads metadata.url from relay Seedance completed response', () => {
+    const mp4 =
+      'https://ark-acg-cn-beijing.tos-cn-beijing.volces.com/doubao-seedance-2-0/example.mp4?X-Tos-Algorithm=TOS4-HMAC-SHA256';
+    const data = {
+      id: 'task_KOcn1bDY7csXysnnw9WgDOSZEc6wzkGf',
+      object: 'video',
+      model: 'guanzhuan-seedance2.0',
+      status: 'completed',
+      progress: 100,
+      metadata: { url: mp4 },
+    };
+    assert.equal(pickProxyVideoUrl(data), mp4);
+  });
 });
 
 describe('buildAgnesPollUrl (align new-api FetchTask)', () => {

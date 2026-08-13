@@ -1462,7 +1462,18 @@
                   class="sb-video-error"
                   :title="getSbVideoError(sb.id) || '视频地址无效'"
                 >
-                  {{ getSbVideoError(sb.id) || '视频地址无效，请重新生成' }}
+                  <span>{{ getSbVideoError(sb.id) || '视频地址无效，请重新生成' }}</span>
+                  <el-button
+                    v-if="getSbResumableFailedVideo(sb.id)"
+                    type="warning"
+                    link
+                    size="small"
+                    class="sb-resume-poll-btn"
+                    :loading="isSbVideoGenerating(sb.id)"
+                    @click="onResumeSbVideoPoll(sb)"
+                  >
+                    继续查询
+                  </el-button>
                 </div>
                 <span v-if="isSbVideoGenerating(sb.id)" class="sb-video-regenerating-overlay">
                   <el-icon class="is-loading"><Loading /></el-icon>
@@ -1476,7 +1487,18 @@
                 </span>
                 <template v-else>
                   <div v-if="getSbVideoError(sb.id)" class="sb-video-error">
-                    {{ getSbVideoError(sb.id) }}
+                    <span>{{ getSbVideoError(sb.id) }}</span>
+                    <el-button
+                      v-if="getSbResumableFailedVideo(sb.id)"
+                      type="warning"
+                      link
+                      size="small"
+                      class="sb-resume-poll-btn"
+                      :loading="isSbVideoGenerating(sb.id)"
+                      @click="onResumeSbVideoPoll(sb)"
+                    >
+                      继续查询
+                    </el-button>
                   </div>
                   <el-button
                     type="primary"
@@ -3780,6 +3802,13 @@ function getSbVideoError(storyboardId) {
   const failed = list.filter((i) => i.status === 'failed' && i.error_msg)
   if (failed.length === 0) return ''
   return failed[0].error_msg
+}
+
+/** 可「继续查询」的失败记录：有上游 task 且后端标记 can_resume_poll */
+function getSbResumableFailedVideo(storyboardId) {
+  const list = sbVideos.value[storyboardId]
+  if (!Array.isArray(list) || list.length === 0) return null
+  return list.find((i) => i.status === 'failed' && i.can_resume_poll) || null
 }
 
 async function loadStoryboardMedia() {
@@ -6597,6 +6626,41 @@ async function onGenerateSbVideo(sb) {
   } catch (e) {
     sbVideoErrors.value[sb.id] = e.message || '提交失败'
     ElMessage.error(e.message || '提交失败')
+  } finally {
+    generatingSbVideoIds.delete(sb.id)
+    genStore.markDone(meta)
+    await loadSingleStoryboardMedia(sb.id)
+  }
+}
+
+/** 失败后继续查询上游任务（复用 provider_task_id，不重新提交） */
+async function onResumeSbVideoPoll(sb) {
+  if (!sb?.id || isSbVideoGenerating(sb.id)) return
+  const failed = getSbResumableFailedVideo(sb.id)
+  if (!failed?.id) {
+    ElMessage.warning('当前失败记录无法继续查询，请重新生成')
+    return
+  }
+  generatingSbVideoIds.add(sb.id)
+  const meta = buildSbGenMeta(sb, GEN_RESOURCE.SB_VIDEO, '继续查询')
+  genStore.markRunning(meta)
+  sbVideoErrors.value[sb.id] = ''
+  try {
+    const res = await videosAPI.resumePoll(failed.id)
+    const taskId = res?.task_id
+    if (!taskId) {
+      throw new Error('未返回任务 ID')
+    }
+    const pollRes = await pollTask(taskId, () => loadSingleStoryboardMedia(sb.id), meta)
+    if (pollRes?.status === 'failed') {
+      sbVideoErrors.value[sb.id] = pollRes.error || '继续查询失败'
+    } else if (pollRes?.status === 'completed') {
+      sbVideoErrors.value[sb.id] = ''
+      ElMessage.success('视频查询完成')
+    }
+  } catch (e) {
+    sbVideoErrors.value[sb.id] = e.message || '继续查询失败'
+    ElMessage.error(e.message || '继续查询失败')
   } finally {
     generatingSbVideoIds.delete(sb.id)
     genStore.markDone(meta)
@@ -10211,6 +10275,13 @@ html.light .sb-video-placeholder {
   border-radius: 4px;
   text-align: left;
   width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.sb-resume-poll-btn {
+  flex-shrink: 0;
 }
 .sb-video-player {
   width: 100%;
