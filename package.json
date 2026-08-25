@@ -1,0 +1,35 @@
+{
+  "name": "local-mini-drama-project",
+  "version": "1.2.8",
+  "private": true,
+  "description": "Root engineering commands for LocalMiniDrama",
+  "scripts": {
+    "licenses:check": "node licenses/collect-direct-npm-licenses.mjs",
+    "install:backend": "npm --prefix backend-node ci",
+    "install:frontend": "npm --prefix frontweb ci",
+    "install:desktop": "npm --prefix desktop ci",
+    "install:all": "npm run install:backend && npm run install:frontend && npm run install:desktop",
+    "migrate": "npm --prefix backend-node run migrate",
+    "dev:backend": "npm --prefix backend-node run dev",
+    "dev:frontend": "npm --prefix frontweb run dev",
+    "test:backend": "node scripts/run-node-tests.mjs backend-node all",
+    "test:frontend": "node scripts/run-node-tests.mjs frontweb all",
+    "test:desktop": "node scripts/run-node-tests.mjs desktop all",
+    "test": "npm run test:backend && npm run test:frontend && npm run test:desktop",
+    "test:unit": "node scripts/run-node-tests.mjs backend-node unit && node scripts/run-node-tests.mjs frontweb unit && node scripts/run-node-tests.mjs desktop unit",
+    "test:integration": "node scripts/run-node-tests.mjs backend-node integration",
+    "test:e2e": "node scripts/run-node-tests.mjs backend-node e2e",
+    "build:frontend": "npm --prefix frontweb run build",
+    "build": "npm run build:frontend",
+    "pack:windows": "npm --prefix desktop run pack",
+    "pack:win": "npm run pack:windows",
+    "dist:windows": "npm --prefix desktop run dist",
+    "verify:mvp": "npm run licenses:check && npm run test:unit && npm run test:integration && npm run test:e2e && npm run build",
+    "verify": "npm run verify:mvp"
+  },
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10 <11"
+  },
+  "packageManager": "npm@10.9.8"
+}

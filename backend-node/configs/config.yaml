@@ -5,12 +5,12 @@ app:
   language: zh
 server:
   port: 5679
-  host: 0.0.0.0
+  host: 127.0.0.1
   cors_origins:
     - http://localhost:3012
   read_timeout: 600
   write_timeout: 600
-  insecure_tls: true
+  insecure_tls: false
 database:
   type: sqlite
   path: ./data/drama_generator.db

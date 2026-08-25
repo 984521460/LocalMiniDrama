@@ -3,7 +3,7 @@
     <header class="header">
       <div class="header-inner">
         <h1 class="logo" @click="router.push('/')">
-          <span class="logo-main">本地短剧助手</span>
+          <span class="logo-main">{{ PRODUCT_NAME }}</span>
           <span class="logo-sub">画布模式</span>
         </h1>
         <span class="breadcrumb-sep">›</span>
@@ -262,6 +262,7 @@
 import { computed, markRaw, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { VueFlow } from '@vue-flow/core'
+import { PRODUCT_NAME } from '@/config/productIdentity'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'

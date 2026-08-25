@@ -85,7 +85,10 @@ async function processCharacterGeneration(db, cfg, log, taskID, req) {
     return;
   }
 
-  console.log('[角色生成] AI 原始返回：\n' + text);
+  log.info('[角色生成] AI 返回已接收', {
+    task_id: taskID,
+    response_chars: String(text || '').length,
+  });
 
   let result;
   try {
@@ -93,7 +96,6 @@ async function processCharacterGeneration(db, cfg, log, taskID, req) {
     result = extractFirstArray(parsed) || [];
   } catch (err) {
     log.error('Character generation parse failed', { error: err.message, task_id: taskID });
-    console.error('[角色生成] JSON解析失败，原始内容：\n' + text);
     taskService.updateTaskStatus(db, taskID, 'failed', 0, '解析AI返回结果失败');
     return;
   }

@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Test, license check, and frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend-node/package-lock.json
+            frontweb/package-lock.json
+            desktop/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm run install:all
+
+      - name: Run the local MVP verification contract
+        run: npm run verify:mvp
+
+  package-windows:
+    name: Windows packaging smoke test
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend-node/package-lock.json
+            frontweb/package-lock.json
+            desktop/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm run install:all
+
+      - name: Build unpacked Windows application
+        run: npm run pack:win

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { copyTreeSync } = require('./lib/copy-tree');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const src = path.join(repoRoot, 'backend-node');
@@ -19,7 +20,7 @@ for (const dir of dirsToCopy) {
   const from = path.join(src, dir);
   const to = path.join(dest, dir);
   if (fs.existsSync(from)) {
-    fs.cpSync(from, to, { recursive: true });
+    copyTreeSync(from, to);
   }
 }
 

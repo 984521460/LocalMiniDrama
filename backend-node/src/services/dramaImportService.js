@@ -358,7 +358,7 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
         for (const fp of sb.frame_prompts) {
           insFp.run(sbId, fp.frame_type || 'first', fp.prompt || '', fp.description || null, fp.layout || null, fp.created_at || now, fp.updated_at || now);
         }
-        try { require('../logger').info?.('[导入] 已恢复帧提示词', { storyboard_id: sbId, count: sb.frame_prompts.length }); } catch (_) {}
+        try { log?.info?.('[导入] 已恢复帧提示词', { storyboard_id: sbId, count: sb.frame_prompts.length }); } catch (_) {}
       }
 
       // 导入分镜图片完整历史（新版 v1.4+ 的 image_generations 数组；老版回退单张）

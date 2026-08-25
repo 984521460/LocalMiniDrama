@@ -3,8 +3,7 @@
     <header class="header">
       <div class="header-inner">
         <h1 class="logo" @click="goList">
-          <span class="logo-main">本地短剧助手</span>
-          <span class="logo-sub">LocalMiniDrama</span>
+          <span class="logo-main">{{ PRODUCT_NAME }}</span>
         </h1>
         <span class="page-title">AI 配置</span>
         <el-button class="btn-back" @click="goList">
@@ -24,6 +23,7 @@
 import { useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import AIConfigContent from '@/components/AIConfigContent.vue'
+import { PRODUCT_NAME } from '@/config/productIdentity'
 
 const router = useRouter()
 

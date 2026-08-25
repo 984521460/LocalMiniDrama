@@ -1,0 +1,117 @@
+{
+  "version": "1.4",
+  "exported_at": "2026-08-25T00:00:00.000Z",
+  "drama": {
+    "title": "Phase 0 最小迁移样例",
+    "description": "仅含文本与结构化关联的导入导出回归样例。",
+    "genre": "现代奇幻",
+    "style": "realistic",
+    "status": "draft",
+    "tags": "[\"fixture\",\"text-only\"]",
+    "metadata": {
+      "aspect_ratio": "16:9",
+      "fixture": true,
+      "media_policy": "text-only"
+    }
+  },
+  "episodes": [
+    {
+      "episode_number": 1,
+      "title": "第1集 纸鹤归来",
+      "description": "一个镜头的最小剧情。",
+      "script_content": "黄昏屋顶，阿澄捷起一只纸鹤，发现翅尖写着明天的日期。",
+      "duration": 4,
+      "storyboards": [
+        {
+          "storyboard_number": 1,
+          "title": "屋顶拾鹤",
+          "description": "阿澄在夕阳下捷起纸鹤。",
+          "location": "老楼屋顶",
+          "time": "黄昏",
+          "dialogue": "这不是今天的日期。",
+          "narration": null,
+          "action": "阿澄蹲下，轻轻展开纸鹤的翅尖。",
+          "atmosphere": "安静而微妙",
+          "result": "她看见了明天的日期。",
+          "shot_type": "medium",
+          "angle": "eye_level",
+          "angle_h": "front",
+          "angle_v": "level",
+          "angle_s": "center",
+          "movement": "slow_push",
+          "lighting_style": "natural",
+          "depth_of_field": "shallow",
+          "image_prompt": "黄昏屋顶，年轻女孩捷起白色纸鹤，暖金色自然光。",
+          "polished_prompt": null,
+          "video_prompt": "镜头缓慢推近纸鹤，微风吹动衣角。",
+          "duration": 4,
+          "emotion": "curious",
+          "emotion_intensity": 0.5,
+          "segment_index": 0,
+          "segment_title": "发现",
+          "continuity_snapshot": null,
+          "creation_mode": "classic",
+          "universal_segment_text": null,
+          "layout_description": null,
+          "first_frame_image_original_id": null,
+          "last_frame_image_original_id": null,
+          "last_frame_image_url": null,
+          "last_frame_local_path": null,
+          "character_indices": [0],
+          "scene_index": 0,
+          "prop_indices": [0],
+          "image_file": null,
+          "video_file": null,
+          "audio_file": null,
+          "narration_audio_file": null,
+          "image_generations": [],
+          "frame_prompts": [
+            {
+              "frame_type": "first",
+              "prompt": "黄昏屋顶中景，阿澄低头看向脚边的白色纸鹤。",
+              "description": "起始帧",
+              "layout": "center",
+              "created_at": "2026-08-25T00:00:00.000Z",
+              "updated_at": "2026-08-25T00:00:00.000Z"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "name": "阿澄",
+      "role": "protagonist",
+      "description": "善于观察细节的年轻设计师。",
+      "personality": "沉静、好奇",
+      "appearance": "短黑发，米白色外套。",
+      "voice_style": "清晰自然",
+      "polished_prompt": null,
+      "image_file": null,
+      "extra_image_files": []
+    }
+  ],
+  "scenes": [
+    {
+      "location": "老楼屋顶",
+      "time": "黄昏",
+      "prompt": "城市老楼屋顶，晚霞与水箱剪影。",
+      "polished_prompt": null,
+      "episode_index": 0,
+      "image_file": null,
+      "extra_image_files": []
+    }
+  ],
+  "props": [
+    {
+      "name": "白色纸鹤",
+      "type": "clue",
+      "description": "翅尖写着一个未来日期的折纸鹤。",
+      "prompt": "白色折纸鹤，纸面有细小手写日期。",
+      "episode_index": 0,
+      "image_file": null,
+      "extra_image_files": []
+    }
+  ]
+}

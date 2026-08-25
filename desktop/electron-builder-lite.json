@@ -1,11 +1,13 @@
 {
   "appId": "com.localminidrama.desktop",
-  "productName": "LocalMiniDrama",
+  "productName": "AI漫剧工作台",
   "directories": {
     "output": "release"
   },
   "files": [
     "main.js",
+    "product-identity.js",
+    "user-data-path.js",
     "package.json",
     "backend-app/**/*",
     "node_modules/**/*"

@@ -1,7 +1,14 @@
 // AI 配置 CRUD，与 Go application/services/ai_service.go 对齐
 const fs = require('fs');
 const path = require('path');
+const sharedLogger = require('../logger');
+const { registerKnownLogSecrets } = require('../utils/redactSecrets');
 const { normalizeMaterialHubToken } = require('./jimengMaterialHubService');
+const {
+  collectAiConfigSecretValues,
+  mergeAiConfigSecrets,
+  resolveAiConfigOperation,
+} = require('../security/aiConfigSecrets');
 
 function normalizeApiKeyForService(serviceType, apiKey) {
   if (serviceType === 'jimeng2_character_auth' && apiKey != null) {
@@ -68,6 +75,7 @@ function getConfig(db, id) {
 }
 
 function createConfig(db, log, req) {
+  req = mergeAiConfigSecrets({}, req);
   const now = new Date().toISOString();
   const model = modelToDb(req.model);
   let endpoint = req.endpoint || '';
@@ -141,6 +149,7 @@ function createConfig(db, log, req) {
 function updateConfig(db, log, id, req) {
   const existing = getConfig(db, id);
   if (!existing) return null;
+  req = mergeAiConfigSecrets(existing, req);
   const updates = [];
   const params = [];
   if (req.name != null) {
@@ -240,7 +249,21 @@ function rowToConfig(r) {
       if (s.group_id) cfg.group_id = s.group_id;
     } catch (_) {}
   }
+  registerKnownLogSecrets(collectAiConfigSecretValues(cfg));
   return cfg;
+}
+
+function resolveConfigForOperation(db, request = {}) {
+  if (request.config_id != null && request.config_id !== '') {
+    const rawId = String(request.config_id).trim();
+    if (!/^[1-9]\d*$/.test(rawId)) return { status: 'invalid_id', config: null };
+    const id = Number(rawId);
+    if (!Number.isSafeInteger(id)) return { status: 'invalid_id', config: null };
+    const existing = getConfig(db, id);
+    if (!existing) return { status: 'not_found', config: null };
+    return { status: 'saved', config: resolveAiConfigOperation(existing, request) };
+  }
+  return { status: 'temporary', config: resolveAiConfigOperation(null, request) };
 }
 
 /**
@@ -249,6 +272,7 @@ function rowToConfig(r) {
  * @returns Promise<void> 成功 resolve，失败 reject(error)
  */
 async function testConnection(opts) {
+  registerKnownLogSecrets(collectAiConfigSecretValues(opts));
   const base = (opts.base_url || '').replace(/\/$/, '');
   if (!base) throw new Error('base_url 必填');
   if (!opts.api_key) throw new Error('api_key 必填');
@@ -347,7 +371,7 @@ async function testConnection(opts) {
   if (isDashscope && (isImageService || isVideoService || looksLikeImageModel || looksLikeVideoModel || isDashscopeNonChatEndpoint)) {
     const chatUrl = base.replace(/\/(api\/v1|compatible-mode)\/.*$/, '') + '/compatible-mode/v1/chat/completions';
     const body = { model: 'qwen-turbo', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 };
-    console.log('[testConnection] DashScope 非文本服务，用 compatible chat 验证 key', { chatUrl, serviceType, model });
+    sharedLogger.info('[testConnection] DashScope 非文本服务，用 compatible chat 验证 key', { chatUrl, serviceType, model });
     const res = await fetch(chatUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + opts.api_key },
@@ -369,7 +393,7 @@ async function testConnection(opts) {
     const chatPath = '/chat/completions';
     const url = base + chatPath;
     const body = { model: model || '', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 };
-    console.log('[testConnection] 视频服务，用 chat/completions 验证 key', { url, serviceType, model });
+    sharedLogger.info('[testConnection] 视频服务，用 chat/completions 验证 key', { url, serviceType, model });
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (opts.api_key || '') },
@@ -391,7 +415,7 @@ async function testConnection(opts) {
     const path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
     const url = base + path;
     const body = { model: model || '', prompt: 'test connectivity', n: 1 };
-    console.log('[testConnection] 图片服务', { url, serviceType, model, body });
+    sharedLogger.info('[testConnection] 图片服务', { url, serviceType, model, body });
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -439,7 +463,7 @@ async function testConnection(opts) {
     { provider, base_url: base, settings: opts.settings },
     body
   );
-  console.log('[testConnection] 文本/chat 服务', { url, serviceType, model });
+  sharedLogger.info('[testConnection] 文本/chat 服务', { url, serviceType, model });
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -500,7 +524,7 @@ function applyVendorLock(db, log, cfg) {
     if (fs.existsSync(p)) { raw = fs.readFileSync(p, 'utf8'); break; }
   }
   if (!raw) {
-    console.warn('[vendor_lock] config file not found:', configFile);
+    (log?.warn || sharedLogger.warn)('[vendor_lock] config file not found', { config_file: configFile });
     return;
   }
 
@@ -509,7 +533,7 @@ function applyVendorLock(db, log, cfg) {
     configs = JSON.parse(raw);
     if (!Array.isArray(configs)) throw new Error('config file must be a JSON array');
   } catch (e) {
-    console.error('[vendor_lock] failed to parse config file:', e.message);
+    (log?.error || sharedLogger.error)('[vendor_lock] failed to parse config file', { error: e.message });
     return;
   }
 
@@ -552,9 +576,14 @@ function applyVendorLock(db, log, cfg) {
     );
   }
   for (const item of configs) {
-    console.log(`[vendor_lock] loaded: service_type=${item.service_type} provider=${item.provider} api_protocol=${item.api_protocol || '(auto)'} endpoint=${item.endpoint || '(auto)'}`);
+    (log?.info || sharedLogger.info)('[vendor_lock] loaded config', {
+      service_type: item.service_type,
+      provider: item.provider,
+      api_protocol: item.api_protocol || '(auto)',
+      endpoint: item.endpoint || '(auto)',
+    });
   }
-  console.log(`[vendor_lock] synced ${configs.length} configs from ${configFile}`);
+  (log?.info || sharedLogger.info)('[vendor_lock] synced configs', { count: configs.length, config_file: configFile });
 }
 
 /**
@@ -579,4 +608,5 @@ module.exports = {
   getVendorLockStatus,
   applyVendorLock,
   bulkUpdateApiKey,
+  resolveConfigForOperation,
 };

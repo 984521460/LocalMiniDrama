@@ -1,4 +1,4 @@
-name: Release
+name: Release (distribution compliance blocked)
 
 on:
   push:
@@ -6,63 +6,51 @@ on:
       - 'v*.*.*'   # 推送 vX.X.X 格式的 tag 时触发
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-windows:
-    name: Build Windows Installer
+  verify-and-build-windows:
+    name: Verify and build Windows artifacts
     runs-on: windows-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            backend-node/package-lock.json
+            frontweb/package-lock.json
+            desktop/package-lock.json
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Install locked dependencies
+        run: npm run install:all
 
-      - name: Install frontend dependencies
-        working-directory: frontweb
-        run: npm ci
+      - name: Run the complete local verification contract
+        run: npm run verify:mvp
 
-      - name: Build frontend
-        working-directory: frontweb
-        run: npm run build
+      # 发布前必须先在仓库中补齐下列可审计证据，然后由人工修改本门禁。
+      # 不得仅删除该步骤；解锁时应换成可机械验证的分发合规检查。
+      - name: Distribution compliance gate
+        shell: pwsh
+        run: |
+          Write-Error @'
+          Release is blocked. Missing evidence remains for the bundled FFmpeg source/GPL materials,
+          transitive dependency licenses, the Git LFS example object, and bundled media/model/workflow rights.
+          See THIRD_PARTY_NOTICES.md and licenses/README.md.
+          '@
+          exit 1
 
-      - name: Install backend dependencies
-        working-directory: backend-node
-        env:
-          NODE_TLS_REJECT_UNAUTHORIZED: '0'
-        run: npm ci
-
-      - name: Install desktop dependencies & rebuild native modules
-        working-directory: desktop
-        env:
-          NODE_TLS_REJECT_UNAUTHORIZED: '0'
-        run: npm ci
-
-      - name: Copy frontend dist
-        working-directory: desktop
-        run: node scripts/copy-front.js
-
-      - name: Copy backend
-        working-directory: desktop
-        run: node scripts/copy-backend.js
-
-      # 标准版（含示例数据）
-      - name: Build Standard Installer
-        working-directory: desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --publish never
+      - name: Build Windows installer and portable application
+        run: npm run dist:windows
 
       - name: Upload Standard Build Artifacts
         uses: actions/upload-artifact@v4
@@ -71,10 +59,23 @@ jobs:
           path: desktop/release/*.exe
           retention-days: 7
 
+  publish-draft:
+    name: Create draft release
+    needs: verify-and-build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release-artifacts
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: desktop/release/*.exe
+          files: release-artifacts/*.exe
           generate_release_notes: true
           draft: true   # 先创建草稿，人工审核后手动发布
         env:

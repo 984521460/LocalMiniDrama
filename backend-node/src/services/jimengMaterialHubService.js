@@ -1,5 +1,8 @@
 'use strict';
 
+const { createAiConfigRedactedLogger } = require('../security/aiConfigRedactedLogger');
+const { redactAiConfigErrorText } = require('../security/aiConfigSecrets');
+
 /**
  * 即梦2角色认证 — 业务侧「素材管理」HTTP API（与官方路径一致，如 /api/business/v1/assets）。
  * 网关 URL 与 Token 从 AI 配置（service_type = jimeng2_character_auth）读取；可选兼容旧版 config 中的 jimeng_material_hub / silvamux_hub。
@@ -46,6 +49,18 @@ function tokenFingerprint(tok) {
   if (!s) return '';
   if (s.length <= 12) return '(过短)';
   return `${s.slice(0, 7)}…${s.slice(-4)}`;
+}
+
+function hubSecretConfig(ctx) {
+  return { api_key: String(ctx?.token || '') };
+}
+
+function createHubRedactedLogger(log, ctx) {
+  return createAiConfigRedactedLogger(log, hubSecretConfig(ctx));
+}
+
+function redactHubError(message, ctx) {
+  return redactAiConfigErrorText(message, hubSecretConfig(ctx));
 }
 
 /**
@@ -125,21 +140,21 @@ function buildHubContext(cfg, db, log) {
     db_config_id: row?.id ?? null,
     db_config_name: row?.name ?? null,
     db_api_key_field_chars: dbKeyLen,
-    token_fingerprint: tokenFingerprint(tok),
     request_header_shape: 'Authorization: Bearer <token>',
     note:
       '若 raw_had_leading_bearer_prefix 为 true，旧版会发出 Bearer Bearer…；现已规范化。环境变量 JIMENG2_CHARACTER_AUTH_TOKEN 优先于数据库 api_key。请求头仅发送 Authorization（勿重复 authorization，部分 model_ark 网关会判为无效 Token）。',
   };
 
-  if (log && typeof log.info === 'function') {
-    log.info('[JimengMaterialHub] buildHubContext 鉴权诊断（不含密钥原文）', {
+  const safeLog = createHubRedactedLogger(log, { token: tok });
+  if (typeof safeLog.info === 'function') {
+    safeLog.info('[JimengMaterialHub] buildHubContext 鉴权诊断（不含密钥原文）', {
       hub_gateway: baseUrl,
       token_present: !!tok,
       ...hubAuthDiag,
     });
   }
 
-  return { baseUrl, token: tok, poll_max_ms, poll_interval_ms, hubAuthDiag, tokenFingerprint: tokenFingerprint(tok) };
+  return { baseUrl, token: tok, poll_max_ms, poll_interval_ms, hubAuthDiag };
 }
 
 /** model_ark 等网关在拉取图片失败时仍返回 HTTP 200 + { error: "..." }，无 id */
@@ -206,6 +221,7 @@ function unwrapMaterialHubAssetView(payload, depth = 0) {
 async function hubJson(path, ctx, { method, body, log } = {}) {
   const base = ctx.baseUrl;
   const token = ctx.token;
+  const safeLog = createHubRedactedLogger(log, ctx);
   if (!token) {
     return {
       ok: false,
@@ -226,8 +242,8 @@ async function hubJson(path, ctx, { method, body, log } = {}) {
     init.body = JSON.stringify(body);
   }
 
-  if (log && typeof log.info === 'function' && method === 'POST' && path === '/assets' && body?.url) {
-    log.info('[JimengMaterialHub] POST /api/business/v1/assets', {
+  if (typeof safeLog.info === 'function' && method === 'POST' && path === '/assets' && body?.url) {
+    safeLog.info('[JimengMaterialHub] POST /api/business/v1/assets', {
       hub_gateway: base,
       register_image_url: body.url,
       asset_name: body.name,
@@ -235,8 +251,8 @@ async function hubJson(path, ctx, { method, body, log } = {}) {
       bearer_token_payload_chars: token.length,
     });
   }
-  if (log && typeof log.info === 'function' && method === 'GET' && String(path || '').startsWith('/assets')) {
-    log.info('[JimengMaterialHub] GET /api/business/v1/assets', {
+  if (typeof safeLog.info === 'function' && method === 'GET' && String(path || '').startsWith('/assets')) {
+    safeLog.info('[JimengMaterialHub] GET /api/business/v1/assets', {
       hub_gateway: base,
       path_query: String(path).includes('?') ? String(path).split('?')[1]?.slice(0, 120) : '',
       bearer_token_payload_chars: token.length,
@@ -254,7 +270,7 @@ async function hubJson(path, ctx, { method, body, log } = {}) {
   if (!res.ok) {
     const detail = json?.detail || json?.title || json?.message || text || res.statusText;
     const detailStr = typeof detail === 'string' ? detail : JSON.stringify(detail);
-    if (log && typeof log.warn === 'function') {
+    if (typeof safeLog.warn === 'function') {
       const baseWarn = {
         path,
         method: method || 'GET',
@@ -268,14 +284,14 @@ async function hubJson(path, ctx, { method, body, log } = {}) {
         baseWarn.hint401 =
           'invalid token 常见原因：密钥与网关不匹配；机器上 JIMENG2_CHARACTER_AUTH_TOKEN 等环境变量覆盖数据库配置；配置里写了「Bearer xxx」导致旧版双重 Bearer（请看 buildHubContext 日志 raw_had_leading_bearer_prefix）';
       }
-      log.warn('[JimengMaterialHub] HTTP 错误', baseWarn);
+      safeLog.warn('[JimengMaterialHub] HTTP 错误', baseWarn);
     }
-    return { ok: false, status: res.status, error: detailStr };
+    return { ok: false, status: res.status, error: redactHubError(detailStr, ctx) };
   }
   const bizErr = hubBusinessErrorMessage(json);
   if (bizErr) {
-    if (log && typeof log.warn === 'function') {
-      log.warn('[JimengMaterialHub] HTTP 200 但业务失败（常见于图片 URL 无法被网关拉取）', {
+    if (typeof safeLog.warn === 'function') {
+      safeLog.warn('[JimengMaterialHub] HTTP 200 但业务失败（常见于图片 URL 无法被网关拉取）', {
         path,
         method: method || 'GET',
         httpStatus: res.status,
@@ -284,25 +300,26 @@ async function hubJson(path, ctx, { method, body, log } = {}) {
         response_preview: bizErr.slice(0, 2000),
       });
     }
-    return { ok: false, status: res.status, error: bizErr };
+    return { ok: false, status: res.status, error: redactHubError(bizErr, ctx) };
   }
   return { ok: true, data: json, status: res.status };
 }
 
 async function createImageAsset(ctx, params, log) {
+  const safeLog = createHubRedactedLogger(log, ctx);
   const name = String(params.name || 'c').replace(/\s+/g, '').slice(0, 12) || 'c';
   const r = await hubJson('/assets', ctx, {
     method: 'POST',
     body: { url: params.url, asset_type: 'Image', name },
-    log,
+    log: safeLog,
   });
   if (!r.ok) return r;
   const asset = unwrapMaterialHubAssetView(r.data);
   if (asset?.id) return { ok: true, data: asset, status: r.status };
   const keys =
     r.data && typeof r.data === 'object' && !Array.isArray(r.data) ? Object.keys(r.data).join(', ') : typeof r.data;
-  if (log && typeof log.warn === 'function') {
-    log.warn('[JimengMaterialHub] POST 成功但无法解析素材 id', {
+  if (typeof safeLog.warn === 'function') {
+    safeLog.warn('[JimengMaterialHub] POST 成功但无法解析素材 id', {
       response_keys: keys,
       response_preview: JSON.stringify(r.data).slice(0, 800),
     });

@@ -1,16 +1,22 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  redactSecretText,
+  safeRedactedStringify,
+} = require('./utils/redactSecrets');
 
 // 简单 logger，和 Go 端行为接近；若设置 LOG_FILE 则同时追加到该文件（便于打包 exe 双击时查日志）
 function log(level, msg, ...args) {
   const time = new Date().toISOString();
   let rest = '';
   if (args.length && typeof args[0] === 'object' && args[0] !== null && !Array.isArray(args[0])) {
-    rest = ' ' + JSON.stringify(args[0]);
+    rest = ' ' + safeRedactedStringify(args[0]);
   } else if (args.length) {
-    rest = ' ' + args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    rest = ' ' + args.map((a) => (
+      typeof a === 'object' ? safeRedactedStringify(a) : redactSecretText(a)
+    )).join(' ');
   }
-  const line = `${time} [${level}] ${msg}${rest}\n`;
+  const line = `${time} [${level}] ${redactSecretText(msg)}${rest}\n`;
   try {
     console.log(line.trimEnd());
   } catch (_) {}

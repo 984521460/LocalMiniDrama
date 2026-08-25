@@ -39,8 +39,11 @@ async function extractBackgroundsFromScript(db, cfg, log, scriptContent, dramaId
   if (!scriptContent || !scriptContent.trim()) return [];
   const systemPrompt = promptI18n.getSceneExtractionPrompt(cfg, style);
   const prompt = (promptI18n.getLanguage(cfg) === 'en' ? '[Script Content]\n' : '【剧本内容】\n') + scriptContent;
-  console.log('systemPrompt', systemPrompt);
-  console.log('prompt', prompt);
+  log.info('Background extraction prompt prepared', {
+    drama_id: dramaId,
+    system_prompt_chars: systemPrompt.length,
+    user_prompt_chars: prompt.length,
+  });
   const text = await aiClient.generateText(db, log, 'text', prompt, systemPrompt, { scene_key: 'scene_extraction', model: model || undefined, temperature: 0.7 });
   let list = [];
   try {

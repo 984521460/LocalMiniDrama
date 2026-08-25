@@ -170,11 +170,10 @@ function logKlingOmniAuthDebug(cfg, bearerToken, log) {
       mode: 'official_jwt',
       secret_key_hmac_input: resolveKlingSecretKeyBase64Flag(cfg) ? 'base64_decoded_bytes' : 'utf8_string',
       access_key_len: ak.length,
-      access_key_hint: ak.length <= 8 ? '****' : `${ak.slice(0, 4)}...${ak.slice(-4)}`,
       secret_key_len: sk.length,
       jwt_parts_b64url_len: lens,
       jwt_payload_decoded: payload
-        ? { iss: payload.iss, exp: payload.exp, nbf: payload.nbf, iat: payload.iat }
+        ? { exp: payload.exp, nbf: payload.nbf, iat: payload.iat }
         : null,
       server_time_unix: now,
       nbf_ok: payload && typeof payload.nbf === 'number' ? now >= payload.nbf : null,
@@ -4474,4 +4473,5 @@ module.exports = {
   extractMinimaxH3VideoUrl,
   normalizeMinimaxH3Duration,
   normalizeMinimaxH3Resolution,
+  logKlingOmniAuthDebug,
 };

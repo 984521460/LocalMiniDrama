@@ -1,12 +1,8 @@
 const { loadConfig } = require('./config/index.js');
+const { isInsecureTlsEnabled, resolveServerHost } = require('./config/serverSecurityDefaults');
 
 const preConfig = loadConfig();
-const tlsFlag = preConfig.server?.insecure_tls ?? preConfig.server?.INSECURE_TLS;
-const insecureTlsOn =
-  tlsFlag === true ||
-  tlsFlag === 1 ||
-  tlsFlag === '1' ||
-  String(tlsFlag).toLowerCase() === 'true';
+const insecureTlsOn = isInsecureTlsEnabled(preConfig.server);
 if (insecureTlsOn) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   console.warn('[config] server.insecure_tls 已启用：全局跳过 TLS 证书校验，仅用于测试');
@@ -18,7 +14,7 @@ const logger = require('./logger.js');
 
 const { app, config } = createApp();
 const port = Number(process.env.PORT) || config.server?.port || 5679;
-const host = config.server?.host || '0.0.0.0';
+const host = resolveServerHost(config.server);
 
 const server = app.listen(port, host, () => {
   logger.info('Server starting', { port, host });

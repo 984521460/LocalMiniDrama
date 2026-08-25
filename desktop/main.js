@@ -1,9 +1,13 @@
 const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { PRODUCT_NAME } = require('./product-identity');
+const { resolveUserDataPath } = require('./user-data-path');
 
 // 显式固定 userData 目录，使开发模式与打包 exe 路径完全一致，防止 productName 变更导致路径漂移
-const USERDATA_DIR = path.join(app.getPath('appData'), 'localminidrama-desktop');
+// 迁移必须早于日志目录创建，否则空的新目录会掩盖旧版数据。
+const userDataResolution = resolveUserDataPath({ appDataPath: app.getPath('appData') });
+const USERDATA_DIR = userDataResolution.path;
 app.setPath('userData', USERDATA_DIR);
 
 const MAIN_STARTUP_LOG = path.join(USERDATA_DIR, 'main-startup.log');
@@ -24,18 +28,12 @@ process.on('unhandledRejection', (reason) => {
 });
 
 writeMainLog(`main.js loaded packaged=${app.isPackaged} exec=${process.execPath}`);
-
-// 兼容迁移：若旧路径 LocalMiniDrama 有数据而新路径为空，自动迁移
-;(function migrateOldUserData() {
-  const oldPath = path.join(app.getPath('appData'), 'LocalMiniDrama');
-  if (fs.existsSync(oldPath) && !fs.existsSync(USERDATA_DIR)) {
-    try {
-      fs.renameSync(oldPath, USERDATA_DIR);
-    } catch (e) {
-      // rename 跨驱动器时会失败，此时静默忽略，用户数据仍可手动迁移
-    }
-  }
-})();
+if (userDataResolution.migratedFrom) {
+  writeMainLog('legacy user data migrated to the stable application directory');
+}
+if (userDataResolution.migrationError) {
+  writeMainLog(`legacy user data migration deferred: ${userDataResolution.migrationError.message}`);
+}
 
 const BACKEND_APP_PATH = path.join(__dirname, 'backend-app');
 const BACKEND_NODE_PATH = path.join(__dirname, '..', 'backend-node');
@@ -260,7 +258,7 @@ app.whenReady().then(async () => {
     console.error('Failed to start backend', err);
     const { dialog } = require('electron');
     dialog.showErrorBox(
-      '本地短剧助手启动失败',
+      `${PRODUCT_NAME}启动失败`,
       `后端服务未能启动，请查看日志：\n${MAIN_STARTUP_LOG}\n\n${stack}`
     );
     app.quit();

@@ -33,14 +33,14 @@
         <p class="field-hint">选「官方 OpenAPI」路径时，请用本项并填写 AK/SK；选「Bearer」仅适合 <code>/asset/…</code> 等中转。</p>
       </el-form-item>
       <el-form-item v-if="authMode === 'bearer'" label="API Key">
-        <el-input v-model="apiKey" type="password" show-password placeholder="推理用 ARK / 中转 API Key" clearable />
+        <el-input v-model="apiKey" type="password" show-password :placeholder="apiKeyConfigured ? '已配置，留空保留' : '推理用 ARK / 中转 API Key'" clearable />
       </el-form-item>
       <template v-else>
         <el-form-item label="Access Key ID">
-          <el-input v-model="accessKeyId" placeholder="控制台 IAM Access Key ID" clearable />
+          <el-input v-model="accessKeyId" :placeholder="accessKeyIdConfigured ? '已配置，留空保留' : '控制台 IAM Access Key ID'" clearable />
         </el-form-item>
         <el-form-item label="Secret Key">
-          <el-input v-model="secretAccessKey" type="password" show-password placeholder="Secret Access Key" clearable />
+          <el-input v-model="secretAccessKey" type="password" show-password :placeholder="secretAccessKeyConfigured ? '已配置，留空保留' : 'Secret Access Key'" clearable />
         </el-form-item>
         <el-form-item label="Region">
           <el-input v-model="signRegion" placeholder="可空：国内 ark 多为 cn-beijing；BytePlus 国际多为 ap-southeast-1" clearable />
@@ -257,6 +257,11 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { aiAPI } from '@/api/ai'
+import {
+  buildAiConfigMutationPayload,
+  buildSavedConfigRequest,
+  isSecretConfigured,
+} from '@/security/aiConfigSecrets.js'
 
 const props = defineProps({
   /** AI 配置列表（与 AI 配置页同源），用于一键填入 Base / Key */
@@ -279,6 +284,13 @@ const signRegion = ref('')
 const billingModel = ref('')
 const fillConfigId = ref(null)
 const savedConfigId = ref(null)
+const operationConfigId = ref(null)
+const apiKeyConfigured = ref(false)
+const accessKeyIdConfigured = ref(false)
+const secretAccessKeyConfigured = ref(false)
+const savedApiKeyConfigured = ref(false)
+const savedAccessKeyIdConfigured = ref(false)
+const savedSecretAccessKeyConfigured = ref(false)
 const savingConfig = ref(false)
 /** 创作页 SD2 认证默认写入的资产组 */
 const assetGroupIdForCert = ref('')
@@ -348,8 +360,15 @@ function parseSettingsJson(raw) {
 function loadFromSavedRow(row) {
   if (!row) return
   savedConfigId.value = row.id
+  operationConfigId.value = row.id
   baseUrl.value = (row.base_url || '').replace(/\/$/, '')
-  apiKey.value = row.api_key || ''
+  apiKey.value = ''
+  apiKeyConfigured.value = !!row.api_key_configured
+  accessKeyIdConfigured.value = isSecretConfigured(row, 'settings.access_key_id')
+  secretAccessKeyConfigured.value = isSecretConfigured(row, 'settings.secret_access_key')
+  savedApiKeyConfigured.value = apiKeyConfigured.value
+  savedAccessKeyIdConfigured.value = accessKeyIdConfigured.value
+  savedSecretAccessKeyConfigured.value = secretAccessKeyConfigured.value
   const s = parseSettingsJson(row.settings)
   authMode.value = s.auth_mode || 'volc_sign'
   pathMode.value = s.path_mode || 'open_api_query'
@@ -357,8 +376,8 @@ function loadFromSavedRow(row) {
   projectName.value = s.project_name || ''
   billingModel.value = s.billing_model || ''
   assetGroupIdForCert.value = s.asset_group_id || ''
-  accessKeyId.value = s.access_key_id || ''
-  secretAccessKey.value = s.secret_access_key || ''
+  accessKeyId.value = ''
+  secretAccessKey.value = ''
   signRegion.value = s.sign_region || ''
   if (assetGroupIdForCert.value) assetGroupIdInput.value = assetGroupIdForCert.value
 }
@@ -387,9 +406,13 @@ onMounted(() => {
 })
 
 async function saveToAiConfig() {
-  const w = connWarn()
-  if (!connReady() || w) {
-    ElMessage.warning(w || '请先完成连接信息')
+  const storedBearerReady = !!(savedConfigId.value && savedApiKeyConfigured.value)
+  const storedSignReady = !!(savedConfigId.value && savedAccessKeyIdConfigured.value && savedSecretAccessKeyConfigured.value)
+  const saveReady = authMode.value === 'bearer'
+    ? !!apiKey.value.trim() || storedBearerReady
+    : !!(accessKeyId.value.trim() && secretAccessKey.value.trim()) || storedSignReady
+  if (!baseUrl.value.trim() || !saveReady) {
+    ElMessage.warning('保存新配置需填写凭据；编辑已保存配置时可留空保留')
     return
   }
   if (!assetGroupIdForCert.value.trim()) {
@@ -409,7 +432,7 @@ async function saveToAiConfig() {
     settings.secret_access_key = secretAccessKey.value.trim()
     if (signRegion.value.trim()) settings.sign_region = signRegion.value.trim()
   }
-  const payload = {
+  const payload = buildAiConfigMutationPayload({
     service_type: 'model_ark_asset',
     name: 'SD2 资产库',
     provider: 'model_ark',
@@ -420,7 +443,7 @@ async function saveToAiConfig() {
     priority: 10,
     is_default: true,
     settings: JSON.stringify(settings),
-  }
+  })
   savingConfig.value = true
   try {
     if (savedConfigId.value) {
@@ -429,6 +452,10 @@ async function saveToAiConfig() {
     } else {
       const created = await aiAPI.create(payload)
       savedConfigId.value = created?.id ?? null
+      operationConfigId.value = savedConfigId.value
+      savedApiKeyConfigured.value = !!created?.api_key_configured
+      savedAccessKeyIdConfigured.value = isSecretConfigured(created, 'settings.access_key_id')
+      savedSecretAccessKeyConfigured.value = isSecretConfigured(created, 'settings.secret_access_key')
       ElMessage.success('已保存到 AI 配置')
     }
     emit('saved')
@@ -478,8 +505,14 @@ function onFillFromSaved(id) {
   const c = (props.configs || []).find((x) => x.id === id)
   if (!c) return
   baseUrl.value = (c.base_url || '').replace(/\/$/, '')
-  apiKey.value = c.api_key || ''
-  ElMessage.success('已填入所选配置的 Base URL 与 API Key')
+  operationConfigId.value = c.id
+  apiKey.value = ''
+  accessKeyId.value = ''
+  secretAccessKey.value = ''
+  apiKeyConfigured.value = !!c.api_key_configured
+  accessKeyIdConfigured.value = isSecretConfigured(c, 'settings.access_key_id')
+  secretAccessKeyConfigured.value = isSecretConfigured(c, 'settings.secret_access_key')
+  ElMessage.success('已关联所选配置；凭据保留在后端，输入框保持空白')
 }
 
 function onGroupRowChange(row) {
@@ -500,18 +533,19 @@ function mergeBillingModel(payload, withModel) {
 function connReady() {
   if (!baseUrl.value.trim()) return false
   if (authMode.value === 'volc_sign') {
-    return !!(accessKeyId.value.trim() && secretAccessKey.value.trim())
+    return !!(accessKeyId.value.trim() && secretAccessKey.value.trim()) ||
+      !!(operationConfigId.value && accessKeyIdConfigured.value && secretAccessKeyConfigured.value)
   }
-  return !!apiKey.value.trim()
+  return !!apiKey.value.trim() || !!(operationConfigId.value && apiKeyConfigured.value)
 }
 
 function connWarn() {
   if (!baseUrl.value.trim()) return '请先填写 Base URL'
   if (authMode.value === 'volc_sign') {
-    if (!accessKeyId.value.trim() || !secretAccessKey.value.trim()) {
+    if (!connReady()) {
       return '官方 OpenAPI 请填写 Access Key ID 与 Secret Access Key（控制台 IAM，非推理 API Key）'
     }
-  } else if (!apiKey.value.trim()) {
+  } else if (!connReady()) {
     return '请先填写 API Key'
   }
   if (authMode.value === 'volc_sign' && pathMode.value !== 'open_api_query') {
@@ -540,7 +574,9 @@ async function call(action, payload, opts = {}) {
     body.secret_access_key = secretAccessKey.value.trim()
     if (signRegion.value.trim()) body.sign_region = signRegion.value.trim()
   }
-  return aiAPI.modelArkAsset(body)
+  return aiAPI.modelArkAsset(
+    buildSavedConfigRequest(operationConfigId.value || savedConfigId.value, body),
+  )
 }
 
 async function refreshGroups() {

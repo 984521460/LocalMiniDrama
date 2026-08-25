@@ -217,12 +217,12 @@
           <el-descriptions-item label="厂商">{{ form.provider }}</el-descriptions-item>
         </el-descriptions>
         <el-form ref="formRef" :model="form" label-width="100px">
-          <el-form-item prop="api_key" :rules="[{ required: true, message: '请输入 API Key', trigger: 'blur' }]">
+          <el-form-item prop="api_key" :rules="rules.api_key">
             <template #label><span class="form-label-tip">API Key</span></template>
             <el-input
               v-model="form.api_key"
               type="password"
-              :placeholder="form.provider === 'jimeng_ai_api' ? '即梦 Session，多个用英文逗号分隔' : '输入你的 API 密钥'"
+              :placeholder="form.api_key_configured ? '已配置，留空保留' : (form.provider === 'jimeng_ai_api' ? '即梦 Session，多个用英文逗号分隔' : '输入你的 API 密钥')"
               show-password
             />
           </el-form-item>
@@ -554,7 +554,7 @@ input_reference = (图片文件，可选)</pre>
           <el-input
             v-model="form.api_key"
             type="password"
-            :placeholder="form.service_type === 'jimeng2_character_auth' ? 'Bearer Token' : (form.provider === 'jimeng_ai_api' ? '即梦 Session，多个用英文逗号分隔' : 'API 密钥')"
+            :placeholder="form.api_key_configured ? '已配置，留空保留' : (form.service_type === 'jimeng2_character_auth' ? 'Bearer Token' : (form.provider === 'jimeng_ai_api' ? '即梦 Session，多个用英文逗号分隔' : 'API 密钥'))"
             show-password
           />
         </el-form-item>
@@ -589,7 +589,7 @@ input_reference = (图片文件，可选)</pre>
               v-model="form.kling_access_key"
               type="password"
               show-password
-              placeholder="可灵开放平台 AccessKey（与 SecretKey 成对，可不填上方 API Key）"
+              :placeholder="form.configured_secret_fields.includes('settings.kling_access_key') ? '已配置，留空保留' : '可灵开放平台 AccessKey（与 SecretKey 成对，可不填上方 API Key）'"
               autocomplete="off"
             />
             <p class="field-tip">
@@ -607,7 +607,7 @@ input_reference = (图片文件，可选)</pre>
               v-model="form.kling_secret_key"
               type="password"
               show-password
-              placeholder="可灵开放平台 SecretKey"
+              :placeholder="form.configured_secret_fields.includes('settings.kling_secret_key') ? '已配置，留空保留' : '可灵开放平台 SecretKey'"
               autocomplete="off"
             />
             <el-checkbox v-model="form.kling_secret_key_base64" style="margin-top: 8px; display: block">
@@ -1103,6 +1103,12 @@ import { generationSettingsAPI } from '@/api/prompts'
 import PromptEditor from '@/components/PromptEditor.vue'
 import SceneModelMap from '@/components/SceneModelMap.vue'
 import Sd2AssetManagement from '@/components/Sd2AssetManagement.vue'
+import {
+  buildAiConfigMutationPayload,
+  buildSavedConfigRequest,
+  createEditSecretState,
+  isSecretConfigured,
+} from '@/security/aiConfigSecrets.js'
 
 const activeTab = ref('configs')
 const importFileRef = ref(null)
@@ -1179,6 +1185,8 @@ const form = ref({
   api_protocol: '',
   base_url: '',
   api_key: '',
+  api_key_configured: false,
+  configured_secret_fields: [],
   endpoint: '',
   query_endpoint: '',
   modelText: '',
@@ -1266,13 +1274,15 @@ const rules = computed(() => ({
         const st = form.value.service_type
         if (st === 'jimeng2_character_auth') {
           if (v != null && String(v).trim()) return cb()
+          if (form.value.api_key_configured) return cb()
           return cb(new Error('请填写 Token'))
         }
         const proto = form.value.api_protocol
-        const ak = (form.value.kling_access_key || '').trim()
-        const sk = (form.value.kling_secret_key || '').trim()
+        const ak = (form.value.kling_access_key || '').trim() || isSecretConfigured(form.value, 'settings.kling_access_key')
+        const sk = (form.value.kling_secret_key || '').trim() || isSecretConfigured(form.value, 'settings.kling_secret_key')
         if (st === 'video' && proto === 'kling_omni' && ak && sk) return cb()
         if (v != null && String(v).trim()) return cb()
+        if (form.value.api_key_configured) return cb()
         cb(new Error('请输入 API Key，或使用官方 AccessKey + SecretKey（可不填 API Key）'))
       },
       trigger: 'blur',
@@ -1753,6 +1763,8 @@ function resetForm() {
     api_protocol: '',
     base_url: '',
     api_key: '',
+    api_key_configured: false,
+    configured_secret_fields: [],
     endpoint: '',
     query_endpoint: '',
     modelText: '',
@@ -1783,6 +1795,7 @@ function openEdit(row) {
   // TTS / 可灵 Omni 等从 settings 解析
   let voice_id = row.voice_id || ''
   let group_id = row.group_id || ''
+  const secretState = createEditSecretState(row)
   let kling_access_key = ''
   let kling_secret_key = ''
   let kling_secret_key_base64 = false
@@ -1795,8 +1808,6 @@ function openEdit(row) {
         group_id = s.group_id || group_id
       }
       if (row.service_type === 'video' && row.api_protocol === 'kling_omni') {
-        kling_access_key = s.kling_access_key || ''
-        kling_secret_key = s.kling_secret_key || ''
         kling_secret_key_base64 = !!s.kling_secret_key_base64
       }
     } catch (_) {}
@@ -1807,7 +1818,7 @@ function openEdit(row) {
     provider: row.provider,
     api_protocol: row.api_protocol || '',
     base_url: row.base_url,
-    api_key: row.api_key,
+    ...secretState,
     endpoint: row.endpoint || '',
     query_endpoint: row.query_endpoint || '',
     modelText: modelList.join('\n'),
@@ -1871,7 +1882,7 @@ async function submit() {
       }
       settings = Object.keys(baseS).length ? JSON.stringify(baseS) : null
     }
-    const payload = {
+    const payload = buildAiConfigMutationPayload({
       service_type: form.value.service_type,
       name: form.value.name,
       provider: form.value.provider,
@@ -1885,7 +1896,7 @@ async function submit() {
       priority: form.value.priority,
       is_default: form.value.is_default,
       ...(settings !== undefined ? { settings } : {}),
-    }
+    })
     if (editingId.value) {
       await aiAPI.update(editingId.value, payload)
       ElMessage.success('保存成功')
@@ -1929,7 +1940,8 @@ function onJimeng2AssetsDialogClosed() {
 }
 
 async function fetchJimeng2MaterialAssets(firstPage) {
-  if (!form.value.base_url?.trim() || !form.value.api_key?.trim()) {
+  const hasSavedKey = editingId.value && form.value.api_key_configured
+  if (!form.value.base_url?.trim() || (!form.value.api_key?.trim() && !hasSavedKey)) {
     ElMessage.warning('请先填写网关 URL 与 Token')
     return
   }
@@ -1941,12 +1953,12 @@ async function fetchJimeng2MaterialAssets(firstPage) {
   }
   jimeng2AssetsLoading.value = true
   try {
-    const data = await aiAPI.listJimeng2MaterialAssets({
+    const data = await aiAPI.listJimeng2MaterialAssets(buildSavedConfigRequest(editingId.value, {
       base_url: form.value.base_url.trim(),
       api_key: form.value.api_key,
       limit: 20,
       cursor: firstPage ? undefined : jimeng2AssetsNextCursor.value || undefined,
-    })
+    }))
     const items = Array.isArray(data?.items) ? data.items : []
     if (firstPage) {
       jimeng2AssetsRows.value = items
@@ -1985,15 +1997,14 @@ async function openTest(row) {
   testError.value = ''
   testServiceType.value = row.service_type || 'text'
   try {
-    await aiAPI.testConnection({
+    await aiAPI.testConnection(buildSavedConfigRequest(row.id, {
       base_url: row.base_url,
-      api_key: row.api_key,
       model: Array.isArray(row.model) ? row.model[0] : row.model,
       provider: row.provider,
       endpoint: row.endpoint,
       service_type: row.service_type,
       settings: row.settings
-    })
+    }))
     testResult.value = true
   } catch (e) {
     testResult.value = false
@@ -2150,10 +2161,10 @@ async function exportConfigs() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `ai-configs-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `ai-configs-redacted-template-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
-    ElMessage.success(`已导出 ${exportData.length} 条配置`)
+    ElMessage.success(`已导出 ${exportData.length} 条脱敏配置模板；导入后需重新填写凭据`)
   } catch (e) {
     ElMessage.error('导出失败')
   }
@@ -2198,7 +2209,7 @@ async function importConfigs(event) {
         failed++
       }
     }
-    ElMessage.success(`导入完成：${success} 条成功${failed ? `，${failed} 条失败` : ''}`)
+    ElMessage.success(`导入完成：${success} 条成功${failed ? `，${failed} 条失败` : ''}；脱敏模板需重新填写凭据`)
     await loadList()
   } catch (e) {
     ElMessage.error('导入失败：' + (e.message || '文件解析错误'))

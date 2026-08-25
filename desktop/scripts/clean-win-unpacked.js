@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync, execSync } = require('child_process');
+const { LEGACY_PRODUCT_NAMES, PRODUCT_NAME } = require('../product-identity');
 
 const unpackedDir = path.join(__dirname, '..', 'release', 'win-unpacked');
 
@@ -12,7 +13,7 @@ function log(msg) {
 
 function stopWindowsAppProcesses() {
   if (process.platform !== 'win32') return;
-  const names = ['本地短剧助手.exe', 'LocalMiniDrama.exe'];
+  const names = [PRODUCT_NAME, ...LEGACY_PRODUCT_NAMES].map((name) => `${name}.exe`);
   for (const name of names) {
     spawnSync('taskkill', ['/F', '/IM', name, '/T'], { stdio: 'ignore', shell: true });
   }
@@ -43,7 +44,7 @@ function removeDir(dir) {
       return true;
     } catch (renameErr) {
       log(`[clean] FAILED: ${err.message}`);
-      log('[clean] Close running LocalMiniDrama exe, close Explorer on release/win-unpacked, then retry.');
+      log(`[clean] Close the running ${PRODUCT_NAME} exe, close Explorer on release/win-unpacked, then retry.`);
       log('[clean] Or reboot if antivirus is scanning app.asar.');
       return false;
     }
