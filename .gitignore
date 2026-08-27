@@ -25,3 +25,5 @@ frontweb-edu
 .superpowers
 build_edu
 node_modules
+.codex/
+packages/*/dist/

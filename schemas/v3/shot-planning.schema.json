@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v3/shot-planning.schema.json",
+  "title": "ShotPlanningTask output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "aspectRatio", "durationSummary", "shots"],
+  "properties": {
+    "schemaVersion": { "const": "shot-planning.v1" },
+    "aspectRatio": { "const": "16:9" },
+    "durationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalSeconds"],
+      "properties": {
+        "totalSeconds": { "type": "integer", "minimum": 45, "maximum": 75 }
+      }
+    },
+    "shots": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/shot" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "refs": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "requiredRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "assetVersionRef": {
+      "type": "string",
+      "pattern": "^asset-version:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "continuity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transitionFromPrevious", "screenDirection", "axisStrategy", "notes"],
+      "properties": {
+        "transitionFromPrevious": {
+          "enum": ["start", "cut", "match_cut", "dissolve"]
+        },
+        "screenDirection": {
+          "enum": ["left_to_right", "right_to_left", "neutral"]
+        },
+        "axisStrategy": {
+          "enum": ["establish", "maintain", "intentional_cross"]
+        },
+        "notes": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    },
+    "shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shotId",
+        "ordinal",
+        "sceneId",
+        "entryRefs",
+        "durationSeconds",
+        "shotSize",
+        "cameraAngle",
+        "cameraMovement",
+        "composition",
+        "action",
+        "characterFactRefs",
+        "propFactRefs",
+        "dialogueEntryRefs",
+        "assetVersionRefs",
+        "continuity"
+      ],
+      "properties": {
+        "shotId": { "$ref": "#/$defs/identifier" },
+        "ordinal": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "sceneId": { "$ref": "#/$defs/identifier" },
+        "entryRefs": { "$ref": "#/$defs/requiredRefs" },
+        "durationSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "shotSize": { "enum": ["ECU", "CU", "MCU", "MS", "MLS", "LS", "ELS"] },
+        "cameraAngle": {
+          "enum": ["eye_level", "high", "low", "dutch", "overhead", "pov"]
+        },
+        "cameraMovement": {
+          "enum": ["static", "pan", "tilt", "dolly", "truck", "crane", "handheld", "orbit"]
+        },
+        "composition": { "$ref": "#/$defs/text" },
+        "action": { "$ref": "#/$defs/text" },
+        "characterFactRefs": { "$ref": "#/$defs/refs" },
+        "propFactRefs": { "$ref": "#/$defs/refs" },
+        "dialogueEntryRefs": { "$ref": "#/$defs/refs" },
+        "assetVersionRefs": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/assetVersionRef" }
+        },
+        "continuity": { "$ref": "#/$defs/continuity" }
+      }
+    }
+  }
+}

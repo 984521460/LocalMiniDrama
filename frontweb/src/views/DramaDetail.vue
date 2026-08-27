@@ -18,6 +18,9 @@
           <el-button type="primary" @click="goCreate">
             <el-icon><VideoPlay /></el-icon>进入制作
           </el-button>
+          <el-button type="primary" plain @click="goNarrative">
+            <el-icon><Document /></el-icon>原文与选区
+          </el-button>
           <el-button type="primary" plain @click="goCanvasMode">
             <el-icon><Grid /></el-icon>画布模式
           </el-button>
@@ -527,7 +530,7 @@ import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { PRODUCT_NAME } from '@/config/productIdentity'
-import { ArrowLeft, VideoPlay, Plus, Delete, Sunny, Moon, PictureFilled, Grid } from '@element-plus/icons-vue'
+import { ArrowLeft, VideoPlay, Plus, Delete, Sunny, Moon, PictureFilled, Grid, Document } from '@element-plus/icons-vue'
 import EpisodeBatchImportDialog from '@/components/EpisodeBatchImportDialog.vue'
 import StylePickerButton from '@/components/StylePickerButton.vue'
 import { useTheme } from '@/composables/useTheme'
@@ -916,6 +919,10 @@ function saveInfo() {
 
 function goCreate() {
   router.push(`/film/${dramaId}`)
+}
+
+function goNarrative() {
+  router.push(`/drama/${dramaId}/narrative`)
 }
 
 function goCanvasMode() {

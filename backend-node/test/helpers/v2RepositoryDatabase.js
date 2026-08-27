@@ -1,0 +1,44 @@
+const fs = require('node:fs');
+const path = require('node:path');
+
+const Database = require('better-sqlite3');
+
+const { runV2Migrations } = require('../../src/db/v2');
+
+const LEGACY_SCHEMA_SQL = fs.readFileSync(
+  path.resolve(__dirname, '../../migrations/01_init.sql'),
+  'utf8',
+);
+const V2_MIGRATIONS_DIR = path.resolve(__dirname, '../../migrations/v2');
+
+function uid(value) {
+  return `00000000-0000-4000-8000-${value.toString(16).padStart(12, '0')}`;
+}
+
+function createMigratedV2Database(t) {
+  const database = new Database(':memory:');
+  database.pragma('foreign_keys = ON');
+  database.pragma('busy_timeout = 0');
+  database.exec(LEGACY_SCHEMA_SQL);
+  const migration = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
+  if (migration.currentVersion !== 5) {
+    database.close();
+    throw new Error(`Expected v2 migration version 5, received ${migration.currentVersion}`);
+  }
+  t.after(() => {
+    if (!database.open) return;
+    if (database.inTransaction) database.exec('ROLLBACK');
+    database.close();
+  });
+  return database;
+}
+
+function insertDrama(database, dramaUid, title = 'Repository test drama') {
+  database.prepare('INSERT INTO dramas (title, uid) VALUES (?, ?)').run(title, dramaUid);
+}
+
+module.exports = {
+  createMigratedV2Database,
+  insertDrama,
+  uid,
+};

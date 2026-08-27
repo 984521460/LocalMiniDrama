@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v3/script-formatting.schema.json",
+  "title": "ScriptFormattingTask output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "durationSummary", "scenes"],
+  "properties": {
+    "schemaVersion": { "const": "script-formatting.v1" },
+    "durationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalSeconds"],
+      "properties": {
+        "totalSeconds": { "type": "integer", "minimum": 45, "maximum": 75 }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/scene" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "refs": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "requiredRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "heading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interiorExterior", "location", "time"],
+      "properties": {
+              "interiorExterior": { "enum": ["INT", "EXT", "INT_EXT", "UNKNOWN"] },
+        "location": { "$ref": "#/$defs/text" },
+        "time": { "$ref": "#/$defs/text" }
+      }
+    },
+    "actionEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entryId",
+        "type",
+        "text",
+        "characterFactRefs",
+        "propFactRefs",
+        "beatRefs",
+        "adaptationDecisionRefs",
+        "durationSeconds"
+      ],
+      "properties": {
+        "entryId": { "$ref": "#/$defs/identifier" },
+        "type": { "const": "action" },
+        "text": { "$ref": "#/$defs/text" },
+        "characterFactRefs": { "$ref": "#/$defs/refs" },
+        "propFactRefs": { "$ref": "#/$defs/refs" },
+        "beatRefs": { "$ref": "#/$defs/requiredRefs" },
+        "adaptationDecisionRefs": { "$ref": "#/$defs/refs" },
+        "durationSeconds": { "type": "integer", "minimum": 1, "maximum": 60 }
+      }
+    },
+    "dialogueEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entryId",
+        "type",
+        "speakerCharacterFactId",
+        "dialogueFactRef",
+        "text",
+        "emotion",
+        "speechRateWordsPerMinute",
+        "narrativePurpose",
+        "beatRefs",
+        "adaptationDecisionRefs",
+        "durationSeconds"
+      ],
+      "properties": {
+        "entryId": { "$ref": "#/$defs/identifier" },
+        "type": { "const": "dialogue" },
+        "speakerCharacterFactId": {
+          "oneOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }]
+        },
+        "dialogueFactRef": {
+          "oneOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }]
+        },
+        "text": { "$ref": "#/$defs/text" },
+        "emotion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "speechRateWordsPerMinute": { "type": "integer", "minimum": 60, "maximum": 300 },
+        "narrativePurpose": {
+          "enum": ["information", "conflict", "characterization", "escalation", "payoff", "cliffhanger"]
+        },
+        "beatRefs": { "$ref": "#/$defs/requiredRefs" },
+        "adaptationDecisionRefs": { "$ref": "#/$defs/refs" },
+        "durationSeconds": { "type": "integer", "minimum": 1, "maximum": 60 }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["dialogueFactRef"], "properties": { "dialogueFactRef": { "type": "null" } } },
+          "then": { "properties": { "adaptationDecisionRefs": { "type": "array", "minItems": 1 } } }
+        }
+      ]
+    },
+    "entry": {
+      "oneOf": [
+        { "$ref": "#/$defs/actionEntry" },
+        { "$ref": "#/$defs/dialogueEntry" }
+      ]
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sceneId",
+        "ordinal",
+        "heading",
+        "purpose",
+        "sceneFactRef",
+        "characterFactRefs",
+        "propFactRefs",
+        "beatRefs",
+        "adaptationDecisionRefs",
+        "estimatedDurationSeconds",
+        "entries"
+      ],
+      "properties": {
+        "sceneId": { "$ref": "#/$defs/identifier" },
+        "ordinal": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "heading": { "$ref": "#/$defs/heading" },
+        "purpose": { "$ref": "#/$defs/text" },
+        "sceneFactRef": {
+          "oneOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }]
+        },
+        "characterFactRefs": { "$ref": "#/$defs/refs" },
+        "propFactRefs": { "$ref": "#/$defs/refs" },
+        "beatRefs": { "$ref": "#/$defs/requiredRefs" },
+        "adaptationDecisionRefs": { "$ref": "#/$defs/refs" },
+        "estimatedDurationSeconds": { "type": "integer", "minimum": 1, "maximum": 75 },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/entry" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["sceneFactRef"], "properties": { "sceneFactRef": { "type": "null" } } },
+          "then": { "properties": { "adaptationDecisionRefs": { "type": "array", "minItems": 1 } } }
+        }
+      ]
+    }
+  }
+}

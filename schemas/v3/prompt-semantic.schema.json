@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v3/prompt-semantic.schema.json",
+  "title": "PromptSemanticTask output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "aspectRatio", "durationSummary", "semanticShots"],
+  "properties": {
+    "schemaVersion": { "const": "prompt-semantic.v1" },
+    "aspectRatio": { "const": "16:9" },
+    "durationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalSeconds"],
+      "properties": {
+        "totalSeconds": { "type": "integer", "minimum": 45, "maximum": 75 }
+      }
+    },
+    "semanticShots": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/semanticShot" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "refs": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "assetVersionRef": {
+      "type": "string",
+      "pattern": "^asset-version:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "assetRefs": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/assetVersionRef" }
+    },
+    "subjects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["characterFactRefs", "characterAssetVersionRefs", "description"],
+      "properties": {
+        "characterFactRefs": { "$ref": "#/$defs/refs" },
+        "characterAssetVersionRefs": { "$ref": "#/$defs/assetRefs" },
+        "description": { "$ref": "#/$defs/text" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sceneId",
+        "sceneAssetVersionRefs",
+        "propFactRefs",
+        "propAssetVersionRefs",
+        "description"
+      ],
+      "properties": {
+        "sceneId": { "$ref": "#/$defs/identifier" },
+        "sceneAssetVersionRefs": { "$ref": "#/$defs/assetRefs" },
+        "propFactRefs": { "$ref": "#/$defs/refs" },
+        "propAssetVersionRefs": { "$ref": "#/$defs/assetRefs" },
+        "description": { "$ref": "#/$defs/text" }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shotSize", "cameraAngle", "cameraMovement", "composition"],
+      "properties": {
+        "shotSize": { "enum": ["ECU", "CU", "MCU", "MS", "MLS", "LS", "ELS"] },
+        "cameraAngle": { "enum": ["eye_level", "high", "low", "dutch", "overhead", "pov"] },
+        "cameraMovement": { "enum": ["static", "pan", "tilt", "dolly", "truck", "crane", "handheld", "orbit"] },
+        "composition": { "$ref": "#/$defs/text" }
+      }
+    },
+    "lighting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quality", "direction", "colorTemperature", "description"],
+      "properties": {
+        "quality": { "enum": ["soft", "hard", "mixed", "natural", "practical"] },
+        "direction": { "enum": ["front", "side", "back", "top", "ambient", "mixed"] },
+        "colorTemperature": { "enum": ["warm", "neutral", "cool", "mixed"] },
+        "description": { "$ref": "#/$defs/text" }
+      }
+    },
+    "continuity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transitionFromPrevious", "screenDirection", "axisStrategy", "notes"],
+      "properties": {
+        "transitionFromPrevious": { "enum": ["start", "cut", "match_cut", "dissolve"] },
+        "screenDirection": { "enum": ["left_to_right", "right_to_left", "neutral"] },
+        "axisStrategy": { "enum": ["establish", "maintain", "intentional_cross"] },
+        "notes": { "$ref": "#/$defs/text" }
+      }
+    },
+    "semanticShot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shotId",
+        "ordinal",
+        "durationSeconds",
+        "subjects",
+        "environment",
+        "action",
+        "camera",
+        "lighting",
+        "continuity"
+      ],
+      "properties": {
+        "shotId": { "$ref": "#/$defs/identifier" },
+        "ordinal": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "durationSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "subjects": { "$ref": "#/$defs/subjects" },
+        "environment": { "$ref": "#/$defs/environment" },
+        "action": { "$ref": "#/$defs/text" },
+        "camera": { "$ref": "#/$defs/camera" },
+        "lighting": { "$ref": "#/$defs/lighting" },
+        "continuity": { "$ref": "#/$defs/continuity" }
+      }
+    }
+  }
+}

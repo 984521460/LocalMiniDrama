@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.local-mini-drama.invalid/v1/contract-error.schema.json",
+  "title": "LocalMiniDrama ContractError v1",
+  "description": "Stable public error data. Raw provider text is intentionally not representable.",
+  "x-schema-version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message", "retryable"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": [
+        "INVALID_INPUT",
+        "SCHEMA_VALIDATION_FAILED",
+        "UNSUPPORTED_SCHEMA_VERSION",
+        "NOT_FOUND",
+        "CONFLICT",
+        "UNAUTHORIZED",
+        "FORBIDDEN",
+        "RATE_LIMITED",
+        "PROVIDER_UNAVAILABLE",
+        "OPERATION_TIMEOUT",
+        "OPERATION_CANCELLED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "message": { "type": "string" },
+    "retryable": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "code": { "const": "INVALID_INPUT" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "Input validation failed" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "SCHEMA_VALIDATION_FAILED" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "Structured data validation failed" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "UNSUPPORTED_SCHEMA_VERSION" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "Schema version is not supported" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "NOT_FOUND" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "Requested resource was not found" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "CONFLICT" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "The operation conflicts with current state" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "UNAUTHORIZED" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "Authentication is required" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "FORBIDDEN" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "The operation is not permitted" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "RATE_LIMITED" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "The operation was rate limited" }, "retryable": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "PROVIDER_UNAVAILABLE" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "The provider is unavailable" }, "retryable": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "OPERATION_TIMEOUT" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "The operation timed out" }, "retryable": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "OPERATION_CANCELLED" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "The operation was cancelled" }, "retryable": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "code": { "const": "INTERNAL_ERROR" } }, "required": ["code"] },
+      "then": { "properties": { "message": { "const": "The operation failed" }, "retryable": { "const": false } } }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 // 项目导入服务：解析 ZIP，还原剧集数据和媒体文件
 const fs = require('fs');
 const path = require('path');
-const AdmZip = require('adm-zip');
 const { randomUUID } = require('crypto');
+const { readProjectArchive } = require('../adapters/v2/zip/archiveReader');
 const storageLayout = require('./storageLayout');
 
 function getStoragePath(cfg) {
@@ -19,38 +19,8 @@ function ensureDir(dir) {
  * @returns {{ data: object, files: Map<string,Buffer> }}
  */
 function parseZip(zipBuffer) {
-  let zip;
-  try {
-    zip = new AdmZip(zipBuffer);
-  } catch (e) {
-    throw new Error('ZIP 文件损坏，无法解析');
-  }
-
-  const projectEntry = zip.getEntry('project.json');
-  if (!projectEntry) {
-    throw new Error('ZIP 格式不正确：缺少 project.json');
-  }
-
-  let data;
-  try {
-    data = JSON.parse(projectEntry.getData().toString('utf8'));
-  } catch (e) {
-    throw new Error('project.json 格式错误，无法解析 JSON');
-  }
-
-  if (!data.drama || !data.drama.title) {
-    throw new Error('project.json 格式不正确：缺少 drama.title 字段');
-  }
-
-  // 读取所有媒体文件到 Map
-  const files = new Map();
-  for (const entry of zip.getEntries()) {
-    if (!entry.isDirectory && entry.entryName !== 'project.json') {
-      files.set(entry.entryName, entry.getData());
-    }
-  }
-
-  return { data, files };
+  const parsed = readProjectArchive(zipBuffer);
+  return { data: parsed.legacyProject, files: parsed.files };
 }
 
 /**
@@ -68,10 +38,13 @@ function resolveTitle(db, baseTitle) {
  * 保存媒体文件到 storage，返回相对路径
  * @param {string} projectDir 如 projects/0001_20250324_剧名，与工程内其它媒体一致
  */
-function saveMediaFile(storagePath, projectDir, category, files, zipPath, prefix) {
+function saveMediaFile(storagePath, projectDir, category, files, zipPath, prefix, mediaWriter) {
   if (!zipPath) return null;
   const buf = files.get(zipPath);
   if (!buf) return null;
+  if (mediaWriter) {
+    return mediaWriter.write({ projectDir, category, zipPath, prefix, buffer: buf });
+  }
   const ext = path.extname(zipPath) || '.jpg';
   const categoryPath = path.join(storagePath, projectDir, category);
   ensureDir(categoryPath);
@@ -108,11 +81,11 @@ function restoreFramePromptsFromImageGens(db, sbId, now, log) {
   }
 }
 
-function saveExtraImages(storagePath, projectDir, category, files, zipPaths, prefix) {
+function saveExtraImages(storagePath, projectDir, category, files, zipPaths, prefix, mediaWriter) {
   if (!Array.isArray(zipPaths) || zipPaths.length === 0) return null;
   const localPaths = [];
   for (const zipPath of zipPaths) {
-    const localPath = saveMediaFile(storagePath, projectDir, category, files, zipPath, prefix);
+    const localPath = saveMediaFile(storagePath, projectDir, category, files, zipPath, prefix, mediaWriter);
     if (localPath) localPaths.push(localPath);
   }
   return localPaths.length > 0 ? JSON.stringify(localPaths) : null;
@@ -123,9 +96,12 @@ function saveExtraImages(storagePath, projectDir, category, files, zipPaths, pre
  * @param {Buffer} zipBuffer
  * @returns {{ drama_id: number, title: string }}
  */
-function importDrama(db, cfg, log, zipBuffer) {
+function importDrama(db, cfg, log, zipBuffer, options = {}) {
   const storagePath = getStoragePath(cfg);
-  const { data, files } = parseZip(zipBuffer);
+  const parsedArchive = options.parsedArchive;
+  const { data, files } = parsedArchive
+    ? { data: parsedArchive.legacyProject, files: parsedArchive.files }
+    : parseZip(zipBuffer);
 
   const d = data.drama;
   const title = resolveTitle(db, d.title || '导入项目');
@@ -145,13 +121,28 @@ function importDrama(db, cfg, log, zipBuffer) {
   // 用事务包裹全部写入：任何步骤失败时整体回滚，避免部分导入
   let result;
   const runImport = db.transaction(() => {
-    result = _doImport(db, storagePath, files, data, d, title, metaStr, now, log);
+    if (typeof options.beforeImport === 'function') options.beforeImport({ data });
+    result = _doImport(db, storagePath, files, data, d, title, metaStr, now, log, options.mediaWriter);
+    if (typeof options.afterImport === 'function') options.afterImport({ result, data });
+    if (options.mediaWriter) options.mediaWriter.promote();
   });
-  runImport();
+  try {
+    if (options.immediate === true) runImport.immediate();
+    else runImport();
+    options.mediaWriter?.complete();
+  } catch (error) {
+    if (options.mediaWriter) options.mediaWriter.rollback();
+    throw error;
+  }
+  log?.info?.('Drama imported', {
+    drama_id: result.drama_id,
+    title: result.title,
+    archive_version: options.archiveVersion || String(data.version || 'v1'),
+  });
   return result;
 }
 
-function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
+function _doImport(db, storagePath, files, data, d, title, metaStr, now, log, mediaWriter) {
 
   // ---- 创建 drama ----
   const dramaInfo = db.prepare(
@@ -181,8 +172,8 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
   for (let i = 0; i < (data.characters || []).length; i++) {
     const c = data.characters[i];
     if (!c.name) { charNewIds.push(null); continue; }
-    const localPath = saveMediaFile(storagePath, projectDir, 'characters', files, c.image_file, 'char_imp');
-    const extraImagesJson = saveExtraImages(storagePath, projectDir, 'characters', files, c.extra_image_files, 'char_extra_imp');
+    const localPath = saveMediaFile(storagePath, projectDir, 'characters', files, c.image_file, 'char_imp', mediaWriter);
+    const extraImagesJson = saveExtraImages(storagePath, projectDir, 'characters', files, c.extra_image_files, 'char_extra_imp', mediaWriter);
     const info = db.prepare(
       `INSERT INTO characters (drama_id, name, role, description, personality, appearance, voice_style, polished_prompt, local_path, extra_images, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -226,8 +217,8 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
     const epId = (epIdx != null && epIdx >= 0 && episodeIdList[epIdx])
       ? episodeIdList[epIdx]
       : (episodeIdList[0] || null);
-    const localPath = saveMediaFile(storagePath, projectDir, 'scenes', files, s.image_file, 'scene_imp');
-    const extraImagesJson = saveExtraImages(storagePath, projectDir, 'scenes', files, s.extra_image_files, 'scene_extra_imp');
+    const localPath = saveMediaFile(storagePath, projectDir, 'scenes', files, s.image_file, 'scene_imp', mediaWriter);
+    const extraImagesJson = saveExtraImages(storagePath, projectDir, 'scenes', files, s.extra_image_files, 'scene_extra_imp', mediaWriter);
     const info = db.prepare(
       `INSERT INTO scenes (drama_id, episode_id, location, time, prompt, polished_prompt, local_path, extra_images, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -244,8 +235,8 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
     const epId = (epIdx != null && epIdx >= 0 && episodeIdList[epIdx])
       ? episodeIdList[epIdx]
       : (episodeIdList[0] || null);
-    const localPath = saveMediaFile(storagePath, projectDir, 'props', files, p.image_file, 'prop_imp');
-    const extraImagesJson = saveExtraImages(storagePath, projectDir, 'props', files, p.extra_image_files, 'prop_extra_imp');
+    const localPath = saveMediaFile(storagePath, projectDir, 'props', files, p.image_file, 'prop_imp', mediaWriter);
+    const extraImagesJson = saveExtraImages(storagePath, projectDir, 'props', files, p.extra_image_files, 'prop_extra_imp', mediaWriter);
     const pInfo = db.prepare(
       `INSERT INTO props (drama_id, episode_id, name, type, description, prompt, local_path, extra_images, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -260,8 +251,8 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
     if (!episodeId) continue;
 
     for (const sb of (ep.storyboards || [])) {
-      const sbAudioPath = saveMediaFile(storagePath, projectDir, 'audio', files, sb.audio_file, 'sb_audio_imp');
-      const sbNarrationAudioPath = saveMediaFile(storagePath, projectDir, 'audio', files, sb.narration_audio_file, 'sb_narr_audio_imp');
+      const sbAudioPath = saveMediaFile(storagePath, projectDir, 'audio', files, sb.audio_file, 'sb_audio_imp', mediaWriter);
+      const sbNarrationAudioPath = saveMediaFile(storagePath, projectDir, 'audio', files, sb.narration_audio_file, 'sb_narr_audio_imp', mediaWriter);
 
       // 还原 characters：从导出时记录的下标映射回新 ID
       const charIndices = Array.isArray(sb.character_indices) ? sb.character_indices : [];
@@ -328,7 +319,7 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
         null, // first_frame_image_id 后设
         null, // last_frame_image_id 后设
         sb.last_frame_image_url || null,
-        sb.last_frame_local_path || null,
+        null, // 旧工程本机路径不可移植；仅由随 ZIP 导入的媒体重新生成
         null, // image_url 由首帧绑定设置
         null, // local_path 由首帧绑定设置
         charactersJson,
@@ -365,7 +356,7 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
       const genOldToNew = new Map(); // original_id -> {newId, localPath}
       if (Array.isArray(sb.image_generations) && sb.image_generations.length > 0) {
         for (const gen of sb.image_generations) {
-          const genLocalPath = saveMediaFile(storagePath, projectDir, 'images', files, gen.zip_file || gen.file, 'sb_imp_gen');
+          const genLocalPath = saveMediaFile(storagePath, projectDir, 'images', files, gen.zip_file || gen.file, 'sb_imp_gen', mediaWriter);
           if (genLocalPath) {
             const genInfo = db.prepare(
               `INSERT INTO image_generations (drama_id, storyboard_id, provider, prompt, negative_prompt, model, frame_type, size, quality, status, error_msg, local_path, created_at, updated_at, completed_at)
@@ -395,7 +386,7 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
         }
       } else {
         // 老版兼容：仅单张 image_file（导入后只有这一个历史图，首尾帧绑定丢失是旧行为）
-        const sbImagePath = saveMediaFile(storagePath, projectDir, 'images', files, sb.image_file, 'sb_imp');
+        const sbImagePath = saveMediaFile(storagePath, projectDir, 'images', files, sb.image_file, 'sb_imp', mediaWriter);
         if (sbImagePath) {
           db.prepare(
             `INSERT INTO image_generations (drama_id, storyboard_id, provider, prompt, status, local_path, created_at, updated_at)
@@ -406,7 +397,7 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
 
       // 导入视频（仍保持单条最新，视频首尾帧 URL 由生成时绑定）
       if (sb.video_file) {
-        const videoLocalPath = saveMediaFile(storagePath, projectDir, 'videos', files, sb.video_file, 'vid_imp');
+        const videoLocalPath = saveMediaFile(storagePath, projectDir, 'videos', files, sb.video_file, 'vid_imp', mediaWriter);
         if (videoLocalPath) {
           db.prepare(
             `INSERT INTO video_generations (drama_id, storyboard_id, provider, prompt, status, local_path, created_at, updated_at)
@@ -452,7 +443,6 @@ function _doImport(db, storagePath, files, data, d, title, metaStr, now, log) {
     }
   }
 
-  log.info('Drama imported', { drama_id: dramaId, title });
   return { drama_id: dramaId, title };
 }
 

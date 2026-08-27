@@ -1,7 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { getDb } = require('./index.js');
+const { resolveLegacyAssetTable } = require('./legacyAssetTable');
+const { discoverV2Migrations, runV2Migrations } = require('./v2');
+const { ensurePreV2MigrationBackup } = require('./v2/migrationBackup');
 const { loadConfig } = require('../config/index.js');
+
+const V2_MIGRATIONS_DIR = path.resolve(__dirname, '../../migrations/v2');
 
 function stripLeadingComments(sql) {
   return sql
@@ -387,7 +392,7 @@ function ensureAllColumns(database) {
   ]);
 
   // --- assets ---
-  ensureColumns(database, 'assets', [
+  ensureColumns(database, resolveLegacyAssetTable(database), [
     { name: 'drama_id',     type: 'INTEGER' },
     { name: 'name',         type: 'TEXT' },
     { name: 'type',         type: 'TEXT' },
@@ -522,8 +527,16 @@ function ensureAllColumns(database) {
 
 /** 对已打开的 database 执行迁移与兜底补列（供 app 启动时调用） */
 function runMigrationsAndEnsure(database) {
+  database.pragma('foreign_keys = ON');
+  database.pragma('ignore_check_constraints = OFF');
+  database.pragma('writable_schema = OFF');
+  const v2Migrations = discoverV2Migrations(V2_MIGRATIONS_DIR);
+  ensurePreV2MigrationBackup(database, {
+    latestVersion: v2Migrations.at(-1)?.version ?? 0,
+  });
   runMigrations(database);
   ensureAllColumns(database);
+  runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
 }
 
 function main() {

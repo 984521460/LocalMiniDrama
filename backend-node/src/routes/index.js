@@ -21,6 +21,8 @@ const assetRoutes = require('./assets');
 const audioRoutes = require('./audio');
 const promptOverridesRoutes = require('./promptOverrides');
 const sceneModelMapRoutes = require('./sceneModelMap');
+const sourceDocumentRoutes = require('./v2/sourceDocuments');
+const narrativeReviewRoutes = require('./v2/narrativeReviews');
 
 function setupRouter(cfg, db, log) {
   const r = express.Router();
@@ -47,6 +49,11 @@ function setupRouter(cfg, db, log) {
   const assets = assetRoutes(db, log);
   const audio = audioRoutes(db, log, cfg);
   const promptOverrides = promptOverridesRoutes.routes(db, log);
+  const sourceDocuments = sourceDocumentRoutes(db, log);
+  const narrativeReviews = narrativeReviewRoutes(db, log);
+
+  r.use('/v2', sourceDocuments);
+  r.use('/v2', narrativeReviews);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

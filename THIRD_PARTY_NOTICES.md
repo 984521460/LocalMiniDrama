@@ -10,7 +10,7 @@
 
 ## 2. 直接 NPM 依赖
 
-下表从三个子项目当前 `package.json` 与 `package-lock.json` 重建。重建命令：
+下表从根工程与三个子项目当前 `package.json` 与 `package-lock.json` 重建。重建命令：
 
 ```powershell
 node licenses/collect-direct-npm-licenses.mjs
@@ -18,6 +18,8 @@ node licenses/collect-direct-npm-licenses.mjs
 
 | 子项目 | 类型 | 包 | 锁定版本 | 声明许可证 |
 |---|---|---|---|---|
+| root | devDependencies | `ajv` | `8.20.0` | `MIT` |
+| root | devDependencies | `typescript` | `7.0.2` | `Apache-2.0` |
 | backend-node | dependencies | `@volcengine/openapi` | `1.36.1` | `Apache-2.0` |
 | backend-node | dependencies | `adm-zip` | `0.5.16` | `MIT` |
 | backend-node | dependencies | `better-sqlite3` | `11.10.0` | `MIT` |

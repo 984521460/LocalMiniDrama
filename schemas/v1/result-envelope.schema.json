@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.local-mini-drama.invalid/v1/result-envelope.schema.json",
+  "title": "LocalMiniDrama ResultEnvelope v1",
+  "description": "Versioned success or failure result shared between v2 modules.",
+  "x-schema-version": "1.0.0",
+  "oneOf": [
+    {
+      "title": "SuccessResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "ok", "value"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "ok": { "const": true },
+        "value": true
+      }
+    },
+    {
+      "title": "FailureResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "ok", "error"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "ok": { "const": false },
+        "error": {
+          "$ref": "https://schemas.local-mini-drama.invalid/v1/contract-error.schema.json"
+        }
+      }
+    }
+  ]
+}

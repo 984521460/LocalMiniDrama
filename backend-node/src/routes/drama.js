@@ -1,8 +1,8 @@
 const dramaService = require('../services/dramaService');
 const propService = require('../services/propService');
 const response = require('../response');
-const dramaExportService = require('../services/dramaExportService');
-const dramaImportService = require('../services/dramaImportService');
+const projectZipService = require('../services/projectZipService');
+const { isProjectArchiveError } = require('../adapters/v2/zip/errors');
 
 function createDrama(db, log) {
   return (req, res) => {
@@ -171,14 +171,16 @@ function downloadEpisodeVideo(db) {
 function exportDrama(db, cfg, log) {
   return (req, res) => {
     try {
-      const { buffer, title } = dramaExportService.exportDrama(db, cfg, log, req.params.id);
+      const { buffer, title } = projectZipService.exportDrama(db, cfg, log, req.params.id);
       const safeName = (title || 'drama').replace(/[^\w\u4e00-\u9fff\-]/g, '_').slice(0, 50);
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}.zip`);
       res.send(buffer);
     } catch (err) {
-      log.error('Export drama failed', { error: err.message });
-      response.internalError(res, err.message || '导出失败');
+      log.error('Export drama failed', {
+        code: isProjectArchiveError(err) ? err.code : 'PROJECT_ARCHIVE_OPERATION_FAILED',
+      });
+      response.internalError(res, '导出失败');
     }
   };
 }
@@ -189,16 +191,20 @@ function importDrama(db, cfg, log) {
       if (!req.file || !req.file.buffer) {
         return response.badRequest(res, '请上传 ZIP 文件');
       }
-      const result = dramaImportService.importDrama(db, cfg, log, req.file.buffer);
+      const result = projectZipService.importDrama(db, cfg, log, req.file.buffer);
       response.created(res, result);
     } catch (err) {
-      log.error('Import drama failed', { error: err.message });
-      if (err.message && (err.message.includes('格式') || err.message.includes('缺少') || err.message.includes('损坏'))) {
-        return response.badRequest(res, err.message);
-      }
-      response.internalError(res, err.message || '导入失败');
+      handleProjectImportError(res, log, 'Import drama failed', '导入失败', err);
     }
   };
+}
+
+function handleProjectImportError(res, log, event, fallbackMessage, error) {
+  log.error(event, {
+    code: isProjectArchiveError(error) ? error.code : 'PROJECT_ARCHIVE_OPERATION_FAILED',
+  });
+  if (isProjectArchiveError(error)) return response.badRequest(res, error.message);
+  response.internalError(res, fallbackMessage);
 }
 
 function getExampleDramaDir() {
@@ -231,13 +237,23 @@ function listExamples(log) {
   };
 }
 
+function isSafeExampleFilename(value) {
+  return typeof value === 'string'
+    && value.length > 4
+    && Buffer.byteLength(value, 'utf8') <= 255
+    && value.toLowerCase().endsWith('.zip')
+    && !/[\x00-\x1f<>:"/\\|?*]/.test(value)
+    && value !== '.'
+    && value !== '..';
+}
+
 function importExample(db, cfg, log) {
   return (req, res) => {
     const fs = require('fs');
     const path = require('path');
     const filename = req.body?.filename;
     if (!filename) return response.badRequest(res, '请指定示例文件名');
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    if (!isSafeExampleFilename(filename)) {
       return response.badRequest(res, '文件名不合法');
     }
     const dir = getExampleDramaDir();
@@ -246,11 +262,10 @@ function importExample(db, cfg, log) {
     if (!fs.existsSync(filePath)) return response.notFound(res, '示例文件不存在');
     try {
       const buffer = fs.readFileSync(filePath);
-      const result = dramaImportService.importDrama(db, cfg, log, buffer);
+      const result = projectZipService.importDrama(db, cfg, log, buffer);
       response.created(res, result);
     } catch (err) {
-      log.error('Import example failed', { error: err.message });
-      response.internalError(res, err.message || '导入示例失败');
+      handleProjectImportError(res, log, 'Import example failed', '导入示例失败', err);
     }
   };
 }

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v2/project-archive-manifest.schema.json",
+  "title": "LocalMiniDrama project archive manifest v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "archiveKind", "legacyProjectVersion", "exportedAt", "project", "records"],
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "archiveKind": { "const": "local-mini-drama-project" },
+    "legacyProjectVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "exportedAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+    "project": { "$ref": "#/$defs/project" },
+    "records": { "$ref": "#/$defs/records" }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "uidOrNull": { "oneOf": [{ "$ref": "#/$defs/uid" }, { "type": "null" }] },
+    "scalar": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }] },
+    "uidArray": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/uid" } },
+    "episode": {
+      "type": "object", "additionalProperties": false, "required": ["uid", "storyboards"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "storyboards": { "$ref": "#/$defs/uidArray" } }
+    },
+    "project": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dramaUid", "characters", "scenes", "props", "episodes"],
+      "properties": {
+        "dramaUid": { "$ref": "#/$defs/uid" }, "characters": { "$ref": "#/$defs/uidArray" },
+        "scenes": { "$ref": "#/$defs/uidArray" }, "props": { "$ref": "#/$defs/uidArray" },
+        "episodes": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/episode" } }
+      }
+    },
+    "sourceDocument": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "drama_uid", "source_type", "original_name", "encoding", "content_sha256", "full_text", "created_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "drama_uid": { "$ref": "#/$defs/uid" }, "source_type": { "$ref": "#/$defs/scalar" }, "original_name": { "$ref": "#/$defs/scalar" }, "encoding": { "$ref": "#/$defs/scalar" }, "content_sha256": { "$ref": "#/$defs/scalar" }, "full_text": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "sourceBlock": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "document_uid", "ordinal", "heading_path_json", "char_start", "char_end", "text", "text_sha256", "created_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "document_uid": { "$ref": "#/$defs/uid" }, "ordinal": { "$ref": "#/$defs/scalar" }, "heading_path_json": { "type": "string" }, "char_start": { "$ref": "#/$defs/scalar" }, "char_end": { "$ref": "#/$defs/scalar" }, "text": { "$ref": "#/$defs/scalar" }, "text_sha256": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "sourceSelection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "document_uid", "start_block_uid", "end_block_uid", "start_offset", "end_offset", "selected_text_sha256", "created_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "document_uid": { "$ref": "#/$defs/uid" }, "start_block_uid": { "$ref": "#/$defs/uid" }, "end_block_uid": { "$ref": "#/$defs/uid" }, "start_offset": { "$ref": "#/$defs/scalar" }, "end_offset": { "$ref": "#/$defs/scalar" }, "selected_text_sha256": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "asset": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "owner_type", "owner_uid", "asset_type", "current_version_uid", "status", "created_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "owner_type": { "type": "string" }, "owner_uid": { "$ref": "#/$defs/uid" }, "asset_type": { "$ref": "#/$defs/scalar" }, "current_version_uid": { "$ref": "#/$defs/uidOrNull" }, "status": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "assetVersion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "asset_uid", "storage_provider", "logical_uri", "relative_path", "sha256", "mime_type", "width", "height", "duration_ms", "parent_uid", "status", "created_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "asset_uid": { "$ref": "#/$defs/uid" }, "storage_provider": { "$ref": "#/$defs/scalar" }, "logical_uri": { "type": "string" }, "relative_path": { "type": "string" }, "sha256": { "$ref": "#/$defs/scalar" }, "mime_type": { "$ref": "#/$defs/scalar" }, "width": { "$ref": "#/$defs/scalar" }, "height": { "$ref": "#/$defs/scalar" }, "duration_ms": { "$ref": "#/$defs/scalar" }, "parent_uid": { "$ref": "#/$defs/uidOrNull" }, "status": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "workflowDefinition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "drama_uid", "name", "version", "status", "description", "created_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "drama_uid": { "$ref": "#/$defs/uid" }, "name": { "$ref": "#/$defs/scalar" }, "version": { "$ref": "#/$defs/scalar" }, "status": { "$ref": "#/$defs/scalar" }, "description": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "canvasNode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "workflow_uid", "node_type", "position_json", "config_json", "domain_ref_type", "domain_ref_uid", "status", "created_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "workflow_uid": { "$ref": "#/$defs/uid" }, "node_type": { "$ref": "#/$defs/scalar" }, "position_json": { "type": "string" }, "config_json": { "type": "string" }, "domain_ref_type": { "$ref": "#/$defs/scalar" }, "domain_ref_uid": { "$ref": "#/$defs/uidOrNull" }, "status": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "canvasEdge": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "workflow_uid", "source_node_uid", "source_port", "target_node_uid", "target_port", "created_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "workflow_uid": { "$ref": "#/$defs/uid" }, "source_node_uid": { "$ref": "#/$defs/uid" }, "source_port": { "$ref": "#/$defs/scalar" }, "target_node_uid": { "$ref": "#/$defs/uid" }, "target_port": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "generationRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "owner_type", "owner_uid", "provider", "model", "seed", "parameters_json", "input_json", "prompt_version_uid", "output_asset_version_uid", "status", "retry_count", "error_code", "error_detail_ref", "created_at", "started_at", "completed_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "owner_type": { "type": "string" }, "owner_uid": { "$ref": "#/$defs/uid" }, "provider": { "$ref": "#/$defs/scalar" }, "model": { "$ref": "#/$defs/scalar" }, "seed": { "$ref": "#/$defs/scalar" }, "parameters_json": { "type": "string" }, "input_json": { "type": "string" }, "prompt_version_uid": { "$ref": "#/$defs/uidOrNull" }, "output_asset_version_uid": { "$ref": "#/$defs/uidOrNull" }, "status": { "$ref": "#/$defs/scalar" }, "retry_count": { "$ref": "#/$defs/scalar" }, "error_code": { "$ref": "#/$defs/scalar" }, "error_detail_ref": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "started_at": { "$ref": "#/$defs/scalar" }, "completed_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "workflowRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "workflow_uid", "graph_snapshot_json", "trigger_type", "status", "retry_count", "error_code", "error_detail_ref", "created_at", "started_at", "completed_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "workflow_uid": { "$ref": "#/$defs/uid" }, "graph_snapshot_json": { "type": "string" }, "trigger_type": { "$ref": "#/$defs/scalar" }, "status": { "$ref": "#/$defs/scalar" }, "retry_count": { "$ref": "#/$defs/scalar" }, "error_code": { "$ref": "#/$defs/scalar" }, "error_detail_ref": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "started_at": { "$ref": "#/$defs/scalar" }, "completed_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "nodeRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "workflow_run_uid", "node_uid", "input_snapshot_json", "output_json", "cache_key", "status", "retry_count", "error_code", "error_detail_ref", "created_at", "started_at", "completed_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "workflow_run_uid": { "$ref": "#/$defs/uid" }, "node_uid": { "$ref": "#/$defs/uid" }, "input_snapshot_json": { "type": "string" }, "output_json": { "oneOf": [{ "type": "string" }, { "type": "null" }] }, "cache_key": { "$ref": "#/$defs/scalar" }, "status": { "$ref": "#/$defs/scalar" }, "retry_count": { "$ref": "#/$defs/scalar" }, "error_code": { "$ref": "#/$defs/scalar" }, "error_detail_ref": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "started_at": { "$ref": "#/$defs/scalar" }, "completed_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "exportRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "drama_uid", "workflow_run_uid", "timeline_snapshot_json", "encoding_json", "audio_json", "subtitle_json", "output_asset_version_uid", "validation_json", "status", "error_code", "error_detail_ref", "created_at", "started_at", "completed_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "drama_uid": { "$ref": "#/$defs/uid" }, "workflow_run_uid": { "$ref": "#/$defs/uidOrNull" }, "timeline_snapshot_json": { "type": "string" }, "encoding_json": { "type": "string" }, "audio_json": { "type": "string" }, "subtitle_json": { "type": "string" }, "output_asset_version_uid": { "$ref": "#/$defs/uidOrNull" }, "validation_json": { "type": "string" }, "status": { "$ref": "#/$defs/scalar" }, "error_code": { "$ref": "#/$defs/scalar" }, "error_detail_ref": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "started_at": { "$ref": "#/$defs/scalar" }, "completed_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
+    },
+    "records": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceDocuments", "sourceBlocks", "sourceSelections", "assets", "assetVersions", "workflowDefinitions", "canvasNodes", "canvasEdges", "generationRuns", "workflowRuns", "nodeRuns", "exportRuns"],
+      "properties": {
+        "sourceDocuments": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/sourceDocument" } },
+        "sourceBlocks": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/sourceBlock" } },
+        "sourceSelections": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/sourceSelection" } },
+        "assets": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/asset" } },
+        "assetVersions": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/assetVersion" } },
+        "workflowDefinitions": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/workflowDefinition" } },
+        "canvasNodes": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/canvasNode" } },
+        "canvasEdges": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/canvasEdge" } },
+        "generationRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/generationRun" } },
+        "workflowRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/workflowRun" } },
+        "nodeRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/nodeRun" } },
+        "exportRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/exportRun" } }
+      }
+    }
+  }
+}

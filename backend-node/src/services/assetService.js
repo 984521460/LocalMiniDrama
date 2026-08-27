@@ -1,5 +1,8 @@
+const { resolveLegacyAssetTable } = require('../db/legacyAssetTable');
+
 function list(db, query) {
-  let sql = 'FROM assets WHERE deleted_at IS NULL';
+  const assetTable = resolveLegacyAssetTable(db);
+  let sql = `FROM ${assetTable} WHERE deleted_at IS NULL`;
   const params = [];
   if (query.drama_id) {
     sql += ' AND drama_id = ?';
@@ -36,14 +39,16 @@ function rowToItem(r) {
 }
 
 function getById(db, id) {
-  const r = db.prepare('SELECT * FROM assets WHERE id = ? AND deleted_at IS NULL').get(Number(id));
+  const assetTable = resolveLegacyAssetTable(db);
+  const r = db.prepare(`SELECT * FROM ${assetTable} WHERE id = ? AND deleted_at IS NULL`).get(Number(id));
   return r ? rowToItem(r) : null;
 }
 
 function create(db, log, req) {
+  const assetTable = resolveLegacyAssetTable(db);
   const now = new Date().toISOString();
   const info = db.prepare(
-    `INSERT INTO assets (drama_id, name, type, category, url, local_path, file_size, mime_type, width, height, duration, image_gen_id, video_gen_id, created_at, updated_at)
+    `INSERT INTO ${assetTable} (drama_id, name, type, category, url, local_path, file_size, mime_type, width, height, duration, image_gen_id, video_gen_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     req.drama_id ?? null,
@@ -66,7 +71,8 @@ function create(db, log, req) {
 }
 
 function update(db, log, id, req) {
-  const row = db.prepare('SELECT id FROM assets WHERE id = ? AND deleted_at IS NULL').get(Number(id));
+  const assetTable = resolveLegacyAssetTable(db);
+  const row = db.prepare(`SELECT id FROM ${assetTable} WHERE id = ? AND deleted_at IS NULL`).get(Number(id));
   if (!row) return null;
   const updates = [];
   const params = [];
@@ -78,13 +84,14 @@ function update(db, log, id, req) {
   });
   if (updates.length === 0) return getById(db, id);
   params.push(new Date().toISOString(), id);
-  db.prepare('UPDATE assets SET ' + updates.join(', ') + ', updated_at = ? WHERE id = ?').run(...params);
+  db.prepare(`UPDATE ${assetTable} SET ` + updates.join(', ') + ', updated_at = ? WHERE id = ?').run(...params);
   return getById(db, id);
 }
 
 function deleteById(db, log, id) {
+  const assetTable = resolveLegacyAssetTable(db);
   const now = new Date().toISOString();
-  const result = db.prepare('UPDATE assets SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL').run(now, Number(id));
+  const result = db.prepare(`UPDATE ${assetTable} SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`).run(now, Number(id));
   return result.changes > 0;
 }
 

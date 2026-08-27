@@ -17,6 +17,12 @@ const router = createRouter({
       meta: { title: '剧集管理' }
     },
     {
+      path: '/drama/:id/narrative',
+      name: 'narrative-workflow',
+      component: () => import('@/views/NarrativeWorkflow.vue'),
+      meta: { title: '原文与选区' }
+    },
+    {
       path: '/film/:id',
       name: 'film',
       component: () => import('@/views/FilmCreate.vue'),

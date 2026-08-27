@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v3/episode-adaptation.schema.json",
+  "title": "EpisodeAdaptationTask output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "durationSummary", "beats", "adaptationDecisions"],
+  "properties": {
+    "schemaVersion": { "const": "episode-adaptation.v1" },
+    "durationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetSeconds", "toleranceSeconds", "totalSeconds"],
+      "properties": {
+        "targetSeconds": { "type": "integer", "minimum": 45, "maximum": 75 },
+        "toleranceSeconds": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "totalSeconds": { "type": "integer", "minimum": 45, "maximum": 75 }
+      }
+    },
+    "beats": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/beat" }, { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "hook" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/beat" }, { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "setup" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/beat" }, { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "escalation" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/beat" }, { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "climax" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/beat" }, { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "cliffhanger" } } }] }
+      ],
+      "items": false
+    },
+    "adaptationDecisions": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/adaptationDecision" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "factRefs": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "decisionRefs": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "beat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "beatId",
+        "kind",
+        "summary",
+        "classification",
+        "inferenceRationale",
+        "estimatedDurationSeconds",
+        "factRefs",
+        "adaptationDecisionRefs"
+      ],
+      "properties": {
+        "beatId": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["hook", "setup", "escalation", "climax", "cliffhanger"] },
+        "summary": { "$ref": "#/$defs/summary" },
+        "classification": { "enum": ["fact", "inference", "adaptation"] },
+        "inferenceRationale": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 2000 },
+            { "type": "null" }
+          ]
+        },
+        "estimatedDurationSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "factRefs": { "$ref": "#/$defs/factRefs" },
+        "adaptationDecisionRefs": { "$ref": "#/$defs/decisionRefs" }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["classification"], "properties": { "classification": { "const": "fact" } } },
+          "then": {
+            "properties": {
+              "inferenceRationale": { "type": "null" },
+              "factRefs": { "type": "array", "minItems": 1 },
+              "adaptationDecisionRefs": { "type": "array", "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "required": ["classification"], "properties": { "classification": { "const": "inference" } } },
+          "then": {
+            "properties": {
+              "inferenceRationale": { "type": "string", "minLength": 1 },
+              "factRefs": { "type": "array", "minItems": 1 },
+              "adaptationDecisionRefs": { "type": "array", "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "required": ["classification"], "properties": { "classification": { "const": "adaptation" } } },
+          "then": {
+            "properties": {
+              "inferenceRationale": { "type": "null" },
+              "adaptationDecisionRefs": { "type": "array", "minItems": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "adaptationDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisionId", "classification", "category", "summary", "rationale", "factRefs"],
+      "properties": {
+        "decisionId": { "$ref": "#/$defs/identifier" },
+        "classification": { "const": "adaptation" },
+        "category": {
+          "enum": [
+            "invented-event",
+            "compressed-timeline",
+            "merged-character",
+            "changed-setting",
+            "added-dialogue",
+            "other"
+          ]
+        },
+        "summary": { "$ref": "#/$defs/summary" },
+        "rationale": { "$ref": "#/$defs/summary" },
+        "factRefs": { "$ref": "#/$defs/factRefs" }
+      }
+    }
+  }
+}
