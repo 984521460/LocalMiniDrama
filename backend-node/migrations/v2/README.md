@@ -50,3 +50,18 @@ milliseconds. The service derives canonical UTC ISO text at its public
 boundary, so SQLite and JavaScript never compete as timestamp parsers. Every
 event sharing an operation identity must bind the same root/reason/time, and
 the complete propagation rolls back if any audit event cannot be written.
+
+Migration `0006_workflow_graph_registry.sql` binds workflow definitions to the
+stable Phase 4 node registry and adds a monotonic graph revision. Whole-graph
+updates advance the revision exactly once so optimistic saves can fail without
+persisting partial nodes or edges.
+
+Migration `0007_workflow_run_state_integrity.sql` binds workflow and node runs
+to an immutable canonical graph snapshot, enforces legal state transitions,
+caps retry evidence at 100, and preserves node-run identity independently of
+mutable canvas rows. Project-archive restore does not bypass these guards: it
+replays validated history from the queued state inside the import transaction.
+The
+provisional pre-v4 run format cannot be converted into a verifiable canonical
+snapshot in SQL, so this migration fails atomically when legacy workflow-run
+rows exist instead of silently accepting unverifiable history.

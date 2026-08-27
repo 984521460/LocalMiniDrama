@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v4/workflow-registry.schema.json",
+  "title": "LocalMiniDrama Workflow Registry v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "registryVersion", "valueTypes", "nodes"],
+  "properties": {
+    "schemaVersion": { "const": "4.0" },
+    "registryVersion": { "const": "4.0.0" },
+    "valueTypes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/valueType" }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/node" }
+    }
+  },
+  "$defs": {
+    "valueType": {
+      "type": "string",
+      "enum": [
+        "SourceDocument",
+        "SourceSelection",
+        "StoryFacts",
+        "EpisodeBeats",
+        "StructuredScript",
+        "Character",
+        "ReferenceImage",
+        "CharacterIdentityVersion",
+        "CharacterReferencePack",
+        "SceneVersion",
+        "PropVersion",
+        "AssetRefs",
+        "Shot",
+        "PromptProfile",
+        "PromptSemantic",
+        "ImageAsset",
+        "WorkflowManifest",
+        "VideoAsset",
+        "Dialogue",
+        "VoiceProfile",
+        "AudioAsset",
+        "SubtitleTrack",
+        "MusicAsset",
+        "FinalVideoAsset"
+      ]
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "valueType", "cardinality", "required"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9]*$", "maxLength": 64 },
+        "valueType": { "$ref": "#/$defs/valueType" },
+        "cardinality": { "enum": ["one", "many"] },
+        "required": { "type": "boolean" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "title", "inputs", "outputs"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "source.selection",
+            "story.facts",
+            "episode.adaptation",
+            "script.structured",
+            "asset.character",
+            "asset.character_candidates",
+            "asset.character_pack",
+            "asset.scene",
+            "asset.prop",
+            "shot.plan",
+            "shot.image",
+            "shot.video",
+            "audio.tts",
+            "subtitle.align",
+            "bgm.track",
+            "export.final"
+          ]
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "inputs": { "type": "array", "items": { "$ref": "#/$defs/port" } },
+        "outputs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/port" } }
+      }
+    }
+  }
+}

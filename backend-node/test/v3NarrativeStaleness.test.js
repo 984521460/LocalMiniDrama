@@ -158,7 +158,7 @@ function states(database, resultUids) {
 
 test('migration five installs the staleness state and append-only audit contract', (t) => {
   const database = createMigratedV2Database(t);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 5);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 7);
   assert.deepEqual(
     database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'narrative_stale_events'").all(),
     [{ name: 'narrative_stale_events' }],
@@ -233,6 +233,13 @@ test('migration five backfills one immutable audit event for each legacy stale r
     () => database.prepare("UPDATE narrative_stale_events SET reason_code = 'narrative_result_superseded' WHERE result_uid = ?").run(chain[1]),
     /immutable/i,
   );
+  for (const filename of [
+    '0006_workflow_graph_registry.sql',
+    '0007_workflow_run_state_integrity.sql',
+  ]) {
+    fs.copyFileSync(path.join(MIGRATIONS_DIR, filename), path.join(migrationsDir, filename));
+  }
+  assert.equal(runV2Migrations(database, { migrationsDir }).currentVersion, 7);
   assert.equal(createService(database).listEvents(chain[1])[0].staledAt, '2026-01-02T00:00:00.000Z');
 });
 

@@ -8,6 +8,7 @@ const Database = require('better-sqlite3');
 
 const { V2MigrationError, runV2Migrations } = require('../src/db/v2');
 const assetService = require('../src/services/assetService');
+const { createWorkflowPlanFixture } = require('./helpers/v2RepositoryDatabase');
 
 const BASE_TABLES = Object.freeze([
   'source_documents',
@@ -80,8 +81,8 @@ function migrateEmptyLegacyDatabase(database) {
     VALUES ('legacy poster', 'image', 'legacy://poster', '2026-01-01', '2026-01-01')
   `).run();
   const result = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5]);
-  assert.equal(result.currentVersion, 5);
+  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(result.currentVersion, 7);
 }
 
 function assertBaseTableContract(database) {
@@ -214,16 +215,38 @@ function insertValidGraph(database) {
        output_asset_version_uid, status)
     VALUES (?, 'asset', ?, 'comfyui', 'minimax-h3', 42, '{"steps":4}', '{}', ?, 'succeeded')
   `).run(ids.generationRun, ids.asset, ids.assetVersionTwo);
-  database.prepare(`
-    INSERT INTO workflow_runs
-      (uid, workflow_uid, graph_snapshot_json, trigger_type, status)
-    VALUES (?, ?, '{"nodes":2,"edges":1}', 'full', 'running')
-  `).run(ids.workflowRun, ids.workflow);
-  database.prepare(`
-    INSERT INTO node_runs
-      (uid, workflow_run_uid, node_uid, input_snapshot_json, output_json, status)
-    VALUES (?, ?, ?, '{}', '{"assetVersionUid":"${ids.assetVersionTwo}"}', 'succeeded')
-  `).run(ids.nodeRun, ids.workflowRun, ids.nodeAsset);
+  const hasRunSnapshotBinding = database.prepare('PRAGMA table_info(workflow_runs)').all()
+    .some((column) => column.name === 'graph_hash');
+  if (hasRunSnapshotBinding) {
+    const workflowPlan = createWorkflowPlanFixture(ids.workflow, [ids.nodeAsset]);
+    database.prepare(`
+      INSERT INTO workflow_runs
+        (uid, workflow_uid, graph_snapshot_json, graph_hash, graph_revision, trigger_type, status)
+      VALUES (?, ?, ?, ?, ?, 'full', 'queued')
+    `).run(
+      ids.workflowRun,
+      ids.workflow,
+      JSON.stringify(workflowPlan),
+      workflowPlan.graphHash,
+      workflowPlan.graphRevision,
+    );
+    database.prepare(`
+      INSERT INTO node_runs
+        (uid, workflow_run_uid, node_uid, ordinal, input_snapshot_json, status)
+      VALUES (?, ?, ?, 0, '{}', 'queued')
+    `).run(ids.nodeRun, ids.workflowRun, ids.nodeAsset);
+  } else {
+    database.prepare(`
+      INSERT INTO workflow_runs
+        (uid, workflow_uid, graph_snapshot_json, trigger_type, status)
+      VALUES (?, ?, '{"nodes":2,"edges":1}', 'full', 'running')
+    `).run(ids.workflowRun, ids.workflow);
+    database.prepare(`
+      INSERT INTO node_runs
+        (uid, workflow_run_uid, node_uid, input_snapshot_json, output_json, status)
+      VALUES (?, ?, ?, '{}', '{"assetVersionUid":"${ids.assetVersionTwo}"}', 'succeeded')
+    `).run(ids.nodeRun, ids.workflowRun, ids.nodeAsset);
+  }
 
   database.prepare(`
     INSERT INTO remote_connections
@@ -260,13 +283,21 @@ function insertOtherExecutionContext(database) {
     VALUES (?, ?, 'Other execution graph', 1, 'active')
   `).run(ids.workflow, ids.drama);
   database.prepare(`
-    INSERT INTO workflow_runs (uid, workflow_uid, graph_snapshot_json, trigger_type, status)
-    VALUES (?, ?, '{}', 'manual', 'queued')
-  `).run(ids.workflowRun, ids.workflow);
-  database.prepare(`
     INSERT INTO canvas_nodes (uid, workflow_uid, node_type, position_json, config_json, status)
     VALUES (?, ?, 'source.selection', '{}', '{}', 'ready')
   `).run(ids.node, ids.workflow);
+  const workflowPlan = createWorkflowPlanFixture(ids.workflow, [ids.node]);
+  database.prepare(`
+    INSERT INTO workflow_runs
+      (uid, workflow_uid, graph_snapshot_json, graph_hash, graph_revision, trigger_type, status)
+    VALUES (?, ?, ?, ?, ?, 'manual', 'queued')
+  `).run(
+    ids.workflowRun,
+    ids.workflow,
+    JSON.stringify(workflowPlan),
+    workflowPlan.graphHash,
+    workflowPlan.graphRevision,
+  );
   database.prepare(`
     INSERT INTO remote_connections
       (uid, name, host, port, username, credential_ref, status)
@@ -342,6 +373,32 @@ test('upgrades an existing version-two database with append-only source evidence
   );
   assert.equal(database.prepare('SELECT block_count FROM source_documents WHERE uid = ?')
     .get(ids.document).block_count, 2);
+});
+
+test('migration seven fails atomically instead of accepting unverifiable provisional run history', (t) => {
+  const workspace = createWorkspace(t);
+  const migrationsDir = path.join(workspace.root, 'through-version-six');
+  fs.mkdirSync(migrationsDir);
+  for (const filename of fs.readdirSync(V2_MIGRATIONS_DIR).filter((name) => /^000[1-6]_.*\.sql$/u.test(name))) {
+    fs.copyFileSync(path.join(V2_MIGRATIONS_DIR, filename), path.join(migrationsDir, filename));
+  }
+  const database = openDatabase(workspace, 'legacy-runs.sqlite');
+  database.exec(LEGACY_SCHEMA_SQL);
+  assert.equal(runV2Migrations(database, { migrationsDir }).currentVersion, 6);
+  insertValidGraph(database);
+
+  assert.throws(
+    () => runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR }),
+    (error) => error instanceof V2MigrationError && error.code === 'MIGRATION_EXECUTION_FAILED',
+  );
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 6);
+  assert.equal(database.prepare('PRAGMA table_info(workflow_runs)').all()
+    .some((column) => column.name === 'graph_hash'), false);
+  assert.equal(database.prepare(`
+    SELECT count(*) AS count FROM sqlite_master
+    WHERE type = 'table' AND name = 'v2_migration_0007_empty_run_guard'
+  `).get().count, 0);
+  assert.equal(database.pragma('integrity_check', { simple: true }), 'ok');
 });
 
 test('refuses to seal a version-two source document that has no evidence blocks', (t) => {
@@ -426,7 +483,7 @@ test('enforces UUID, JSON, status, relationship, uniqueness, and relative-path b
   for (const table of STATUS_TABLES) {
     assert.throws(
       () => database.prepare(`UPDATE ${table} SET status = 'unknown-state' WHERE uid = (SELECT min(uid) FROM ${table})`).run(),
-      /CHECK constraint failed/i,
+      /CHECK constraint failed|status transition is invalid|state fields are inconsistent/i,
       `${table}.status must use its declared state set`,
     );
   }
@@ -435,7 +492,7 @@ test('enforces UUID, JSON, status, relationship, uniqueness, and relative-path b
     for (const invalidUid of [`${uid(900)}\0tail`, Buffer.from(uid(901))]) {
       assert.throws(
         () => database.prepare(`UPDATE ${table} SET uid = ? WHERE uid = (SELECT min(uid) FROM ${table})`).run(invalidUid),
-        /CHECK constraint failed|(?:run|task) ownership is immutable|source (?:document|block|selection).*immutable/i,
+        /CHECK constraint failed|(?:run|task) (?:ownership|identity|snapshot and identity) (?:is|are) immutable|source (?:document|block|selection).*immutable/i,
         `${table}.uid must reject NUL-suffixed text and BLOB values`,
       );
     }
@@ -455,11 +512,11 @@ test('enforces UUID, JSON, status, relationship, uniqueness, and relative-path b
   );
   assert.throws(
     () => database.prepare(`UPDATE workflow_runs SET graph_snapshot_json = '[]' WHERE uid = ?`).run(ids.workflowRun),
-    /CHECK constraint failed/i,
+    /CHECK constraint failed|snapshot and identity are immutable/i,
   );
   assert.throws(
     () => database.prepare(`UPDATE node_runs SET input_snapshot_json = '[]' WHERE uid = ?`).run(ids.nodeRun),
-    /CHECK constraint failed/i,
+    /CHECK constraint failed|state fields are inconsistent/i,
   );
   assert.throws(
     () => database.prepare(`UPDATE export_runs SET timeline_snapshot_json = '[]' WHERE uid = ?`).run(ids.exportRun),
@@ -544,10 +601,10 @@ test('enforces UUID, JSON, status, relationship, uniqueness, and relative-path b
   );
   assert.throws(
     () => database.prepare(`
-      INSERT INTO node_runs (uid, workflow_run_uid, node_uid, input_snapshot_json, status)
-      VALUES (?, ?, ?, '{}', 'queued')
+      INSERT INTO node_runs (uid, workflow_run_uid, node_uid, ordinal, input_snapshot_json, status)
+      VALUES (?, ?, ?, 1, '{}', 'queued')
     `).run(uid(63), ids.workflowRun, otherNode),
-    /node run must reference a node from its workflow/i,
+    /node run (?:must reference a node from its workflow|initial state and snapshot binding are invalid)/i,
   );
   assert.throws(
     () => database.prepare('UPDATE canvas_nodes SET workflow_uid = ? WHERE uid = ?')
@@ -557,7 +614,7 @@ test('enforces UUID, JSON, status, relationship, uniqueness, and relative-path b
   assert.throws(
     () => database.prepare('UPDATE workflow_runs SET workflow_uid = ? WHERE uid = ?')
       .run(otherWorkflow, ids.workflowRun),
-    /workflow run ownership is immutable/i,
+    /workflow run (?:ownership is|snapshot and identity are) immutable/i,
   );
 
   assert.throws(
@@ -621,8 +678,8 @@ test('rolls back a failed base-table migration and succeeds after the schema col
 
   database.exec('DROP TABLE source_documents');
   const recovered = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5]);
-  assert.equal(recovered.currentVersion, 5);
+  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7]);
+  assert.equal(recovered.currentVersion, 7);
   assertBaseTableContract(database);
   assert.equal(database.prepare('SELECT count(*) AS count FROM legacy_assets').get().count, 0);
   assert.equal(database.pragma('integrity_check', { simple: true }), 'ok');
@@ -732,16 +789,18 @@ test('keeps node run ownership immutable after creation', (t) => {
     INSERT INTO canvas_nodes (uid, workflow_uid, node_type, position_json, config_json, status)
     VALUES (?, ?, 'source.selection', '{}', '{}', 'ready')
   `).run(otherNode, otherWorkflow);
+  const otherPlan = createWorkflowPlanFixture(otherWorkflow, [otherNode]);
   database.prepare(`
-    INSERT INTO workflow_runs (uid, workflow_uid, graph_snapshot_json, trigger_type, status)
-    VALUES (?, ?, '{}', 'manual', 'queued')
-  `).run(otherRun, otherWorkflow);
+    INSERT INTO workflow_runs
+      (uid, workflow_uid, graph_snapshot_json, graph_hash, graph_revision, trigger_type, status)
+    VALUES (?, ?, ?, ?, ?, 'manual', 'queued')
+  `).run(otherRun, otherWorkflow, JSON.stringify(otherPlan), otherPlan.graphHash, otherPlan.graphRevision);
 
   assert.throws(
     () => database.prepare(`
       UPDATE node_runs SET workflow_run_uid = ?, node_uid = ? WHERE uid = ?
     `).run(otherRun, otherNode, ids.nodeRun),
-    /node run ownership is immutable/i,
+    /node run (?:ownership|identity) is immutable/i,
   );
   assert.deepEqual(database.prepare(`
     SELECT workflow_run_uid, node_uid FROM node_runs WHERE uid = ?
@@ -758,8 +817,6 @@ test('stores only machine error codes and versioned opaque error detail referenc
   const ids = insertValidGraph(database);
   const runRows = [
     ['generation_runs', ids.generationRun],
-    ['workflow_runs', ids.workflowRun],
-    ['node_runs', ids.nodeRun],
     ['remote_tasks', ids.remoteTask],
     ['export_runs', ids.exportRun],
   ];
@@ -808,6 +865,47 @@ test('stores only machine error codes and versioned opaque error detail referenc
       error_detail_ref: validReference,
     });
   });
+
+  const statefulRuns = [
+    ['workflow_runs', ids.workflowRun, 'failed'],
+    ['node_runs', ids.nodeRun, 'blocked'],
+  ];
+  statefulRuns.forEach(([table, rowUid, failedStatus], tableIndex) => {
+    for (const invalidReference of invalidReferences) {
+      assert.throws(
+        () => database.prepare(`
+          UPDATE ${table}
+          SET status = ?, completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+              error_code = 'ERR_PROVIDER_FAILURE', error_detail_ref = ?
+          WHERE uid = ?
+        `).run(failedStatus, invalidReference, rowUid),
+        /CHECK constraint failed/i,
+      );
+    }
+    for (const invalidCode of invalidCodes) {
+      assert.throws(
+        () => database.prepare(`
+          UPDATE ${table}
+          SET status = ?, completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+              error_code = ?, error_detail_ref = ?
+          WHERE uid = ?
+        `).run(failedStatus, invalidCode, `error-detail:v1:${uid(1550 + tableIndex)}`, rowUid),
+        /CHECK constraint failed/i,
+      );
+    }
+    const validReference = `error-detail:v1:${uid(1560 + tableIndex)}`;
+    database.prepare(`
+      UPDATE ${table}
+      SET status = ?, completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          error_code = 'ERR_PROVIDER_FAILURE', error_detail_ref = ?
+      WHERE uid = ?
+    `).run(failedStatus, validReference, rowUid);
+    assert.deepEqual(database.prepare(`SELECT error_code, error_detail_ref FROM ${table} WHERE uid = ?`)
+      .get(rowUid), {
+      error_code: 'ERR_PROVIDER_FAILURE',
+      error_detail_ref: validReference,
+    });
+  });
 });
 
 test('keeps adjacent execution ownership immutable and enforces export drama consistency', (t) => {
@@ -816,6 +914,7 @@ test('keeps adjacent execution ownership immutable and enforces export drama con
   migrateEmptyLegacyDatabase(database);
   const ids = insertValidGraph(database);
   const other = insertOtherExecutionContext(database);
+  const replacementPlan = createWorkflowPlanFixture(other.workflow, [other.node]);
 
   assert.throws(
     () => database.prepare('UPDATE generation_runs SET owner_type = ?, owner_uid = ? WHERE uid = ?')
@@ -858,16 +957,22 @@ test('keeps adjacent execution ownership immutable and enforces export drama con
   assert.throws(
     () => database.prepare(`
       INSERT OR REPLACE INTO workflow_runs
-        (uid, workflow_uid, graph_snapshot_json, trigger_type, status)
-      VALUES (?, ?, '{}', 'manual', 'queued')
-    `).run(ids.workflowRun, other.workflow),
+        (uid, workflow_uid, graph_snapshot_json, graph_hash, graph_revision, trigger_type, status)
+      VALUES (?, ?, ?, ?, ?, 'manual', 'queued')
+    `).run(
+      ids.workflowRun,
+      other.workflow,
+      JSON.stringify(replacementPlan),
+      replacementPlan.graphHash,
+      replacementPlan.graphRevision,
+    ),
     /workflow run identity cannot be replaced/i,
   );
   assert.throws(
     () => database.prepare(`
       INSERT OR REPLACE INTO node_runs
-        (uid, workflow_run_uid, node_uid, input_snapshot_json, status)
-      VALUES (?, ?, ?, '{}', 'queued')
+        (uid, workflow_run_uid, node_uid, ordinal, input_snapshot_json, status)
+      VALUES (?, ?, ?, 0, '{}', 'queued')
     `).run(ids.nodeRun, other.workflowRun, other.node),
     /node run identity cannot be replaced/i,
   );

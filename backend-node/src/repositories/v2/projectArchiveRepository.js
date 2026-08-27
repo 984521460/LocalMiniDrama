@@ -1,5 +1,6 @@
 const { RECORD_NAMES, RECORD_SPECS } = require('../../adapters/v2/zip/manifest');
 const { assertDatabase } = require('./repositorySupport');
+const { createWorkflowRunArchiveReplay } = require('./workflowRunArchiveReplay');
 
 const CORE_TABLES = Object.freeze(['dramas', 'episodes', 'characters', 'scenes', 'props', 'storyboards']);
 const GLOBAL_V2_TABLES = Object.freeze(['workflow_manifests', 'remote_connections', 'remote_tasks']);
@@ -47,7 +48,12 @@ function createProjectArchiveRepository(database) {
   `);
   const listSourceBlocks = database.prepare('SELECT * FROM source_blocks WHERE document_uid = ? ORDER BY ordinal, uid');
   const listSourceSelections = database.prepare('SELECT * FROM source_selections WHERE document_uid = ? ORDER BY created_at, uid');
-  const listWorkflowDefinitions = database.prepare('SELECT * FROM workflow_definitions WHERE drama_uid = ? ORDER BY name, version, uid');
+  const listWorkflowDefinitions = database.prepare(`
+    SELECT uid, drama_uid, name, version, status, description, created_at, updated_at
+    FROM workflow_definitions
+    WHERE drama_uid = ?
+    ORDER BY name, version, uid
+  `);
   const listCanvasNodes = database.prepare('SELECT * FROM canvas_nodes WHERE workflow_uid = ? ORDER BY created_at, uid');
   const listCanvasEdges = database.prepare('SELECT * FROM canvas_edges WHERE workflow_uid = ? ORDER BY created_at, uid');
   const listWorkflowRuns = database.prepare('SELECT * FROM workflow_runs WHERE workflow_uid = ? ORDER BY created_at, uid');
@@ -87,6 +93,7 @@ function createProjectArchiveRepository(database) {
       (@uid, @drama_uid, @source_type, @original_name, @encoding, @content_sha256, @full_text, @block_count, @created_at)
   `);
   const setCurrentAssetVersion = database.prepare('UPDATE assets SET current_version_uid = ? WHERE uid = ?');
+  const workflowRunArchiveReplay = createWorkflowRunArchiveReplay(database);
 
   function exportCore(dramaId) {
     const drama = getDrama.get(dramaId);
@@ -297,7 +304,14 @@ function createProjectArchiveRepository(database) {
     for (const row of manifest.records.assets) {
       if (row.current_version_uid !== null) setCurrentAssetVersion.run(row.current_version_uid, row.uid);
     }
-    for (const name of ['generationRuns', 'workflowRuns', 'nodeRuns', 'exportRuns']) {
+    for (const name of ['generationRuns']) {
+      for (const row of manifest.records[name]) insertRecords[name].run(row);
+    }
+    workflowRunArchiveReplay.importHistory(
+      manifest.records.workflowRuns,
+      manifest.records.nodeRuns,
+    );
+    for (const name of ['exportRuns']) {
       for (const row of manifest.records[name]) insertRecords[name].run(row);
     }
     assertImportedUidSnapshot(manifest);

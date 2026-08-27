@@ -11,6 +11,7 @@ const {
   createV2Repositories,
 } = require('../src/repositories/v2');
 const {
+  createWorkflowPlanFixture,
   createMigratedV2Database,
   insertDrama,
   uid,
@@ -213,17 +214,23 @@ test('selection, manifest, workflow run, node run, and export tables use explici
   });
   assert.deepEqual(repositories.workflows.findManifest(manifest.manifestId, manifest.version).requirements, [{ type: 'model', id: 'h3' }]);
 
+  const workflowPlan = createWorkflowPlanFixture(
+    graph.definition.uid,
+    [graph.nodes[0].uid],
+    graph.definition.graphRevision,
+  );
   const workflowRun = repositories.runs.createWorkflowWithNodes({
     run: {
-      uid: uid(2258), workflowUid: graph.definition.uid, graphSnapshot: { nodes: [graph.nodes[0].uid] },
+      uid: uid(2258), workflowUid: graph.definition.uid, graphSnapshot: workflowPlan,
+      graphHash: workflowPlan.graphHash, graphRevision: workflowPlan.graphRevision,
       triggerType: 'selection', status: 'queued',
     },
     nodes: [
-      { uid: uid(2259), nodeUid: graph.nodes[0].uid, inputSnapshot: { selectionUid: selection.uid }, output: null, cacheKey: null, status: 'queued' },
+      { uid: uid(2259), nodeUid: graph.nodes[0].uid, ordinal: 0, inputSnapshot: {}, output: null, cacheKey: null, status: 'queued' },
     ],
   });
-  assert.deepEqual(workflowRun.run.graphSnapshot, { nodes: [graph.nodes[0].uid] });
-  assert.deepEqual(workflowRun.nodes[0].inputSnapshot, { selectionUid: selection.uid });
+  assert.deepEqual(JSON.parse(JSON.stringify(workflowRun.run.graphSnapshot)), JSON.parse(JSON.stringify(workflowPlan)));
+  assert.deepEqual(workflowRun.nodes[0].inputSnapshot, {});
 
   const exportRun = repositories.runs.createExport({
     uid: uid(2260),

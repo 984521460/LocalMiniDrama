@@ -1,4 +1,4 @@
-const { executeWrite, requiredRow } = require('./repositorySupport');
+const { executeWrite, optimisticResult, requiredRow } = require('./repositorySupport');
 const { freezeSnapshot, mapRow, mapRows, serializeJson } = require('./rowMapping');
 
 const DEFINITION_MAP = Object.freeze({ entity: 'workflow definition' });
@@ -68,14 +68,34 @@ function createWorkflowRepository(database) {
     SELECT * FROM workflow_definitions WHERE drama_uid = ? ORDER BY name, version, uid
   `);
   const listNodeRows = database.prepare(`
-    SELECT * FROM canvas_nodes WHERE workflow_uid = ? ORDER BY created_at, uid
+    SELECT * FROM canvas_nodes WHERE workflow_uid = ? ORDER BY uid
   `);
   const listEdgeRows = database.prepare(`
-    SELECT * FROM canvas_edges WHERE workflow_uid = ? ORDER BY created_at, uid
+    SELECT * FROM canvas_edges WHERE workflow_uid = ? ORDER BY uid
   `);
+  const definitionExists = database.prepare('SELECT 1 FROM workflow_definitions WHERE uid = ?');
+  const deleteEdges = database.prepare('DELETE FROM canvas_edges WHERE workflow_uid = ?');
+  const deleteNodes = database.prepare('DELETE FROM canvas_nodes WHERE workflow_uid = ?');
+  let advanceGraphRevision;
+
+  function graphRevisionStatement() {
+    if (!advanceGraphRevision) {
+      advanceGraphRevision = database.prepare(`
+        UPDATE workflow_definitions
+        SET graph_revision = graph_revision + 1,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE uid = @workflowUid AND graph_revision = @expectedRevision
+      `);
+    }
+    return advanceGraphRevision;
+  }
 
   const insertGraph = database.transaction(({ definition, nodes, edges }) => {
-    insertDefinition.run(definition);
+    insertDefinition.run({
+      registryVersion: '4.0.0',
+      graphRevision: 0,
+      ...definition,
+    });
     for (const node of nodes) {
       insertNode.run({
         ...node,
@@ -85,6 +105,28 @@ function createWorkflowRepository(database) {
       });
     }
     for (const edge of edges) insertEdge.run({ ...edge, workflowUid: definition.uid });
+  });
+
+  const replaceGraphTransaction = database.transaction(({ workflowUid, expectedRevision, nodes, edges }) => {
+    const result = graphRevisionStatement().run({ workflowUid, expectedRevision });
+    optimisticResult({
+      changes: result.changes,
+      exists: () => Boolean(definitionExists.get(workflowUid)),
+      entity: 'workflow graph',
+      uid: workflowUid,
+      operation: 'updated',
+    });
+    deleteEdges.run(workflowUid);
+    deleteNodes.run(workflowUid);
+    for (const node of nodes) {
+      insertNode.run({
+        ...node,
+        workflowUid,
+        positionJson: serializeJson(node.position, {}),
+        configJson: serializeJson(node.config, {}),
+      });
+    }
+    for (const edge of edges) insertEdge.run({ ...edge, workflowUid });
   });
 
   function getDefinition(uid) {
@@ -129,6 +171,16 @@ function createWorkflowRepository(database) {
     getDefinition,
     getGraph,
     getManifest,
+
+    replaceGraph({ workflowUid, expectedRevision, nodes = [], edges = [] }) {
+      executeWrite('workflow graph', 'updated', () => replaceGraphTransaction({
+        workflowUid,
+        expectedRevision,
+        nodes,
+        edges,
+      }));
+      return getGraph(workflowUid);
+    },
 
     listByDrama(dramaUid) {
       return mapRows(listDefinitionRows.all(dramaUid), DEFINITION_MAP);

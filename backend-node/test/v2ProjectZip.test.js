@@ -11,6 +11,8 @@ const Database = require('better-sqlite3');
 
 const { runMigrationsAndEnsure } = require('../src/db/migrate');
 const { createV2Repositories } = require('../src/repositories/v2');
+const { createWorkflowExecutionPlan } = require('../src/workflows/executionPlan');
+const { validateRunAggregate } = require('../src/workflows/runState');
 const createDramaRoutes = require('../src/routes/drama');
 const projectZipService = require('../src/services/projectZipService');
 const { createProjectImportMediaStaging } = require('../src/services/projectImportMediaStaging');
@@ -36,6 +38,7 @@ const UUIDS = Object.freeze({
   workflowRun: '40000000-0000-4000-8000-000000000002',
   nodeRun: '40000000-0000-4000-8000-000000000003',
   exportRun: '40000000-0000-4000-8000-000000000004',
+  nodeRunB: '40000000-0000-4000-8000-000000000005',
 });
 
 function createLog() {
@@ -163,19 +166,19 @@ function addProjectScopedV2Data(database, dramaUid) {
         uid: UUIDS.nodeA,
         nodeType: 'source.selection',
         position: { x: 10, y: 20 },
-        config: { mode: 'reviewed' },
-        domainRefType: 'source_selection',
-        domainRefUid: UUIDS.selection,
-        status: 'ready',
+        config: { contextBeforeBlocks: 0 },
+        domainRefType: null,
+        domainRefUid: null,
+        status: 'disabled',
       },
       {
         uid: UUIDS.nodeB,
-        nodeType: 'asset.image',
+        nodeType: 'story.facts',
         position: { x: 210, y: 20 },
-        config: { quality: 'preview' },
+        config: {},
         domainRefType: null,
         domainRefUid: null,
-        status: 'ready',
+        status: 'disabled',
       },
     ],
     edges: [{
@@ -183,7 +186,7 @@ function addProjectScopedV2Data(database, dramaUid) {
       sourceNodeUid: UUIDS.nodeA,
       sourcePort: 'selection',
       targetNodeUid: UUIDS.nodeB,
-      targetPort: 'input',
+      targetPort: 'selection',
     }],
   });
 
@@ -221,22 +224,40 @@ function addProjectScopedV2Data(database, dramaUid) {
     promptVersionUid: null,
     status: 'queued',
   });
+  const workflowPlan = createWorkflowExecutionPlan(
+    repositories.workflows.getGraph(UUIDS.workflow),
+    repositories,
+  );
   repositories.runs.createWorkflowWithNodes({
     run: {
       uid: UUIDS.workflowRun,
       workflowUid: UUIDS.workflow,
-      graphSnapshot: { version: 1 },
+      graphSnapshot: workflowPlan,
+      graphHash: workflowPlan.graphHash,
+      graphRevision: workflowPlan.graphRevision,
       triggerType: 'manual',
       status: 'queued',
     },
-    nodes: [{
-      uid: UUIDS.nodeRun,
-      nodeUid: UUIDS.nodeA,
-      inputSnapshot: { selectionUid: UUIDS.selection },
-      output: null,
-      cacheKey: null,
-      status: 'queued',
-    }],
+    nodes: [
+      {
+        uid: UUIDS.nodeRun,
+        nodeUid: UUIDS.nodeA,
+        ordinal: 0,
+        inputSnapshot: {},
+        output: null,
+        cacheKey: null,
+        status: 'queued',
+      },
+      {
+        uid: UUIDS.nodeRunB,
+        nodeUid: UUIDS.nodeB,
+        ordinal: 1,
+        inputSnapshot: {},
+        output: null,
+        cacheKey: null,
+        status: 'queued',
+      },
+    ],
   });
   repositories.runs.createExport({
     uid: UUIDS.exportRun,
@@ -250,6 +271,123 @@ function addProjectScopedV2Data(database, dramaUid) {
     validation: { playable: true },
     status: 'queued',
   });
+}
+
+function archiveHistoryUid(index) {
+  return `41000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+}
+
+function runHistoryMatrix(manifest) {
+  const workflowTemplate = manifest.records.workflowRuns[0];
+  const nodeTemplates = manifest.records.nodeRuns;
+  const timestamp = workflowTemplate.created_at;
+  const definitions = [
+    {
+      workflow: { status: 'queued', started_at: null, completed_at: null, error_code: null },
+      nodes: [
+        { status: 'queued' },
+        { status: 'queued' },
+      ],
+    },
+    {
+      workflow: { status: 'running', started_at: timestamp, completed_at: null, error_code: null },
+      nodes: [
+        { status: 'running', started_at: timestamp, input: { stage: 'running' }, cache_key: 'c'.repeat(64) },
+        { status: 'cancelled', completed_at: timestamp },
+      ],
+    },
+    {
+      workflow: { status: 'succeeded', started_at: timestamp, completed_at: timestamp, error_code: null },
+      nodes: [
+        { status: 'succeeded', started_at: timestamp, completed_at: timestamp, input: { stage: 'done' }, output: { assetUid: UUIDS.asset } },
+        { status: 'skipped', completed_at: timestamp },
+      ],
+    },
+    {
+      workflow: { status: 'failed', started_at: timestamp, completed_at: timestamp, error_code: 'ERR_FIXTURE' },
+      nodes: [
+        { status: 'failed', started_at: timestamp, completed_at: timestamp, input: { stage: 'failed' }, error_code: 'ERR_FIXTURE' },
+        { status: 'blocked', completed_at: timestamp, error_code: 'ERR_DEPENDENCY' },
+      ],
+    },
+    {
+      workflow: { status: 'cancelled', started_at: null, completed_at: timestamp, error_code: null },
+      nodes: [
+        { status: 'cancelled', completed_at: timestamp },
+        { status: 'queued' },
+      ],
+    },
+  ];
+  const workflowRuns = [];
+  const nodeRuns = [];
+  definitions.forEach((definition, runIndex) => {
+    const workflowRunUid = archiveHistoryUid(100 + runIndex);
+    workflowRuns.push({
+      ...workflowTemplate,
+      uid: workflowRunUid,
+      retry_count: runIndex === 3 ? 1 : 0,
+      error_detail_ref: null,
+      updated_at: timestamp,
+      ...definition.workflow,
+    });
+    definition.nodes.forEach((state, nodeIndex) => {
+      const input = state.input || {};
+      nodeRuns.push({
+        ...nodeTemplates[nodeIndex],
+        uid: archiveHistoryUid(200 + (runIndex * 2) + nodeIndex),
+        workflow_run_uid: workflowRunUid,
+        input_snapshot_json: JSON.stringify(input),
+        output_json: state.output ? JSON.stringify(state.output) : null,
+        cache_key: state.cache_key || null,
+        retry_count: runIndex === 3 && nodeIndex === 0 ? 1 : 0,
+        error_code: state.error_code || null,
+        error_detail_ref: null,
+        started_at: state.started_at || null,
+        completed_at: state.completed_at || null,
+        updated_at: timestamp,
+        status: state.status,
+      });
+    });
+  });
+  return { workflowRuns, nodeRuns };
+}
+
+function archiveRunAggregate(workflowRun, nodeRuns) {
+  return {
+    run: {
+      uid: workflowRun.uid,
+      workflowUid: workflowRun.workflow_uid,
+      graphSnapshot: JSON.parse(workflowRun.graph_snapshot_json),
+      graphHash: workflowRun.graph_hash,
+      graphRevision: workflowRun.graph_revision,
+      triggerType: workflowRun.trigger_type,
+      status: workflowRun.status,
+      retryCount: workflowRun.retry_count,
+      errorCode: workflowRun.error_code,
+      errorDetailRef: workflowRun.error_detail_ref,
+      createdAt: workflowRun.created_at,
+      startedAt: workflowRun.started_at,
+      completedAt: workflowRun.completed_at,
+      updatedAt: workflowRun.updated_at,
+    },
+    nodes: nodeRuns.map((nodeRun) => ({
+      uid: nodeRun.uid,
+      workflowRunUid: nodeRun.workflow_run_uid,
+      nodeUid: nodeRun.node_uid,
+      ordinal: nodeRun.ordinal,
+      inputSnapshot: JSON.parse(nodeRun.input_snapshot_json),
+      output: nodeRun.output_json === null ? null : JSON.parse(nodeRun.output_json),
+      cacheKey: nodeRun.cache_key,
+      status: nodeRun.status,
+      retryCount: nodeRun.retry_count,
+      errorCode: nodeRun.error_code,
+      errorDetailRef: nodeRun.error_detail_ref,
+      createdAt: nodeRun.created_at,
+      startedAt: nodeRun.started_at,
+      completedAt: nodeRun.completed_at,
+      updatedAt: nodeRun.updated_at,
+    })),
+  };
 }
 
 function readV2Manifest(zipBuffer) {
@@ -286,7 +424,7 @@ test('startup migration keeps v1 ZIP import compatible and installs the v2 ledge
   const result = projectZipService.importDrama(database, { storage: { local_path: storage } }, createLog(), createV1Zip());
 
   assert.equal(result.title, 'Phase 0 最小迁移样例');
-  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 5);
+  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 7);
   assert.equal(database.prepare('SELECT count(*) AS count FROM source_documents').get().count, 0);
 });
 
@@ -332,6 +470,120 @@ test('v2 project ZIP preserves portable project data through export and clean-da
   ]) {
     assert.equal(destination.prepare(`SELECT count(*) AS count FROM ${table}`).get().count > 0, true, table);
   }
+});
+
+test('v2 project ZIP replays every legal workflow and node run state without weakening initial inserts', (t) => {
+  const source = createDatabase(t);
+  const sourceStorage = createStorage(t);
+  const log = createLog();
+  const imported = projectZipService.importDrama(
+    source,
+    { storage: { local_path: sourceStorage } },
+    log,
+    createV1Zip(),
+  );
+  const drama = source.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(imported.drama_id);
+  addProjectScopedV2Data(source, drama.uid);
+  const exported = projectZipService.exportDrama(
+    source,
+    { storage: { local_path: sourceStorage } },
+    log,
+    drama.id,
+  );
+  const manifest = readV2Manifest(exported.buffer);
+  const history = runHistoryMatrix(manifest);
+  for (const workflowRun of history.workflowRuns) {
+    const nodeRuns = history.nodeRuns
+      .filter((nodeRun) => nodeRun.workflow_run_uid === workflowRun.uid)
+      .sort((left, right) => left.ordinal - right.ordinal);
+    assert.doesNotThrow(
+      () => validateRunAggregate(archiveRunAggregate(workflowRun, nodeRuns)),
+      `archive run aggregate must be valid for status ${workflowRun.status}`,
+    );
+  }
+  manifest.records.workflowRuns = history.workflowRuns;
+  manifest.records.nodeRuns = history.nodeRuns;
+  manifest.records.exportRuns = [];
+  const archive = replaceJsonEntry(exported.buffer, 'v2/manifest.json', manifest);
+
+  const destination = createDatabase(t);
+  const destinationStorage = createStorage(t);
+  const restored = projectZipService.importDrama(
+    destination,
+    { storage: { local_path: destinationStorage } },
+    log,
+    archive,
+  );
+  const restoredManifest = readV2Manifest(projectZipService.exportDrama(
+    destination,
+    { storage: { local_path: destinationStorage } },
+    log,
+    restored.drama_id,
+  ).buffer);
+  assert.deepEqual(restoredManifest.records.workflowRuns, history.workflowRuns);
+  assert.deepEqual(restoredManifest.records.nodeRuns, history.nodeRuns);
+  assert.deepEqual(
+    [...new Set(restoredManifest.records.workflowRuns.map((row) => row.status))].sort(),
+    ['cancelled', 'failed', 'queued', 'running', 'succeeded'],
+  );
+  assert.deepEqual(
+    [...new Set(restoredManifest.records.nodeRuns.map((row) => row.status))].sort(),
+    ['blocked', 'cancelled', 'failed', 'queued', 'running', 'skipped', 'succeeded'],
+  );
+
+  const template = history.workflowRuns[0];
+  assert.throws(() => destination.prepare(`
+    INSERT INTO workflow_runs
+      (uid, workflow_uid, graph_snapshot_json, graph_hash, graph_revision, trigger_type,
+       status, retry_count, error_code, error_detail_ref, created_at, started_at,
+       completed_at, updated_at)
+    VALUES
+      (?, @workflow_uid, @graph_snapshot_json, @graph_hash, @graph_revision, @trigger_type,
+       'succeeded', 0, NULL, NULL, @created_at, @created_at, @created_at, @updated_at)
+  `).run(archiveHistoryUid(900), template), /initial state/i);
+
+  destination.prepare(`
+    INSERT INTO workflow_runs
+      (uid, workflow_uid, graph_snapshot_json, graph_hash, graph_revision, trigger_type,
+       status, retry_count, error_code, error_detail_ref, created_at, started_at,
+       completed_at, updated_at)
+    VALUES
+      (?, @workflow_uid, @graph_snapshot_json, @graph_hash, @graph_revision, @trigger_type,
+       'queued', 0, NULL, NULL, @created_at, NULL, NULL, @updated_at)
+  `).run(archiveHistoryUid(901), template);
+  assert.throws(() => destination.prepare(`
+    INSERT INTO node_runs
+      (uid, workflow_run_uid, node_uid, ordinal, input_snapshot_json, output_json,
+       cache_key, status, retry_count, error_code, error_detail_ref, created_at,
+       started_at, completed_at, updated_at)
+    VALUES
+      (?, ?, ?, 0, '{}', NULL, NULL, 'skipped', 0, NULL, NULL, ?, NULL, ?, ?)
+  `).run(
+    archiveHistoryUid(902),
+    archiveHistoryUid(901),
+    UUIDS.nodeA,
+    template.created_at,
+    template.created_at,
+    template.updated_at,
+  ), /initial state/i);
+
+  const tampered = structuredClone(manifest);
+  const succeeded = tampered.records.nodeRuns.find((row) => row.status === 'succeeded');
+  succeeded.output_json = null;
+  const rejected = createDatabase(t);
+  const rejectedStorage = path.join(createStorage(t), 'must-not-exist');
+  assert.throws(
+    () => projectZipService.importDrama(
+      rejected,
+      { storage: { local_path: rejectedStorage } },
+      log,
+      replaceJsonEntry(exported.buffer, 'v2/manifest.json', tampered),
+    ),
+    (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
+  );
+  assert.equal(rejected.prepare('SELECT count(*) FROM dramas').pluck().get(), 0);
+  assert.equal(rejected.prepare('SELECT count(*) FROM workflow_runs').pluck().get(), 0);
+  assert.equal(fs.existsSync(rejectedStorage), false);
 });
 
 test('v2 import rejects incomplete or drifted source evidence before any database write', (t) => {
@@ -506,6 +758,20 @@ test('manifest schema and runtime both reject incomplete, extra, and unclosed re
   unclosed.records.sourceBlocks[0].document_uid = '90000000-0000-4000-8000-000000000001';
   assert.throws(
     () => projectZipService.importDrama(createDatabase(t), { storage: { local_path: createStorage(t) } }, log, replaceJsonEntry(exported.buffer, 'v2/manifest.json', unclosed)),
+    (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
+  );
+
+  const driftedRun = structuredClone(readV2Manifest(exported.buffer));
+  driftedRun.records.workflowRuns[0].graph_hash = 'f'.repeat(64);
+  assert.throws(
+    () => projectZipService.importDrama(createDatabase(t), { storage: { local_path: createStorage(t) } }, log, replaceJsonEntry(exported.buffer, 'v2/manifest.json', driftedRun)),
+    (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
+  );
+
+  const incompleteRun = structuredClone(readV2Manifest(exported.buffer));
+  incompleteRun.records.nodeRuns.pop();
+  assert.throws(
+    () => projectZipService.importDrama(createDatabase(t), { storage: { local_path: createStorage(t) } }, log, replaceJsonEntry(exported.buffer, 'v2/manifest.json', incompleteRun)),
     (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
   );
 });

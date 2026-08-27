@@ -45,15 +45,15 @@ function createRunRepository(database) {
   `);
   const insertWorkflowRun = database.prepare(`
     INSERT INTO workflow_runs
-      (uid, workflow_uid, graph_snapshot_json, trigger_type, status)
+      (uid, workflow_uid, graph_snapshot_json, graph_hash, graph_revision, trigger_type, status)
     VALUES
-      (@uid, @workflowUid, @graphSnapshotJson, @triggerType, @status)
+      (@uid, @workflowUid, @graphSnapshotJson, @graphHash, @graphRevision, @triggerType, @status)
   `);
   const insertNodeRun = database.prepare(`
     INSERT INTO node_runs
-      (uid, workflow_run_uid, node_uid, input_snapshot_json, output_json, cache_key, status)
+      (uid, workflow_run_uid, node_uid, ordinal, input_snapshot_json, output_json, cache_key, status)
     VALUES
-      (@uid, @workflowRunUid, @nodeUid, @inputSnapshotJson, @outputJson, @cacheKey, @status)
+      (@uid, @workflowRunUid, @nodeUid, @ordinal, @inputSnapshotJson, @outputJson, @cacheKey, @status)
   `);
   const insertExport = database.prepare(`
     INSERT INTO export_runs
@@ -68,7 +68,10 @@ function createRunRepository(database) {
   const getNodeRunRow = database.prepare('SELECT * FROM node_runs WHERE uid = ?');
   const getExportRow = database.prepare('SELECT * FROM export_runs WHERE uid = ?');
   const listNodeRunRows = database.prepare(`
-    SELECT * FROM node_runs WHERE workflow_run_uid = ? ORDER BY created_at, uid
+    SELECT * FROM node_runs WHERE workflow_run_uid = ? ORDER BY ordinal
+  `);
+  const listWorkflowRunRows = database.prepare(`
+    SELECT * FROM workflow_runs WHERE workflow_uid = ? ORDER BY created_at DESC, uid DESC LIMIT 100
   `);
   const updateGenerationStatus = database.prepare(`
     UPDATE generation_runs
@@ -83,20 +86,39 @@ function createRunRepository(database) {
   const updateWorkflowStatus = database.prepare(`
     UPDATE workflow_runs
     SET status = @nextStatus,
+        retry_count = CASE
+          WHEN @expectedStatus = 'failed' AND @nextStatus = 'running' THEN retry_count + 1
+          ELSE retry_count END,
         started_at = CASE WHEN @nextStatus = 'running' AND started_at IS NULL
           THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE started_at END,
         completed_at = CASE WHEN @nextStatus IN ('succeeded', 'failed', 'cancelled')
-          THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE completed_at END,
+          THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE NULL END,
+        error_code = CASE WHEN @nextStatus = 'failed' THEN @errorCode ELSE NULL END,
+        error_detail_ref = CASE WHEN @nextStatus = 'failed' THEN @errorDetailRef ELSE NULL END,
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     WHERE uid = @uid AND status = @expectedStatus
   `);
   const updateNodeStatus = database.prepare(`
     UPDATE node_runs
     SET status = @nextStatus,
+        input_snapshot_json = CASE
+          WHEN @expectedStatus = 'queued' AND @nextStatus = 'running' THEN @inputSnapshotJson
+          WHEN @expectedStatus IN ('failed', 'blocked') AND @nextStatus = 'queued' THEN '{}'
+          ELSE input_snapshot_json END,
+        output_json = CASE WHEN @nextStatus = 'succeeded' THEN @outputJson ELSE NULL END,
+        cache_key = CASE
+          WHEN @expectedStatus = 'queued' AND @nextStatus = 'running' THEN @cacheKey
+          WHEN @expectedStatus IN ('failed', 'blocked') AND @nextStatus = 'queued' THEN NULL
+          ELSE cache_key END,
         started_at = CASE WHEN @nextStatus = 'running' AND started_at IS NULL
-          THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE started_at END,
-        completed_at = CASE WHEN @nextStatus IN ('succeeded', 'failed', 'cancelled', 'skipped')
-          THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE completed_at END,
+          THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          WHEN @nextStatus = 'queued' THEN NULL ELSE started_at END,
+        completed_at = CASE WHEN @nextStatus IN ('succeeded', 'failed', 'cancelled', 'blocked', 'skipped')
+          THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE NULL END,
+        retry_count = CASE WHEN @expectedStatus IN ('failed', 'blocked') AND @nextStatus = 'queued'
+          THEN retry_count + 1 ELSE retry_count END,
+        error_code = CASE WHEN @nextStatus IN ('failed', 'blocked') THEN @errorCode ELSE NULL END,
+        error_detail_ref = CASE WHEN @nextStatus IN ('failed', 'blocked') THEN @errorDetailRef ELSE NULL END,
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     WHERE uid = @uid AND status = @expectedStatus
   `);
@@ -195,7 +217,12 @@ function createRunRepository(database) {
     },
 
     createWorkflowWithNodes({ run, nodes = [] }) {
-      executeWrite('workflow run', 'created', () => createWorkflowTransaction({ run, nodes }));
+      const persisted = {
+        ...run,
+        graphHash: run.graphHash,
+        graphRevision: run.graphRevision,
+      };
+      executeWrite('workflow run', 'created', () => createWorkflowTransaction({ run: persisted, nodes }));
       return freezeSnapshot({ run: getWorkflow(run.uid), nodes: mapRows(listNodeRunRows.all(run.uid), NODE_RUN_MAP) });
     },
 
@@ -208,6 +235,10 @@ function createRunRepository(database) {
       return freezeSnapshot({ run: getWorkflow(uid), nodes: mapRows(listNodeRunRows.all(uid), NODE_RUN_MAP) });
     },
 
+    listWorkflowRuns(workflowUid) {
+      return mapRows(listWorkflowRunRows.all(workflowUid), WORKFLOW_RUN_MAP);
+    },
+
     transitionExportStatus(input) {
       return transition(input, transitionDescriptors.export);
     },
@@ -217,11 +248,44 @@ function createRunRepository(database) {
     },
 
     transitionNodeStatus(input) {
-      return transition(input, transitionDescriptors.node);
+      const result = executeWrite('node run', 'transitioned', () => updateNodeStatus.run({
+        uid: input.uid,
+        expectedStatus: input.expectedStatus,
+        nextStatus: input.nextStatus,
+        inputSnapshotJson: serializeJson(input.inputSnapshot, {}),
+        outputJson: input.output === undefined || input.output === null
+          ? null
+          : serializeJson(input.output, {}),
+        cacheKey: input.cacheKey ?? null,
+        errorCode: input.errorCode ?? null,
+        errorDetailRef: input.errorDetailRef ?? null,
+      }));
+      optimisticResult({
+        changes: result.changes,
+        exists: () => Boolean(getNodeRunRow.get(input.uid)),
+        entity: 'node run',
+        uid: input.uid,
+        operation: 'transitioned',
+      });
+      return getNode(input.uid);
     },
 
     transitionWorkflowStatus(input) {
-      return transition(input, transitionDescriptors.workflow);
+      const result = executeWrite('workflow run', 'transitioned', () => updateWorkflowStatus.run({
+        uid: input.uid,
+        expectedStatus: input.expectedStatus,
+        nextStatus: input.nextStatus,
+        errorCode: input.errorCode ?? null,
+        errorDetailRef: input.errorDetailRef ?? null,
+      }));
+      optimisticResult({
+        changes: result.changes,
+        exists: () => Boolean(getWorkflowRunRow.get(input.uid)),
+        entity: 'workflow run',
+        uid: input.uid,
+        operation: 'transitioned',
+      });
+      return getWorkflow(input.uid);
     },
   });
 }

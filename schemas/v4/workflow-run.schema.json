@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v4/workflow-run.schema.json",
+  "title": "LocalMiniDrama Workflow Run Aggregate v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run", "nodes"],
+  "properties": {
+    "run": { "$ref": "#/$defs/workflowRun" },
+    "nodes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/nodeRun" }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "timestampOrNull": {
+      "oneOf": [
+        { "$ref": "#/$defs/timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "errorCodeOrNull": {
+      "oneOf": [
+        { "type": "string", "pattern": "^ERR_[A-Z0-9_]{1,60}$" },
+        { "type": "null" }
+      ]
+    },
+    "errorDetailRefOrNull": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^error-detail:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        { "type": "null" }
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "maxProperties": 10000
+    },
+    "workflowRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid", "workflowUid", "graphSnapshot", "graphHash", "graphRevision", "triggerType",
+        "status", "retryCount", "errorCode", "errorDetailRef", "createdAt", "startedAt",
+        "completedAt", "updatedAt"
+      ],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uuid" },
+        "workflowUid": { "$ref": "#/$defs/uuid" },
+        "graphSnapshot": {
+          "$ref": "https://local-mini-drama.invalid/schemas/v4/workflow-execution-plan.schema.json"
+        },
+        "graphHash": { "$ref": "#/$defs/sha256" },
+        "graphRevision": { "type": "integer", "minimum": 0 },
+        "triggerType": { "enum": ["manual", "node", "downstream", "selection", "full", "system"] },
+        "status": { "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
+        "retryCount": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "errorCode": { "$ref": "#/$defs/errorCodeOrNull" },
+        "errorDetailRef": { "$ref": "#/$defs/errorDetailRefOrNull" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "startedAt": { "$ref": "#/$defs/timestampOrNull" },
+        "completedAt": { "$ref": "#/$defs/timestampOrNull" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "queued" } }, "required": ["status"] },
+          "then": { "properties": { "retryCount": { "const": 0 }, "startedAt": { "type": "null" }, "completedAt": { "type": "null" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "running" } }, "required": ["status"] },
+          "then": { "properties": { "startedAt": { "$ref": "#/$defs/timestamp" }, "completedAt": { "type": "null" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] },
+          "then": { "properties": { "startedAt": { "$ref": "#/$defs/timestamp" }, "completedAt": { "$ref": "#/$defs/timestamp" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+          "then": { "properties": { "completedAt": { "$ref": "#/$defs/timestamp" }, "errorCode": { "type": "string", "pattern": "^ERR_[A-Z0-9_]{1,60}$" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "cancelled" } }, "required": ["status"] },
+          "then": { "properties": { "completedAt": { "$ref": "#/$defs/timestamp" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        }
+      ]
+    },
+    "nodeRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid", "workflowRunUid", "nodeUid", "ordinal", "inputSnapshot", "output", "cacheKey",
+        "status", "retryCount", "errorCode", "errorDetailRef", "createdAt", "startedAt",
+        "completedAt", "updatedAt"
+      ],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uuid" },
+        "workflowRunUid": { "$ref": "#/$defs/uuid" },
+        "nodeUid": { "$ref": "#/$defs/uuid" },
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 499 },
+        "inputSnapshot": { "$ref": "#/$defs/payload" },
+        "output": {
+          "oneOf": [
+            { "$ref": "#/$defs/payload" },
+            { "type": "null" }
+          ]
+        },
+        "cacheKey": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "status": { "enum": ["queued", "running", "succeeded", "failed", "cancelled", "blocked", "skipped"] },
+        "retryCount": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "errorCode": { "$ref": "#/$defs/errorCodeOrNull" },
+        "errorDetailRef": { "$ref": "#/$defs/errorDetailRefOrNull" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "startedAt": { "$ref": "#/$defs/timestampOrNull" },
+        "completedAt": { "$ref": "#/$defs/timestampOrNull" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "queued" } }, "required": ["status"] },
+          "then": { "properties": { "inputSnapshot": { "type": "object", "maxProperties": 0 }, "output": { "type": "null" }, "cacheKey": { "type": "null" }, "startedAt": { "type": "null" }, "completedAt": { "type": "null" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "running" } }, "required": ["status"] },
+          "then": { "properties": { "output": { "type": "null" }, "startedAt": { "$ref": "#/$defs/timestamp" }, "completedAt": { "type": "null" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] },
+          "then": { "properties": { "output": { "$ref": "#/$defs/payload" }, "startedAt": { "$ref": "#/$defs/timestamp" }, "completedAt": { "$ref": "#/$defs/timestamp" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["failed", "blocked"] } }, "required": ["status"] },
+          "then": { "properties": { "output": { "type": "null" }, "completedAt": { "$ref": "#/$defs/timestamp" }, "errorCode": { "type": "string", "pattern": "^ERR_[A-Z0-9_]{1,60}$" } } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["cancelled", "skipped"] } }, "required": ["status"] },
+          "then": { "properties": { "output": { "type": "null" }, "completedAt": { "$ref": "#/$defs/timestamp" }, "errorCode": { "type": "null" }, "errorDetailRef": { "type": "null" } } }
+        }
+      ]
+    }
+  }
+}

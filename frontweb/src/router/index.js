@@ -23,6 +23,12 @@ const router = createRouter({
       meta: { title: '原文与选区' }
     },
     {
+      path: '/drama/:id/workflow',
+      name: 'workflow-canvas',
+      component: () => import('@/views/WorkflowCanvas.vue'),
+      meta: { title: 'v2 工作流画布' }
+    },
+    {
       path: '/film/:id',
       name: 'film',
       component: () => import('@/views/FilmCreate.vue'),

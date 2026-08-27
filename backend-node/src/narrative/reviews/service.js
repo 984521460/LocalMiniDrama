@@ -4,7 +4,7 @@ const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
   V2RepositoryNotFoundError,
-} = require('../../repositories/v2');
+} = require('../../repositories/v2/errors');
 const {
   normalizeNarrativeResult,
   resultContract,

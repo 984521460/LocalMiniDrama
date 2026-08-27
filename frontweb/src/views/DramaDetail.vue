@@ -21,8 +21,11 @@
           <el-button type="primary" plain @click="goNarrative">
             <el-icon><Document /></el-icon>原文与选区
           </el-button>
+          <el-button type="primary" plain @click="goWorkflowCanvas">
+            <el-icon><Connection /></el-icon>v2 工作流
+          </el-button>
           <el-button type="primary" plain @click="goCanvasMode">
-            <el-icon><Grid /></el-icon>画布模式
+            <el-icon><Grid /></el-icon>经典画布
           </el-button>
         </div>
       </div>
@@ -923,6 +926,10 @@ function goCreate() {
 
 function goNarrative() {
   router.push(`/drama/${dramaId}/narrative`)
+}
+
+function goWorkflowCanvas() {
+  router.push(`/drama/${dramaId}/workflow`)
 }
 
 function goCanvasMode() {

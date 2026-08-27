@@ -1,4 +1,5 @@
 const { archiveError } = require('./errors');
+const { validateRunAggregate } = require('../../../workflows/runState');
 
 const SCHEMA_VERSION = '2.0.0';
 const ARCHIVE_KIND = 'local-mini-drama-project';
@@ -48,12 +49,12 @@ const RECORD_SPECS = Object.freeze({
   }),
   workflowRuns: Object.freeze({
     table: 'workflow_runs',
-    columns: Object.freeze(['uid', 'workflow_uid', 'graph_snapshot_json', 'trigger_type', 'status', 'retry_count', 'error_code', 'error_detail_ref', 'created_at', 'started_at', 'completed_at', 'updated_at']),
+    columns: Object.freeze(['uid', 'workflow_uid', 'graph_snapshot_json', 'graph_hash', 'graph_revision', 'trigger_type', 'status', 'retry_count', 'error_code', 'error_detail_ref', 'created_at', 'started_at', 'completed_at', 'updated_at']),
     json: Object.freeze({ graph_snapshot_json: 'object' }),
   }),
   nodeRuns: Object.freeze({
     table: 'node_runs',
-    columns: Object.freeze(['uid', 'workflow_run_uid', 'node_uid', 'input_snapshot_json', 'output_json', 'cache_key', 'status', 'retry_count', 'error_code', 'error_detail_ref', 'created_at', 'started_at', 'completed_at', 'updated_at']),
+    columns: Object.freeze(['uid', 'workflow_run_uid', 'node_uid', 'ordinal', 'input_snapshot_json', 'output_json', 'cache_key', 'status', 'retry_count', 'error_code', 'error_detail_ref', 'created_at', 'started_at', 'completed_at', 'updated_at']),
     json: Object.freeze({ input_snapshot_json: 'object', output_json: 'object?' }),
   }),
   exportRuns: Object.freeze({
@@ -349,6 +350,45 @@ function assertTypedReference(sets, type, uid) {
   if (typeof type !== 'string' || typeof uid !== 'string' || !sets.get(type)?.has(uid)) invalidManifest();
 }
 
+function workflowRunRecord(row) {
+  return {
+    uid: row.uid,
+    workflowUid: row.workflow_uid,
+    graphSnapshot: JSON.parse(row.graph_snapshot_json),
+    graphHash: row.graph_hash,
+    graphRevision: row.graph_revision,
+    triggerType: row.trigger_type,
+    status: row.status,
+    retryCount: row.retry_count,
+    errorCode: row.error_code,
+    errorDetailRef: row.error_detail_ref,
+    createdAt: row.created_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function nodeRunRecord(row) {
+  return {
+    uid: row.uid,
+    workflowRunUid: row.workflow_run_uid,
+    nodeUid: row.node_uid,
+    ordinal: row.ordinal,
+    inputSnapshot: JSON.parse(row.input_snapshot_json),
+    output: row.output_json === null ? null : JSON.parse(row.output_json),
+    cacheKey: row.cache_key,
+    status: row.status,
+    retryCount: row.retry_count,
+    errorCode: row.error_code,
+    errorDetailRef: row.error_detail_ref,
+    createdAt: row.created_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function assertManifestClosure(manifest) {
   const records = manifest.records;
   const typed = createTypedUidSets(manifest);
@@ -359,6 +399,12 @@ function assertManifestClosure(manifest) {
   const assetByUid = new Map(records.assets.map((row) => [row.uid, row]));
   const versionByUid = new Map(records.assetVersions.map((row) => [row.uid, row]));
   const workflowRunByUid = new Map(records.workflowRuns.map((row) => [row.uid, row]));
+  const nodeRunsByWorkflowRun = new Map();
+  for (const row of records.nodeRuns) {
+    const rows = nodeRunsByWorkflowRun.get(row.workflow_run_uid) || [];
+    rows.push(row);
+    nodeRunsByWorkflowRun.set(row.workflow_run_uid, rows);
+  }
 
   for (const row of records.sourceDocuments) {
     if (row.drama_uid !== manifest.project.dramaUid) invalidManifest();
@@ -416,6 +462,16 @@ function assertManifestClosure(manifest) {
   }
   for (const row of records.workflowRuns) {
     if (!workflowByUid.has(row.workflow_uid)) invalidManifest();
+    try {
+      validateRunAggregate({
+        run: workflowRunRecord(row),
+        nodes: [...(nodeRunsByWorkflowRun.get(row.uid) || [])]
+          .sort((left, right) => left.ordinal - right.ordinal)
+          .map(nodeRunRecord),
+      });
+    } catch {
+      invalidManifest();
+    }
   }
   for (const row of records.nodeRuns) {
     const run = workflowRunByUid.get(row.workflow_run_uid);

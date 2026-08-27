@@ -23,6 +23,7 @@ const promptOverridesRoutes = require('./promptOverrides');
 const sceneModelMapRoutes = require('./sceneModelMap');
 const sourceDocumentRoutes = require('./v2/sourceDocuments');
 const narrativeReviewRoutes = require('./v2/narrativeReviews');
+const workflowRoutes = require('./v2/workflows');
 
 function setupRouter(cfg, db, log) {
   const r = express.Router();
@@ -51,9 +52,11 @@ function setupRouter(cfg, db, log) {
   const promptOverrides = promptOverridesRoutes.routes(db, log);
   const sourceDocuments = sourceDocumentRoutes(db, log);
   const narrativeReviews = narrativeReviewRoutes(db, log);
+  const workflows = workflowRoutes(db, log);
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
+  r.use('/v2', workflows);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

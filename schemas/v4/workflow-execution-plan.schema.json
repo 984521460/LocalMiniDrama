@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v4/workflow-execution-plan.schema.json",
+  "title": "LocalMiniDrama Workflow Execution Plan v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "registryVersion", "workflowUid", "graphRevision", "graphHash", "snapshot", "topologicalOrder"],
+  "properties": {
+    "schemaVersion": { "const": "4.0" },
+    "registryVersion": { "const": "4.0.0" },
+    "workflowUid": { "$ref": "#/$defs/uuid" },
+    "graphRevision": { "type": "integer", "minimum": 0 },
+    "graphHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "snapshot": { "$ref": "#/$defs/snapshot" },
+    "topologicalOrder": {
+      "type": "array",
+      "maxItems": 500,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/uuid" }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "domainRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "uid"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "uid": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number", "minimum": -1000000, "maximum": 1000000 },
+        "y": { "type": "number", "minimum": -1000000, "maximum": 1000000 }
+      }
+    },
+    "candidateCount": { "type": "integer", "minimum": 1, "maximum": 16 },
+    "contextBlocks": { "type": "integer", "minimum": 0, "maximum": 50 },
+    "credentialRef": {
+      "type": "string",
+      "pattern": "^credential:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+    "dimension": { "type": "integer", "minimum": 64, "maximum": 8192 },
+    "fps": { "type": "integer", "minimum": 1, "maximum": 120 },
+    "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+    "targetSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+    "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+    "sourceSelectionConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contextAfterBlocks": { "$ref": "#/$defs/contextBlocks" },
+        "contextBeforeBlocks": { "$ref": "#/$defs/contextBlocks" }
+      }
+    },
+    "storyFactsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "temperature": { "$ref": "#/$defs/temperature" }
+      }
+    },
+    "episodeAdaptationConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "targetSeconds": { "$ref": "#/$defs/targetSeconds" },
+        "temperature": { "$ref": "#/$defs/temperature" }
+      }
+    },
+    "scriptStructuredConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "temperature": { "$ref": "#/$defs/temperature" }
+      }
+    },
+    "profileConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "profileUid": { "$ref": "#/$defs/uuid" } }
+    },
+    "candidateAssetConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidateCount": { "$ref": "#/$defs/candidateCount" },
+        "credentialRef": { "$ref": "#/$defs/credentialRef" },
+        "height": { "$ref": "#/$defs/dimension" },
+        "manifestUid": { "$ref": "#/$defs/uuid" },
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "seed": { "$ref": "#/$defs/seed" },
+        "width": { "$ref": "#/$defs/dimension" }
+      }
+    },
+    "shotPlanConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxShots": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "targetSeconds": { "$ref": "#/$defs/targetSeconds" },
+        "temperature": { "$ref": "#/$defs/temperature" }
+      }
+    },
+    "shotImageConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "credentialRef": { "$ref": "#/$defs/credentialRef" },
+        "height": { "$ref": "#/$defs/dimension" },
+        "manifestUid": { "$ref": "#/$defs/uuid" },
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "seed": { "$ref": "#/$defs/seed" },
+        "width": { "$ref": "#/$defs/dimension" }
+      }
+    },
+    "shotVideoConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "credentialRef": { "$ref": "#/$defs/credentialRef" },
+        "durationMs": { "$ref": "#/$defs/durationMs" },
+        "fps": { "$ref": "#/$defs/fps" },
+        "height": { "$ref": "#/$defs/dimension" },
+        "manifestUid": { "$ref": "#/$defs/uuid" },
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "seed": { "$ref": "#/$defs/seed" },
+        "width": { "$ref": "#/$defs/dimension" }
+      }
+    },
+    "ttsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "credentialRef": { "$ref": "#/$defs/credentialRef" },
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "speed": { "type": "number", "minimum": 0.5, "maximum": 2 }
+      }
+    },
+    "bgmConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "credentialRef": { "$ref": "#/$defs/credentialRef" },
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "targetSeconds": { "$ref": "#/$defs/targetSeconds" }
+      }
+    },
+    "exportConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "mp4" },
+        "fps": { "$ref": "#/$defs/fps" },
+        "height": { "$ref": "#/$defs/dimension" },
+        "width": { "$ref": "#/$defs/dimension" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "nodeType", "position", "config", "domainRef", "enabled"],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uuid" },
+        "nodeType": {
+          "enum": [
+            "source.selection", "story.facts", "episode.adaptation", "script.structured",
+            "asset.character", "asset.character_candidates", "asset.character_pack",
+            "asset.scene", "asset.prop", "shot.plan", "shot.image", "shot.video",
+            "audio.tts", "subtitle.align", "bgm.track", "export.final"
+          ]
+        },
+        "position": { "$ref": "#/$defs/position" },
+        "config": { "type": "object" },
+        "domainRef": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/domainRef" }] },
+        "enabled": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "nodeType": { "const": "source.selection" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/sourceSelectionConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "story.facts" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/storyFactsConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "episode.adaptation" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/episodeAdaptationConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "script.structured" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/scriptStructuredConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "enum": ["asset.character", "asset.character_pack", "subtitle.align"] } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/profileConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "enum": ["asset.character_candidates", "asset.scene", "asset.prop"] } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/candidateAssetConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "shot.plan" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/shotPlanConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "shot.image" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/shotImageConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "shot.video" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/shotVideoConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "audio.tts" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/ttsConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "bgm.track" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/bgmConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "export.final" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/exportConfig" } } }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "sourceNodeUid", "sourcePort", "targetNodeUid", "targetPort"],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uuid" },
+        "sourceNodeUid": { "$ref": "#/$defs/uuid" },
+        "sourcePort": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "targetNodeUid": { "$ref": "#/$defs/uuid" },
+        "targetPort": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "registryVersion", "nodes", "edges"],
+      "properties": {
+        "schemaVersion": { "const": "4.0" },
+        "registryVersion": { "const": "4.0.0" },
+        "nodes": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/node" } },
+        "edges": { "type": "array", "maxItems": 2000, "items": { "$ref": "#/$defs/edge" } }
+      }
+    }
+  }
+}
