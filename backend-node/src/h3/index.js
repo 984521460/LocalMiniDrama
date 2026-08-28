@@ -26,13 +26,20 @@ const {
   compileH3GenerationWorkflow,
   createH3TextToVideoWorkflowBundle,
 } = require('./workflowBundle');
+const {
+  H3_OFFICIAL_WORKFLOW_SOURCES,
+  compileH3WorkflowCandidate,
+  createH3WorkflowCandidateBundle,
+} = require('./workflowCandidates');
 
 module.exports = Object.freeze({
   H3_PROFILE,
+  H3_OFFICIAL_WORKFLOW_SOURCES,
   H3_PHASE_7_REQUIRED_MODES,
   H3_REAL_VALIDATION_MATRIX,
   H3ContractError,
   compileH3GenerationWorkflow,
+  compileH3WorkflowCandidate,
   compileH3ShotPrompt,
   createMinimaxH3ApiProvider,
   createMinimaxH3ApiService,
@@ -43,6 +50,7 @@ module.exports = Object.freeze({
   createH3LocalVideoInspector,
   createH3RealValidationCollector,
   createH3TextToVideoWorkflowBundle,
+  createH3WorkflowCandidateBundle,
   h3FramesForDuration,
   isH3ContractError,
   normalizeH3GenerationSpec,
