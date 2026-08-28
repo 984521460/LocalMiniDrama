@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v5/generation-history.schema.json",
+  "title": "Immutable terminal asset generation history",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "runUid", "dramaUid", "assetUid", "promptSemanticUid",
+    "manifestUid", "manifestSha256", "provider", "model", "seed", "parameters",
+    "parametersSha256", "input", "inputSha256", "status", "outputVersionUid",
+    "outputVersionEvidence", "parentVersionUid", "parentVersionEvidence",
+    "errorCode", "errorDetailRef", "createdAtEpochMs",
+    "completedAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "generation-history.v1"},
+    "uid": {"$ref": "#/$defs/uid"},
+    "runUid": {"$ref": "#/$defs/uid"},
+    "dramaUid": {"$ref": "#/$defs/uid"},
+    "assetUid": {"$ref": "#/$defs/uid"},
+    "promptSemanticUid": {"$ref": "#/$defs/uid"},
+    "manifestUid": {"$ref": "#/$defs/uid"},
+    "manifestSha256": {"$ref": "#/$defs/sha256"},
+    "provider": {"type": "string", "minLength": 1, "maxLength": 128},
+    "model": {"type": "string", "minLength": 1, "maxLength": 128},
+    "seed": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 4294967295}, {"type": "null"}]},
+    "parameters": {"type": "object"},
+    "parametersSha256": {"$ref": "#/$defs/sha256"},
+    "input": {"type": "object"},
+    "inputSha256": {"$ref": "#/$defs/sha256"},
+    "status": {"enum": ["succeeded", "failed", "cancelled"]},
+    "outputVersionUid": {"oneOf": [{"$ref": "#/$defs/uid"}, {"type": "null"}]},
+    "outputVersionEvidence": {"oneOf": [{"$ref": "#/$defs/assetVersionEvidence"}, {"type": "null"}]},
+    "parentVersionUid": {"oneOf": [{"$ref": "#/$defs/uid"}, {"type": "null"}]},
+    "parentVersionEvidence": {"oneOf": [{"$ref": "#/$defs/assetVersionEvidence"}, {"type": "null"}]},
+    "errorCode": {"oneOf": [{"type": "string", "pattern": "^ERR_[A-Z0-9_]{1,60}$"}, {"type": "null"}]},
+    "errorDetailRef": {"oneOf": [{"type": "string", "pattern": "^error-detail:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}, {"type": "null"}]},
+    "createdAtEpochMs": {"type": "integer", "minimum": 0, "maximum": 253402300799999},
+    "completedAtEpochMs": {"type": "integer", "minimum": 0, "maximum": 253402300799999}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "succeeded"}}},
+      "then": {"properties": {"outputVersionUid": {"$ref": "#/$defs/uid"}, "outputVersionEvidence": {"$ref": "#/$defs/assetVersionEvidence"}, "errorCode": {"type": "null"}, "errorDetailRef": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "failed"}}},
+      "then": {"properties": {"outputVersionUid": {"type": "null"}, "outputVersionEvidence": {"type": "null"}, "errorCode": {"type": "string", "pattern": "^ERR_[A-Z0-9_]{1,60}$"}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "cancelled"}}},
+      "then": {"properties": {"outputVersionUid": {"type": "null"}, "outputVersionEvidence": {"type": "null"}, "errorCode": {"type": "null"}, "errorDetailRef": {"type": "null"}}}
+    }
+  ],
+  "$defs": {
+    "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "assetVersionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "assetUid", "storageProvider", "logicalUri", "relativePath", "sha256", "mimeType", "width", "height", "durationMs", "parentUid", "status", "createdAt"],
+      "properties": {
+        "uid": {"$ref": "#/$defs/uid"},
+        "assetUid": {"$ref": "#/$defs/uid"},
+        "storageProvider": {"enum": ["local", "nas", "object"]},
+        "logicalUri": {"type": "string", "pattern": "^asset://[A-Za-z0-9]", "maxLength": 2048},
+        "relativePath": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "mimeType": {"oneOf": [{"type": "string", "minLength": 1, "maxLength": 255}, {"type": "null"}]},
+        "width": {"oneOf": [{"type": "integer", "minimum": 1, "maximum": 9007199254740991}, {"type": "null"}]},
+        "height": {"oneOf": [{"type": "integer", "minimum": 1, "maximum": 9007199254740991}, {"type": "null"}]},
+        "durationMs": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 9007199254740991}, {"type": "null"}]},
+        "parentUid": {"oneOf": [{"$ref": "#/$defs/uid"}, {"type": "null"}]},
+        "status": {"const": "ready"},
+        "createdAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"}
+      }
+    }
+  }
+}

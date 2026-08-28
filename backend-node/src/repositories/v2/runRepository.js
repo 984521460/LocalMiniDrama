@@ -1,5 +1,7 @@
 const { executeWrite, optimisticResult, requiredRow } = require('./repositorySupport');
 const { freezeSnapshot, mapRow, mapRows, serializeJson } = require('./rowMapping');
+const { createGenerationPayloadSnapshot } = require('../../assets/generationHistory');
+const { V2RepositoryDataError } = require('./errors');
 
 const GENERATION_MAP = Object.freeze({
   entity: 'generation run',
@@ -76,6 +78,10 @@ function createRunRepository(database) {
   const updateGenerationStatus = database.prepare(`
     UPDATE generation_runs
     SET status = @nextStatus,
+        output_asset_version_uid = CASE WHEN @nextStatus = 'succeeded'
+          THEN @outputAssetVersionUid ELSE NULL END,
+        error_code = CASE WHEN @nextStatus = 'failed' THEN @errorCode ELSE NULL END,
+        error_detail_ref = CASE WHEN @nextStatus = 'failed' THEN @errorDetailRef ELSE NULL END,
         started_at = CASE WHEN @nextStatus = 'running' AND started_at IS NULL
           THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE started_at END,
         completed_at = CASE WHEN @nextStatus IN ('succeeded', 'failed', 'cancelled')
@@ -150,7 +156,16 @@ function createRunRepository(database) {
   });
 
   function getGeneration(uid) {
-    return mapRow(requiredRow(getGenerationRow.get(uid), 'generation run', uid), GENERATION_MAP);
+    const run = mapRow(requiredRow(getGenerationRow.get(uid), 'generation run', uid), GENERATION_MAP);
+    try {
+      createGenerationPayloadSnapshot({
+        parameters: run.parameters,
+        input: run.input,
+      }, 'GENERATION_HISTORY_DATA_INVALID');
+      return run;
+    } catch {
+      throw new V2RepositoryDataError('generation run', 'payload');
+    }
   }
 
   function getWorkflow(uid) {
@@ -205,11 +220,15 @@ function createRunRepository(database) {
     },
 
     createGeneration(run) {
+      const payload = createGenerationPayloadSnapshot({
+        parameters: run.parameters,
+        input: run.input,
+      });
       const persisted = {
         ...run,
         seed: run.seed ?? null,
-        parametersJson: serializeJson(run.parameters, {}),
-        inputJson: serializeJson(run.input, {}),
+        parametersJson: serializeJson(payload.parameters, {}),
+        inputJson: serializeJson(payload.input, {}),
         promptVersionUid: run.promptVersionUid ?? null,
       };
       executeWrite('generation run', 'created', () => insertGeneration.run(persisted));
@@ -244,7 +263,22 @@ function createRunRepository(database) {
     },
 
     transitionGenerationStatus(input) {
-      return transition(input, transitionDescriptors.generation);
+      const result = executeWrite('generation run', 'transitioned', () => updateGenerationStatus.run({
+        uid: input.uid,
+        expectedStatus: input.expectedStatus,
+        nextStatus: input.nextStatus,
+        outputAssetVersionUid: input.outputAssetVersionUid ?? null,
+        errorCode: input.errorCode ?? null,
+        errorDetailRef: input.errorDetailRef ?? null,
+      }));
+      optimisticResult({
+        changes: result.changes,
+        exists: () => Boolean(getGenerationRow.get(input.uid)),
+        entity: 'generation run',
+        uid: input.uid,
+        operation: 'transitioned',
+      });
+      return getGeneration(input.uid);
     },
 
     transitionNodeStatus(input) {

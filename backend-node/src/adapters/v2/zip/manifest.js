@@ -1,5 +1,9 @@
 const { archiveError } = require('./errors');
 const { validateRunAggregate } = require('../../../workflows/runState');
+const {
+  GENERATION_HISTORY_RECORD_SPECS,
+  validateGenerationHistoryArchive,
+} = require('./generationHistoryArchive');
 
 const SCHEMA_VERSION = '2.0.0';
 const ARCHIVE_KIND = 'local-mini-drama-project';
@@ -62,6 +66,7 @@ const RECORD_SPECS = Object.freeze({
     columns: Object.freeze(['uid', 'drama_uid', 'workflow_run_uid', 'timeline_snapshot_json', 'encoding_json', 'audio_json', 'subtitle_json', 'output_asset_version_uid', 'validation_json', 'status', 'error_code', 'error_detail_ref', 'created_at', 'started_at', 'completed_at', 'updated_at']),
     json: Object.freeze({ timeline_snapshot_json: 'object', encoding_json: 'object', audio_json: 'object', subtitle_json: 'object', validation_json: 'object' }),
   }),
+  ...GENERATION_HISTORY_RECORD_SPECS,
 });
 
 const RECORD_NAMES = Object.freeze(Object.keys(RECORD_SPECS));
@@ -311,6 +316,7 @@ function assertRecord(record, spec, seen) {
       || record.logical_uri.includes('\\') || /^[A-Za-z]:/.test(record.logical_uri)) invalidManifest();
   }
   if (spec.table === 'source_documents') assertPortableBasename(record.original_name);
+  if (spec.table === 'workflow_manifests') assertPortableRelativePath(record.workflow_file);
 }
 
 function recordUidSet(rows) {
@@ -339,6 +345,10 @@ function createTypedUidSets(manifest) {
     workflow_run: 'workflowRuns',
     node_run: 'nodeRuns',
     export_run: 'exportRuns',
+    workflow_manifest: 'workflowManifests',
+    prompt_semantic_version: 'promptSemanticVersions',
+    asset_generation_history: 'assetGenerationHistory',
+    asset_version_selection_event: 'assetVersionSelectionEvents',
   };
   for (const [type, name] of Object.entries(recordTypes)) {
     sets.set(type, recordUidSet(manifest.records[name]));
@@ -399,6 +409,7 @@ function assertManifestClosure(manifest) {
   const assetByUid = new Map(records.assets.map((row) => [row.uid, row]));
   const versionByUid = new Map(records.assetVersions.map((row) => [row.uid, row]));
   const workflowRunByUid = new Map(records.workflowRuns.map((row) => [row.uid, row]));
+  const generationRunByUid = new Map(records.generationRuns.map((row) => [row.uid, row]));
   const nodeRunsByWorkflowRun = new Map();
   for (const row of records.nodeRuns) {
     const rows = nodeRunsByWorkflowRun.get(row.workflow_run_uid) || [];
@@ -457,9 +468,15 @@ function assertManifestClosure(manifest) {
   }
   for (const row of records.generationRuns) {
     assertTypedReference(typed, row.owner_type, row.owner_uid);
-    if (row.prompt_version_uid !== null) invalidManifest();
     if (row.output_asset_version_uid !== null && !versionByUid.has(row.output_asset_version_uid)) invalidManifest();
   }
+  validateGenerationHistoryArchive({
+    records,
+    project: manifest.project,
+    assetByUid,
+    versionByUid,
+    generationRunByUid,
+  });
   for (const row of records.workflowRuns) {
     if (!workflowByUid.has(row.workflow_uid)) invalidManifest();
     try {

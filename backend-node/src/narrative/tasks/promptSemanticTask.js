@@ -136,25 +136,33 @@ function createPromptInputHash(domain) {
   });
 }
 
+function completePromptSemantic(input) {
+  const metadata = normalizeTaskEnvelope(input, DOMAIN_KEYS);
+  const domain = normalizePromptDomain(metadata.domain);
+  const output = parseStructuredResponse(metadata.rawResponse, validateSchema);
+  assertPromptSemantics(domain, output);
+  const result = createAuditedTaskResult({
+    taskType: TASK_TYPE,
+    schemaVersion: SCHEMA_VERSION,
+    inputHash: createPromptInputHash(domain),
+    metadata,
+    auditFields: {
+      upstreamShotHash: domain.shotPlan.approval.resultHash,
+      shotApprovalRef: domain.shotPlan.approval.reviewRef,
+      assetCatalogHash: sha256Canonical(domain.shotPlan.assetVersions),
+    },
+    output,
+  });
+  return Object.freeze({
+    result,
+    shotApproval: domain.shotPlan.approval,
+  });
+}
+
 function createPromptSemanticTask() {
   return Object.freeze({
     complete(input) {
-      const metadata = normalizeTaskEnvelope(input, DOMAIN_KEYS);
-      const domain = normalizePromptDomain(metadata.domain);
-      const output = parseStructuredResponse(metadata.rawResponse, validateSchema);
-      assertPromptSemantics(domain, output);
-      return createAuditedTaskResult({
-        taskType: TASK_TYPE,
-        schemaVersion: SCHEMA_VERSION,
-        inputHash: createPromptInputHash(domain),
-        metadata,
-        auditFields: {
-          upstreamShotHash: domain.shotPlan.approval.resultHash,
-          shotApprovalRef: domain.shotPlan.approval.reviewRef,
-          assetCatalogHash: sha256Canonical(domain.shotPlan.assetVersions),
-        },
-        output,
-      });
+      return completePromptSemantic(input).result;
     },
   });
 }
@@ -162,5 +170,6 @@ function createPromptSemanticTask() {
 module.exports = {
   SCHEMA_VERSION,
   TASK_TYPE,
+  completePromptSemantic,
   createPromptSemanticTask,
 };

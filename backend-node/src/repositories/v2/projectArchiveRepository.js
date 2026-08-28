@@ -3,7 +3,7 @@ const { assertDatabase } = require('./repositorySupport');
 const { createWorkflowRunArchiveReplay } = require('./workflowRunArchiveReplay');
 
 const CORE_TABLES = Object.freeze(['dramas', 'episodes', 'characters', 'scenes', 'props', 'storyboards']);
-const GLOBAL_V2_TABLES = Object.freeze(['workflow_manifests', 'remote_connections', 'remote_tasks']);
+const GLOBAL_V2_TABLES = Object.freeze(['remote_connections', 'remote_tasks']);
 const ALL_UID_TABLES = Object.freeze([
   ...CORE_TABLES,
   ...RECORD_NAMES.map((name) => RECORD_SPECS[name].table),
@@ -27,6 +27,14 @@ function createInsert(database, spec, { omit = [] } = {}) {
     INSERT INTO ${spec.table} (${columns.join(', ')})
     VALUES (${columns.map((column) => `@${column}`).join(', ')})
   `);
+}
+
+function importRow(stage, statement, row) {
+  try {
+    return statement.run(row);
+  } catch (error) {
+    throw new TypeError(`Project archive ${stage} import failed`, { cause: error });
+  }
 }
 
 function createProjectArchiveRepository(database) {
@@ -62,6 +70,12 @@ function createProjectArchiveRepository(database) {
   const listAllAssets = database.prepare('SELECT * FROM assets ORDER BY uid');
   const listAllAssetVersions = database.prepare('SELECT * FROM asset_versions ORDER BY uid');
   const listAllGenerationRuns = database.prepare('SELECT * FROM generation_runs ORDER BY uid');
+  const listAllWorkflowManifests = database.prepare('SELECT * FROM workflow_manifests ORDER BY uid');
+  const listAllPromptSemanticVersions = database.prepare('SELECT * FROM prompt_semantic_versions ORDER BY uid');
+  const listAllGenerationHistory = database.prepare('SELECT * FROM asset_generation_history ORDER BY uid');
+  const listAllSelectionEvents = database.prepare(`
+    SELECT * FROM asset_version_selection_events ORDER BY asset_uid, state_version
+  `);
 
   const uidConflict = database.prepare(`
     ${ALL_UID_TABLES.map((table) => `SELECT 1 AS found FROM ${table} WHERE uid = @uid`).join('\nUNION ALL\n')}
@@ -180,6 +194,21 @@ function createProjectArchiveRepository(database) {
     }
     const assetUids = new Set(assets.map((asset) => asset.uid));
     const assetVersions = availableVersions.filter((version) => assetUids.has(version.asset_uid));
+    const assetGenerationHistory = listAllGenerationHistory.all()
+      .filter((history) => assetUids.has(history.asset_uid));
+    const historyUids = new Set(assetGenerationHistory.map((history) => history.uid));
+    const promptUids = new Set(
+      assetGenerationHistory.map((history) => history.prompt_semantic_uid),
+    );
+    const manifestUids = new Set(
+      assetGenerationHistory.map((history) => history.manifest_uid),
+    );
+    const promptSemanticVersions = listAllPromptSemanticVersions.all()
+      .filter((prompt) => promptUids.has(prompt.uid));
+    const workflowManifests = listAllWorkflowManifests.all()
+      .filter((manifest) => manifestUids.has(manifest.uid));
+    const assetVersionSelectionEvents = listAllSelectionEvents.all()
+      .filter((event) => historyUids.has(event.history_uid));
 
     return {
       project,
@@ -196,6 +225,10 @@ function createProjectArchiveRepository(database) {
         workflowRuns: uniqueRows(workflowRuns),
         nodeRuns: uniqueRows(nodeRuns),
         exportRuns: uniqueRows(exportRuns),
+        workflowManifests: uniqueRows(workflowManifests),
+        promptSemanticVersions: uniqueRows(promptSemanticVersions),
+        assetGenerationHistory: uniqueRows(assetGenerationHistory),
+        assetVersionSelectionEvents: uniqueRows(assetVersionSelectionEvents),
       },
     };
   }
@@ -297,15 +330,40 @@ function createProjectArchiveRepository(database) {
     for (const name of ['sourceSelections', 'workflowDefinitions', 'canvasNodes', 'canvasEdges']) {
       for (const row of manifest.records[name]) insertRecords[name].run(row);
     }
+    for (const row of manifest.records.workflowManifests) {
+      importRow('workflow manifest', insertRecords.workflowManifests, row);
+    }
     for (const row of manifest.records.assets) {
       insertRecords.assets.run({ ...row, current_version_uid: null });
     }
     insertVersionGraph(manifest.records.assetVersions);
+    const firstSelectionByAsset = new Map();
+    for (const event of [...manifest.records.assetVersionSelectionEvents]
+      .sort((left, right) => left.state_version - right.state_version)) {
+      if (!firstSelectionByAsset.has(event.asset_uid)) {
+        firstSelectionByAsset.set(event.asset_uid, event.previous_version_uid);
+      }
+    }
     for (const row of manifest.records.assets) {
-      if (row.current_version_uid !== null) setCurrentAssetVersion.run(row.current_version_uid, row.uid);
+      const initialVersionUid = firstSelectionByAsset.has(row.uid)
+        ? firstSelectionByAsset.get(row.uid)
+        : row.current_version_uid;
+      if (initialVersionUid !== null) setCurrentAssetVersion.run(initialVersionUid, row.uid);
+    }
+    for (const row of manifest.records.promptSemanticVersions) {
+      importRow('Prompt Semantic version', insertRecords.promptSemanticVersions, row);
     }
     for (const name of ['generationRuns']) {
-      for (const row of manifest.records[name]) insertRecords[name].run(row);
+      for (const row of manifest.records[name]) importRow('generation run', insertRecords[name], row);
+    }
+    for (const row of manifest.records.assetGenerationHistory) {
+      importRow('generation history', insertRecords.assetGenerationHistory, row);
+    }
+    for (const row of [...manifest.records.assetVersionSelectionEvents]
+      .sort((left, right) => (
+        left.asset_uid.localeCompare(right.asset_uid) || left.state_version - right.state_version
+      ))) {
+      importRow('asset version selection', insertRecords.assetVersionSelectionEvents, row);
     }
     workflowRunArchiveReplay.importHistory(
       manifest.records.workflowRuns,

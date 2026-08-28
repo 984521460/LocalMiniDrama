@@ -61,6 +61,7 @@
       />
 
       <NarrativeReviewWorkspace :drama-id="dramaId" />
+      <AssetVersionContinuityWorkspace :drama-id="dramaId" />
     </main>
   </div>
 </template>
@@ -74,6 +75,7 @@ import { dramaAPI } from '@/api/drama'
 import { sourceDocumentAPI } from '@/api/v2/sourceDocuments'
 import SourceSelectionPanel from '@/components/narrative/SourceSelectionPanel.vue'
 import NarrativeReviewWorkspace from '@/components/narrative/NarrativeReviewWorkspace.vue'
+import AssetVersionContinuityWorkspace from '@/components/assets/AssetVersionContinuityWorkspace.vue'
 
 const route = useRoute()
 const router = useRouter()

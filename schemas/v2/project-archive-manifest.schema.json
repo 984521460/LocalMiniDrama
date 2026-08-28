@@ -15,6 +15,7 @@
   },
   "$defs": {
     "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "uidOrNull": { "oneOf": [{ "$ref": "#/$defs/uid" }, { "type": "null" }] },
     "scalar": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }] },
     "uidArray": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/uid" } },
@@ -91,9 +92,29 @@
       "required": ["uid", "drama_uid", "workflow_run_uid", "timeline_snapshot_json", "encoding_json", "audio_json", "subtitle_json", "output_asset_version_uid", "validation_json", "status", "error_code", "error_detail_ref", "created_at", "started_at", "completed_at", "updated_at"],
       "properties": { "uid": { "$ref": "#/$defs/uid" }, "drama_uid": { "$ref": "#/$defs/uid" }, "workflow_run_uid": { "$ref": "#/$defs/uidOrNull" }, "timeline_snapshot_json": { "type": "string" }, "encoding_json": { "type": "string" }, "audio_json": { "type": "string" }, "subtitle_json": { "type": "string" }, "output_asset_version_uid": { "$ref": "#/$defs/uidOrNull" }, "validation_json": { "type": "string" }, "status": { "$ref": "#/$defs/scalar" }, "error_code": { "$ref": "#/$defs/scalar" }, "error_detail_ref": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "started_at": { "$ref": "#/$defs/scalar" }, "completed_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
     },
+    "workflowManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "manifest_id", "version", "engine", "workflow_file", "workflow_sha256", "model_family", "requirements_json", "inputs_json", "outputs_json", "validation_json", "status", "created_at", "updated_at"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "manifest_id": { "type": "string" }, "version": { "type": "string" }, "engine": { "enum": ["comfyui", "local", "external"] }, "workflow_file": { "type": "string" }, "workflow_sha256": { "$ref": "#/$defs/sha256" }, "model_family": { "$ref": "#/$defs/scalar" }, "requirements_json": { "type": "string" }, "inputs_json": { "type": "string" }, "outputs_json": { "type": "string" }, "validation_json": { "type": "string" }, "status": { "enum": ["draft", "validated", "invalid", "archived"] }, "created_at": { "type": "string" }, "updated_at": { "type": "string" } }
+    },
+    "promptSemanticVersion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "drama_uid", "shot_result_uid", "shot_result_hash", "shot_envelope_hash", "shot_approval_ref", "semantic_sha256", "semantic_json", "created_at_epoch_ms"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "drama_uid": { "$ref": "#/$defs/uid" }, "shot_result_uid": { "$ref": "#/$defs/uid" }, "shot_result_hash": { "$ref": "#/$defs/sha256" }, "shot_envelope_hash": { "$ref": "#/$defs/sha256" }, "shot_approval_ref": { "type": "string", "pattern": "^review:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }, "semantic_sha256": { "$ref": "#/$defs/sha256" }, "semantic_json": { "type": "string" }, "created_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 } }
+    },
+    "assetGenerationHistory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "run_uid", "drama_uid", "asset_uid", "prompt_semantic_uid", "manifest_uid", "manifest_sha256", "provider", "model", "seed", "parameters_json", "parameters_sha256", "input_json", "input_sha256", "status", "output_version_uid", "parent_version_uid", "output_version_evidence_json", "parent_version_evidence_json", "error_code", "error_detail_ref", "created_at_epoch_ms", "completed_at_epoch_ms"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "run_uid": { "$ref": "#/$defs/uid" }, "drama_uid": { "$ref": "#/$defs/uid" }, "asset_uid": { "$ref": "#/$defs/uid" }, "prompt_semantic_uid": { "$ref": "#/$defs/uid" }, "manifest_uid": { "$ref": "#/$defs/uid" }, "manifest_sha256": { "$ref": "#/$defs/sha256" }, "provider": { "type": "string", "minLength": 1, "maxLength": 128 }, "model": { "type": "string", "minLength": 1, "maxLength": 128 }, "seed": { "$ref": "#/$defs/scalar" }, "parameters_json": { "type": "string" }, "parameters_sha256": { "$ref": "#/$defs/sha256" }, "input_json": { "type": "string" }, "input_sha256": { "$ref": "#/$defs/sha256" }, "status": { "enum": ["succeeded", "failed", "cancelled"] }, "output_version_uid": { "$ref": "#/$defs/uidOrNull" }, "parent_version_uid": { "$ref": "#/$defs/uidOrNull" }, "output_version_evidence_json": { "oneOf": [{ "type": "string" }, { "type": "null" }] }, "parent_version_evidence_json": { "oneOf": [{ "type": "string" }, { "type": "null" }] }, "error_code": { "$ref": "#/$defs/scalar" }, "error_detail_ref": { "$ref": "#/$defs/scalar" }, "created_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }, "completed_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 } }
+    },
+    "assetVersionSelectionEvent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "history_uid", "asset_uid", "selected_version_uid", "previous_version_uid", "state_version", "changed_at_epoch_ms"],
+      "properties": { "uid": { "$ref": "#/$defs/uid" }, "history_uid": { "$ref": "#/$defs/uid" }, "asset_uid": { "$ref": "#/$defs/uid" }, "selected_version_uid": { "$ref": "#/$defs/uid" }, "previous_version_uid": { "$ref": "#/$defs/uidOrNull" }, "state_version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }, "changed_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 } }
+    },
     "records": {
       "type": "object", "additionalProperties": false,
-      "required": ["sourceDocuments", "sourceBlocks", "sourceSelections", "assets", "assetVersions", "workflowDefinitions", "canvasNodes", "canvasEdges", "generationRuns", "workflowRuns", "nodeRuns", "exportRuns"],
+      "required": ["sourceDocuments", "sourceBlocks", "sourceSelections", "assets", "assetVersions", "workflowDefinitions", "canvasNodes", "canvasEdges", "generationRuns", "workflowRuns", "nodeRuns", "exportRuns", "workflowManifests", "promptSemanticVersions", "assetGenerationHistory", "assetVersionSelectionEvents"],
       "properties": {
         "sourceDocuments": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/sourceDocument" } },
         "sourceBlocks": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/sourceBlock" } },
@@ -106,7 +127,11 @@
         "generationRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/generationRun" } },
         "workflowRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/workflowRun" } },
         "nodeRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/nodeRun" } },
-        "exportRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/exportRun" } }
+        "exportRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/exportRun" } },
+        "workflowManifests": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/workflowManifest" } },
+        "promptSemanticVersions": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/promptSemanticVersion" } },
+        "assetGenerationHistory": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/assetGenerationHistory" } },
+        "assetVersionSelectionEvents": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/assetVersionSelectionEvent" } }
       }
     }
   }

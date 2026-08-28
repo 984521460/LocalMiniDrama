@@ -1,6 +1,10 @@
 const { types: { isPromise } } = require('node:util');
 
 const { createAssetRepository } = require('./assetRepository');
+const { createCharacterCandidateRepository } = require('./characterCandidateRepository');
+const { createCharacterReferencePackageRepository } = require('./characterReferencePackageRepository');
+const { createCharacterVersionRepository } = require('./characterVersionRepository');
+const { createGenerationHistoryRepository } = require('./generationHistoryRepository');
 const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
@@ -10,12 +14,34 @@ const {
 const { createRemoteRepository } = require('./remoteRepository');
 const { createProjectArchiveRepository } = require('./projectArchiveRepository');
 const { createNarrativeReviewRepository } = require('./narrativeReviewRepository');
+const { createNarrativeApprovalGate } = require('./narrativeApprovalGate');
 const { assertDatabase } = require('./repositorySupport');
 const { createRunRepository } = require('./runRepository');
+const { createScenePropVersionRepository } = require('./scenePropVersionRepository');
+const { createShotContinuitySnapshotRepository } = require('./shotContinuitySnapshotRepository');
 const { createSourceRepository } = require('./sourceRepository');
 const { createWorkflowRepository } = require('./workflowRepository');
 
 const promiseThen = Promise.prototype.then;
+
+function createLazyProjectArchiveRepository(database) {
+  let target;
+  function getTarget() {
+    if (!target) target = createProjectArchiveRepository(database);
+    return target;
+  }
+  return Object.freeze({
+    exportSnapshot(...args) {
+      return getTarget().exportSnapshot(...args);
+    },
+    hasUidConflict(...args) {
+      return getTarget().hasUidConflict(...args);
+    },
+    importSnapshot(...args) {
+      return getTarget().importSnapshot(...args);
+    },
+  });
+}
 
 function createTransactionScope(repositories) {
   let active = true;
@@ -54,13 +80,33 @@ function createTransactionScope(repositories) {
 function createV2Repositories(database) {
   assertDatabase(database);
 
+  const characterReferencePackages = createCharacterReferencePackageRepository(database);
+  const characterVersions = createCharacterVersionRepository(database);
+  const narrativeReviews = createNarrativeReviewRepository(database);
+  const scenePropVersions = createScenePropVersionRepository(database);
+  const sources = createSourceRepository(database);
+  const narrativeApprovalGate = createNarrativeApprovalGate({ narrativeReviews, sources });
+  const generationHistory = createGenerationHistoryRepository(database, {
+    requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
+  });
   const aggregates = {
     assets: createAssetRepository(database),
-    narrativeReviews: createNarrativeReviewRepository(database),
-    projectArchives: createProjectArchiveRepository(database),
+    characterCandidates: createCharacterCandidateRepository(database),
+    characterReferencePackages,
+    characterVersions,
+    generationHistory,
+    narrativeReviews,
+    projectArchives: createLazyProjectArchiveRepository(database),
     remote: createRemoteRepository(database),
     runs: createRunRepository(database),
-    sources: createSourceRepository(database),
+    scenePropVersions,
+    shotContinuitySnapshots: createShotContinuitySnapshotRepository(database, {
+      characterReferencePackages,
+      characterVersions,
+      requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
+      scenePropVersions,
+    }),
+    sources,
     workflows: createWorkflowRepository(database),
   };
   let repositories;

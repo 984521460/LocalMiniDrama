@@ -105,6 +105,20 @@
         "width": { "$ref": "#/$defs/dimension" }
       }
     },
+    "characterCandidateConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateCount"],
+      "properties": {
+        "candidateCount": { "const": 4 },
+        "credentialRef": { "$ref": "#/$defs/credentialRef" },
+        "height": { "$ref": "#/$defs/dimension" },
+        "manifestUid": { "$ref": "#/$defs/uuid" },
+        "profileUid": { "$ref": "#/$defs/uuid" },
+        "seed": { "$ref": "#/$defs/seed" },
+        "width": { "$ref": "#/$defs/dimension" }
+      }
+    },
     "shotPlanConfig": {
       "type": "object",
       "additionalProperties": false,
@@ -210,7 +224,11 @@
           "then": { "properties": { "config": { "$ref": "#/$defs/profileConfig" } } }
         },
         {
-          "if": { "properties": { "nodeType": { "enum": ["asset.character_candidates", "asset.scene", "asset.prop"] } }, "required": ["nodeType"] },
+          "if": { "properties": { "nodeType": { "const": "asset.character_candidates" } }, "required": ["nodeType"] },
+          "then": { "properties": { "config": { "$ref": "#/$defs/characterCandidateConfig" } } }
+        },
+        {
+          "if": { "properties": { "nodeType": { "enum": ["asset.scene", "asset.prop"] } }, "required": ["nodeType"] },
           "then": { "properties": { "config": { "$ref": "#/$defs/candidateAssetConfig" } } }
         },
         {

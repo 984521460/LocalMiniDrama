@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { types: { isProxy } } = require('node:util');
 
 const { narrativeTaskError } = require('./errors');
 const {
@@ -20,7 +21,9 @@ function invalidInput() {
 }
 
 function exactObjectValues(value, keys) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) invalidInput();
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || isProxy(value)) {
+    invalidInput();
+  }
   let descriptors;
   let prototype;
   try {

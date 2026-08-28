@@ -17,7 +17,6 @@ const {
 const {
   createShotPlanningTask,
 } = require('./shotPlanningTask');
-
 module.exports = {
   NarrativeTaskError,
   createEpisodeAdaptationTask,

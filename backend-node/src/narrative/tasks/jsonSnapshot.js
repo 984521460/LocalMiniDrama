@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { types: { isProxy } } = require('node:util');
 
 class JsonSnapshotError extends Error {
   constructor(limitExceeded = false) {
@@ -32,7 +33,7 @@ function snapshotJson(value, options = {}) {
       if (!Number.isFinite(current)) fail();
       return Object.is(current, -0) ? 0 : current;
     }
-    if (typeof current !== 'object') fail();
+    if (typeof current !== 'object' || isProxy(current)) fail();
 
     let descriptors;
     let prototype;

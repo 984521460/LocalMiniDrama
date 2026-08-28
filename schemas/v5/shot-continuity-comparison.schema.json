@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v5/shot-continuity-comparison.schema.json",
+  "title": "Adjacent shot continuity comparison",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "fromSnapshotUid", "toSnapshotUid", "adjacent", "scene", "characters", "props"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "5.0" },
+    "fromSnapshotUid": { "$ref": "#/$defs/uid" },
+    "toSnapshotUid": { "$ref": "#/$defs/uid" },
+    "adjacent": { "const": true },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changed", "fromSceneUid", "fromVersionUid", "toSceneUid", "toVersionUid"],
+      "properties": {
+        "changed": { "type": "boolean" },
+        "fromSceneUid": { "$ref": "#/$defs/uid" },
+        "fromVersionUid": { "$ref": "#/$defs/uid" },
+        "toSceneUid": { "$ref": "#/$defs/uid" },
+        "toVersionUid": { "$ref": "#/$defs/uid" }
+      }
+    },
+    "characters": { "$ref": "#/$defs/characterTransitions" },
+    "props": { "$ref": "#/$defs/propTransitions" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "uidList": { "type": "array", "items": { "$ref": "#/$defs/uid" } },
+    "characterChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["characterUid", "fields"],
+      "properties": {
+        "characterUid": { "$ref": "#/$defs/uid" },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["identityVersionUid", "referencePackageUid", "costumeVersionUid"] }
+        }
+      }
+    },
+    "propChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["propUid", "fields"],
+      "properties": {
+        "propUid": { "$ref": "#/$defs/uid" },
+        "fields": { "type": "array", "const": ["versionUid"] }
+      }
+    },
+    "characterTransitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unchanged", "changed", "entered", "exited"],
+      "properties": {
+        "unchanged": { "$ref": "#/$defs/uidList" },
+        "changed": { "type": "array", "items": { "$ref": "#/$defs/characterChange" } },
+        "entered": { "$ref": "#/$defs/uidList" },
+        "exited": { "$ref": "#/$defs/uidList" }
+      }
+    },
+    "propTransitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unchanged", "changed", "entered", "exited"],
+      "properties": {
+        "unchanged": { "$ref": "#/$defs/uidList" },
+        "changed": { "type": "array", "items": { "$ref": "#/$defs/propChange" } },
+        "entered": { "$ref": "#/$defs/uidList" },
+        "exited": { "$ref": "#/$defs/uidList" }
+      }
+    }
+  }
+}

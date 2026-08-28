@@ -65,3 +65,59 @@ The
 provisional pre-v4 run format cannot be converted into a verifiable canonical
 snapshot in SQL, so this migration fails atomically when legacy workflow-run
 rows exist instead of silently accepting unverifiable history.
+
+Migration `0008_character_asset_versions.sql` separates stable Character,
+Scene, and Prop identities from append-only Identity, Appearance, Costume,
+Voice, Scene-visual, and Prop-visual versions. Character child
+layers must bind an Identity belonging to the same Character; parent versions
+must stay within the same owner and layer. Scene and Prop versions additionally
+carry a bounded draft/ready/retired state, and only owner-matched ready records
+can be used as references. All version rows reject update, delete, and
+replacement so later lock and selection state can reference immutable content.
+Database writes also enforce the exact bounded metadata shape, and repositories
+preserve an explicit caller-provided epoch so archive replay cannot rewrite time
+evidence. The same migration stores Character candidate media as complete
+four-result batches: all four deferred candidate rows and the sealing batch row
+must commit together. Their candidate Asset and ready AssetVersion rows are
+fully frozen afterward, including media location, lineage, and timestamp fields.
+Identity lock and unlock changes are append-only, monotonically versioned events;
+stale writers, cross-Character references, replacement, update, and delete fail
+without changing the current state or removing earlier candidates.
+The migration also stores complete Character reference packages against one
+currently locked Identity event. A package contains the ten required view and
+expression slots in canonical order, one immutable ready AssetVersion per slot,
+one owner-matched Appearance version, and one owner-matched default Costume
+version. Package and item rows are append-only; their media Assets and complete
+AssetVersion storage, lineage, dimensions, hashes, and canonical UTC-millisecond
+time evidence are frozen and revalidated on every repository read. A later
+unlock or a newer package does not rewrite an earlier package.
+The same migration stores one append-only continuity snapshot per approved
+planned-shot revision. A sealing transaction requires exact coverage of the
+shot's Character and Prop fact references, a same-project ready Scene version,
+currently locked Character reference packages, selected same-Identity Costume
+versions, and same-project ready Prop versions. Snapshot rows retain the exact
+approval hashes and review event. Later review staleness or identity unlock does
+not erase historical snapshots, while owner re-hanging, replacement, update,
+delete, and persisted version drift fail closed.
+
+The same migration also separates mutable generation-run state from immutable
+terminal generation history. Each history row binds one validated workflow
+manifest, one Provider-neutral Prompt Semantic version, exact model/seed/input/
+parameter/error evidence, and complete immutable snapshots of the ready output
+AssetVersion plus its explicit parent when present. The seal transaction compares
+every storage, URI/path, content hash, MIME, dimension, duration, lineage, status,
+and canonical creation-time field; repository reads and project ZIP validation
+repeat that comparison so missing protection triggers cannot hide later drift.
+Evidence JSON is stored in one canonical serialization; duplicate keys, reordered
+keys, alternate escapes, and surrounding whitespace fail closed on every read.
+Regeneration appends a child AssetVersion and another history row; it
+never overwrites an earlier result. Current-version changes are applied only by
+monotonic append-only selection events with optimistic state versions. Once a
+history or selection exists, its run, asset ownership, output version evidence,
+and selection chain are frozen. Project ZIP export/import validates the whole
+reference closure and replays selection events from their recorded initial
+pointer inside the project import transaction. Failed or cancelled regeneration
+may retain the same-asset ready parent version even though it has no output, so
+the attempted lineage is not lost. History start/end epochs must exactly match
+the terminal generation run timestamps, and generation payloads, Prompt text,
+and exported history reject raw credential-shaped values before persistence.

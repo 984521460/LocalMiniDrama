@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.example/schemas/v5/character-version.schema.json",
+  "title": "CharacterVersionStructuralRecordV5",
+  "$comment": "This schema validates transport structure. Every read and write boundary must also run runtime relation validation with createCharacterVersionRecord so parentUid cannot equal uid and persisted relations are revalidated.",
+  "oneOf": [
+    {"$ref": "#/$defs/identity"},
+    {"$ref": "#/$defs/appearance"},
+    {"$ref": "#/$defs/costume"},
+    {"$ref": "#/$defs/voice"}
+  ],
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "baseProperties": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {"const": "5.0"},
+        "uid": {"$ref": "#/$defs/uid"},
+        "characterUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {
+          "oneOf": [
+            {"$ref": "#/$defs/uid"},
+            {"type": "null"}
+          ]
+        },
+        "createdAtEpochMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 253402300799999
+        }
+      }
+    },
+    "colorAnchors": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^#[0-9a-f]{6}$"}
+    },
+    "identityMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "visualSignature", "colorAnchors"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 120, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"},
+        "visualSignature": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"},
+        "colorAnchors": {"$ref": "#/$defs/colorAnchors"}
+      }
+    },
+    "visualMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "colorAnchors"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 120, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"},
+        "description": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"},
+        "colorAnchors": {"$ref": "#/$defs/colorAnchors"}
+      }
+    },
+    "voiceMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "language", "style"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 120, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"},
+        "language": {"type": "string", "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$", "maxLength": 16},
+        "style": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"}
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "uid", "characterUid", "parentUid", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "5.0"},
+        "kind": {"const": "identity"},
+        "uid": {"$ref": "#/$defs/uid"},
+        "characterUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {"oneOf": [{"$ref": "#/$defs/uid"}, {"type": "null"}]},
+        "metadata": {"$ref": "#/$defs/identityMetadata"},
+        "createdAtEpochMs": {"type": "integer", "minimum": 0, "maximum": 253402300799999}
+      }
+    },
+    "appearance": {
+      "$ref": "#/$defs/visualChild"
+    },
+    "costume": {
+      "$ref": "#/$defs/visualChildCostume"
+    },
+    "visualChild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "uid", "characterUid", "identityVersionUid", "parentUid", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "5.0"},
+        "kind": {"const": "appearance"},
+        "uid": {"$ref": "#/$defs/uid"},
+        "characterUid": {"$ref": "#/$defs/uid"},
+        "identityVersionUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {"oneOf": [{"$ref": "#/$defs/uid"}, {"type": "null"}]},
+        "metadata": {"$ref": "#/$defs/visualMetadata"},
+        "createdAtEpochMs": {"type": "integer", "minimum": 0, "maximum": 253402300799999}
+      }
+    },
+    "visualChildCostume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "uid", "characterUid", "identityVersionUid", "parentUid", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "5.0"},
+        "kind": {"const": "costume"},
+        "uid": {"$ref": "#/$defs/uid"},
+        "characterUid": {"$ref": "#/$defs/uid"},
+        "identityVersionUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {"oneOf": [{"$ref": "#/$defs/uid"}, {"type": "null"}]},
+        "metadata": {"$ref": "#/$defs/visualMetadata"},
+        "createdAtEpochMs": {"type": "integer", "minimum": 0, "maximum": 253402300799999}
+      }
+    },
+    "voice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "uid", "characterUid", "identityVersionUid", "parentUid", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "5.0"},
+        "kind": {"const": "voice"},
+        "uid": {"$ref": "#/$defs/uid"},
+        "characterUid": {"$ref": "#/$defs/uid"},
+        "identityVersionUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {"oneOf": [{"$ref": "#/$defs/uid"}, {"type": "null"}]},
+        "metadata": {"$ref": "#/$defs/voiceMetadata"},
+        "createdAtEpochMs": {"type": "integer", "minimum": 0, "maximum": 253402300799999}
+      }
+    }
+  }
+}

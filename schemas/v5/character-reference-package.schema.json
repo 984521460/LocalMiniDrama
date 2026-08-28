@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.example/schemas/v5/character-reference-package.schema.json",
+  "title": "CharacterReferencePackageV5",
+  "$comment": "Runtime and repository validation additionally bind every media item to a ready, owner-matched, immutable AssetVersion and to the referenced locked identity state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "packageUid",
+    "characterUid",
+    "identityVersionUid",
+    "candidateUid",
+    "lockEventUid",
+    "lockStateVersion",
+    "appearanceVersion",
+    "defaultCostumeVersion",
+    "items",
+    "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "5.0"},
+    "packageUid": {"$ref": "#/$defs/uid"},
+    "characterUid": {"$ref": "#/$defs/uid"},
+    "identityVersionUid": {"$ref": "#/$defs/uid"},
+    "candidateUid": {"$ref": "#/$defs/uid"},
+    "lockEventUid": {"$ref": "#/$defs/uid"},
+    "lockStateVersion": {"type": "integer", "minimum": 1},
+    "appearanceVersion": {"$ref": "#/$defs/visualVersion"},
+    "defaultCostumeVersion": {"$ref": "#/$defs/visualVersion"},
+    "items": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "prefixItems": [
+        {"$ref": "#/$defs/frontHalfBody"},
+        {"$ref": "#/$defs/threeQuarterFace"},
+        {"$ref": "#/$defs/leftProfile"},
+        {"$ref": "#/$defs/rightProfile"},
+        {"$ref": "#/$defs/frontFullBody"},
+        {"$ref": "#/$defs/expressionNeutral"},
+        {"$ref": "#/$defs/expressionJoy"},
+        {"$ref": "#/$defs/expressionAnger"},
+        {"$ref": "#/$defs/expressionSadness"},
+        {"$ref": "#/$defs/expressionFear"}
+      ],
+      "items": false
+    },
+    "createdAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "colorAnchors": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^#[0-9a-f]{6}$"}
+    },
+    "visualVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "name", "description", "colorAnchors"],
+      "properties": {
+        "uid": {"$ref": "#/$defs/uid"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "description": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "colorAnchors": {"$ref": "#/$defs/colorAnchors"}
+      }
+    },
+    "itemBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid", "ordinal", "kind", "assetVersionUid", "logicalUri",
+        "mediaType", "width", "height", "contentSha256"
+      ],
+      "properties": {
+        "uid": {"$ref": "#/$defs/uid"},
+        "ordinal": {"type": "integer", "minimum": 0, "maximum": 9},
+        "kind": {"type": "string"},
+        "assetVersionUid": {"$ref": "#/$defs/uid"},
+        "logicalUri": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^asset://characters/[0-9a-f-]{36}/reference-packages/[0-9a-f-]{36}/[a-z_]+$"
+        },
+        "mediaType": {"enum": ["image/png", "image/jpeg", "image/webp"]},
+        "width": {"type": "integer", "minimum": 64, "maximum": 8192},
+        "height": {"type": "integer", "minimum": 64, "maximum": 8192},
+        "contentSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "frontHalfBody": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 0}, "kind": {"const": "front_half_body"}}}]},
+    "threeQuarterFace": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 1}, "kind": {"const": "three_quarter_face"}}}]},
+    "leftProfile": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 2}, "kind": {"const": "left_profile"}}}]},
+    "rightProfile": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 3}, "kind": {"const": "right_profile"}}}]},
+    "frontFullBody": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 4}, "kind": {"const": "front_full_body"}}}]},
+    "expressionNeutral": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 5}, "kind": {"const": "expression_neutral"}}}]},
+    "expressionJoy": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 6}, "kind": {"const": "expression_joy"}}}]},
+    "expressionAnger": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 7}, "kind": {"const": "expression_anger"}}}]},
+    "expressionSadness": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 8}, "kind": {"const": "expression_sadness"}}}]},
+    "expressionFear": {"allOf": [{"$ref": "#/$defs/itemBase"}, {"type": "object", "properties": {"ordinal": {"const": 9}, "kind": {"const": "expression_fear"}}}]}
+  }
+}

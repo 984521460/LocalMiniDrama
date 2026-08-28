@@ -24,8 +24,12 @@ const sceneModelMapRoutes = require('./sceneModelMap');
 const sourceDocumentRoutes = require('./v2/sourceDocuments');
 const narrativeReviewRoutes = require('./v2/narrativeReviews');
 const workflowRoutes = require('./v2/workflows');
+const characterCandidateRoutes = require('./v2/characterCandidates');
+const characterReferencePackageRoutes = require('./v2/characterReferencePackages');
+const shotContinuitySnapshotRoutes = require('./v2/shotContinuitySnapshots');
+const generationHistoryRoutes = require('./v2/generationHistory');
 
-function setupRouter(cfg, db, log) {
+function setupRouter(cfg, db, log, runtime = {}) {
   const r = express.Router();
   const drama = dramaRoutes(db, cfg, log);
   const task = taskRoutes(db, log);
@@ -53,10 +57,30 @@ function setupRouter(cfg, db, log) {
   const sourceDocuments = sourceDocumentRoutes(db, log);
   const narrativeReviews = narrativeReviewRoutes(db, log);
   const workflows = workflowRoutes(db, log);
+  const characterCandidates = characterCandidateRoutes(log, runtime.characterCandidates, db);
+  const characterReferencePackages = characterReferencePackageRoutes(
+    log,
+    runtime.characterReferencePackages,
+    db,
+  );
+  const shotContinuitySnapshots = shotContinuitySnapshotRoutes(
+    log,
+    runtime.shotContinuitySnapshots,
+    db,
+  );
+  const generationHistory = generationHistoryRoutes(
+    log,
+    runtime.generationHistory,
+    db,
+  );
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
   r.use('/v2', workflows);
+  r.use('/v2', characterCandidates);
+  r.use('/v2', characterReferencePackages);
+  r.use('/v2', shotContinuitySnapshots);
+  r.use('/v2', generationHistory);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

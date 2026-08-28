@@ -94,6 +94,10 @@ function normalizeWorkflowNodeConfig(nodeType, value) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) invalidConfig();
   const allowed = new Set(fields);
   if (Object.keys(input).some((key) => !allowed.has(key))) invalidConfig();
+  if (
+    nodeType === 'asset.character_candidates'
+    && (!Object.hasOwn(input, 'candidateCount') || input.candidateCount !== 4)
+  ) invalidConfig();
   const normalized = Object.create(null);
   for (const field of fields) {
     if (!Object.hasOwn(input, field)) continue;

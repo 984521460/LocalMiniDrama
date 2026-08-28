@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v5/prompt-semantic-versioned.schema.json",
+  "title": "Version-bound Provider-neutral Prompt Semantic result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "taskType", "schemaVersion", "inputHash", "upstreamPromptHash", "dramaUid",
+    "shotResultUid", "shotResultHash", "shotEnvelopeHash", "shotApprovalRef", "output"
+  ],
+  "properties": {
+    "taskType": { "const": "PromptSemanticVersioningTask" },
+    "schemaVersion": { "const": "prompt-semantic-versioned.v1" },
+    "inputHash": { "$ref": "#/$defs/sha256" },
+    "upstreamPromptHash": { "$ref": "#/$defs/sha256" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "shotResultUid": { "$ref": "#/$defs/uid" },
+    "shotResultHash": { "$ref": "#/$defs/sha256" },
+    "shotEnvelopeHash": { "$ref": "#/$defs/sha256" },
+    "shotApprovalRef": { "$ref": "#/$defs/reviewRef" },
+    "output": { "$ref": "#/$defs/output" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "reviewRef": {
+      "type": "string",
+      "pattern": "^review:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "identifier": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factRef", "characterUid", "referencePackageUid", "identityVersionUid", "costumeVersionUid"
+      ],
+      "properties": {
+        "factRef": { "$ref": "#/$defs/identifier" },
+        "characterUid": { "$ref": "#/$defs/uid" },
+        "referencePackageUid": { "$ref": "#/$defs/uid" },
+        "identityVersionUid": { "$ref": "#/$defs/uid" },
+        "costumeVersionUid": { "$ref": "#/$defs/uid" }
+      }
+    },
+    "prop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factRef", "propUid", "versionUid"],
+      "properties": {
+        "factRef": { "$ref": "#/$defs/identifier" },
+        "propUid": { "$ref": "#/$defs/uid" },
+        "versionUid": { "$ref": "#/$defs/uid" }
+      }
+    },
+    "subjects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "characters"],
+      "properties": {
+        "description": { "$ref": "#/$defs/text" },
+        "characters": {
+          "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/character" }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sceneId", "description", "scene", "props"],
+      "properties": {
+        "sceneId": { "$ref": "#/$defs/identifier" },
+        "description": { "$ref": "#/$defs/text" },
+        "scene": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sceneUid", "versionUid"],
+          "properties": {
+            "sceneUid": { "$ref": "#/$defs/uid" },
+            "versionUid": { "$ref": "#/$defs/uid" }
+          }
+        },
+        "props": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/prop" } }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shotSize", "cameraAngle", "cameraMovement", "composition"],
+      "properties": {
+        "shotSize": { "enum": ["ECU", "CU", "MCU", "MS", "MLS", "LS", "ELS"] },
+        "cameraAngle": { "enum": ["eye_level", "high", "low", "dutch", "overhead", "pov"] },
+        "cameraMovement": { "enum": ["static", "pan", "tilt", "dolly", "truck", "crane", "handheld", "orbit"] },
+        "composition": { "$ref": "#/$defs/text" }
+      }
+    },
+    "lighting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quality", "direction", "colorTemperature", "description"],
+      "properties": {
+        "quality": { "enum": ["soft", "hard", "mixed", "natural", "practical"] },
+        "direction": { "enum": ["front", "side", "back", "top", "ambient", "mixed"] },
+        "colorTemperature": { "enum": ["warm", "neutral", "cool", "mixed"] },
+        "description": { "$ref": "#/$defs/text" }
+      }
+    },
+    "continuity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transitionFromPrevious", "screenDirection", "axisStrategy", "notes"],
+      "properties": {
+        "transitionFromPrevious": { "enum": ["start", "cut", "match_cut", "dissolve"] },
+        "screenDirection": { "enum": ["left_to_right", "right_to_left", "neutral"] },
+        "axisStrategy": { "enum": ["establish", "maintain", "intentional_cross"] },
+        "notes": { "$ref": "#/$defs/text" }
+      }
+    },
+    "semanticShot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shotId", "ordinal", "durationSeconds", "continuitySnapshotUid", "subjects",
+        "environment", "action", "camera", "lighting", "continuity"
+      ],
+      "properties": {
+        "shotId": { "$ref": "#/$defs/identifier" },
+        "ordinal": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "durationSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "continuitySnapshotUid": { "$ref": "#/$defs/uid" },
+        "subjects": { "$ref": "#/$defs/subjects" },
+        "environment": { "$ref": "#/$defs/environment" },
+        "action": { "$ref": "#/$defs/text" },
+        "camera": { "$ref": "#/$defs/camera" },
+        "lighting": { "$ref": "#/$defs/lighting" },
+        "continuity": { "$ref": "#/$defs/continuity" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aspectRatio", "durationSummary", "semanticShots"],
+      "properties": {
+        "aspectRatio": { "const": "16:9" },
+        "durationSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["totalSeconds"],
+          "properties": {
+            "totalSeconds": { "type": "integer", "minimum": 45, "maximum": 75 }
+          }
+        },
+        "semanticShots": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/semanticShot" }
+        }
+      }
+    }
+  }
+}

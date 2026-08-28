@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.example/schemas/v5/scene-prop-version.schema.json",
+  "title": "ScenePropVersionStructuralRecordV5",
+  "$comment": "This schema validates transport structure. Every read and write boundary must also run createScenePropVersionRecord for self-parent and relation validation, while reference consumers must require the ready state.",
+  "oneOf": [
+    {"$ref": "#/$defs/scene"},
+    {"$ref": "#/$defs/prop"}
+  ],
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "parentUid": {
+      "oneOf": [
+        {"$ref": "#/$defs/uid"},
+        {"type": "null"}
+      ]
+    },
+    "createdAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    },
+    "state": {
+      "enum": ["draft", "ready", "retired"]
+    },
+    "boundedName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"
+    },
+    "boundedDescription": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"
+    },
+    "colorAnchors": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^#[0-9a-f]{6}$"}
+    },
+    "sceneMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "visualDescription", "lighting", "colorAnchors"],
+      "properties": {
+        "name": {"$ref": "#/$defs/boundedName"},
+        "visualDescription": {"$ref": "#/$defs/boundedDescription"},
+        "lighting": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"
+        },
+        "colorAnchors": {"$ref": "#/$defs/colorAnchors"}
+      }
+    },
+    "propMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "visualDescription", "colorAnchors"],
+      "properties": {
+        "name": {"$ref": "#/$defs/boundedName"},
+        "visualDescription": {"$ref": "#/$defs/boundedDescription"},
+        "colorAnchors": {"$ref": "#/$defs/colorAnchors"}
+      }
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "uid", "sceneUid", "parentUid", "state", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "5.0"},
+        "kind": {"const": "scene"},
+        "uid": {"$ref": "#/$defs/uid"},
+        "sceneUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {"$ref": "#/$defs/parentUid"},
+        "state": {"$ref": "#/$defs/state"},
+        "metadata": {"$ref": "#/$defs/sceneMetadata"},
+        "createdAtEpochMs": {"$ref": "#/$defs/createdAtEpochMs"}
+      }
+    },
+    "prop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "uid", "propUid", "parentUid", "state", "metadata"],
+      "properties": {
+        "schemaVersion": {"const": "5.0"},
+        "kind": {"const": "prop"},
+        "uid": {"$ref": "#/$defs/uid"},
+        "propUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {"$ref": "#/$defs/parentUid"},
+        "state": {"$ref": "#/$defs/state"},
+        "metadata": {"$ref": "#/$defs/propMetadata"},
+        "createdAtEpochMs": {"$ref": "#/$defs/createdAtEpochMs"}
+      }
+    }
+  }
+}
