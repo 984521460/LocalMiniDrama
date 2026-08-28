@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "h3:validation": "node ../scripts/h3-real-validation.cjs",
     "migrate": "node src/db/migrate.js",
     "migrate:07": "node scripts/run-migration-07.js"
   },

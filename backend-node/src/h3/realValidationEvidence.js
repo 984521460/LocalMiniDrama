@@ -16,6 +16,7 @@ const { isH3LocalVideoInspector } = require('./localVideoInspector');
 const { validateH3VideoEvidence, validateH3VideoOutput } = require('./outputValidation');
 const { H3_PROFILE } = require('./profile');
 const { createH3TextToVideoWorkflowBundle } = require('./workflowBundle');
+const { createH3WorkflowCandidateBundle } = require('./workflowCandidates');
 const { assertH3WorkflowVerified } = require('./workflowSupport');
 
 const CODE = 'H3_REAL_VALIDATION_INVALID';
@@ -93,6 +94,26 @@ function trustedWorkflowMatches(mode, manifest, spec) {
   } catch {
     return false;
   }
+}
+
+function candidateWorkflowMatches(manifest, spec) {
+  if (spec.mode === 't2v') return false;
+  try {
+    const candidate = createH3WorkflowCandidateBundle({
+      mode: spec.mode,
+      referenceImageCount: spec.referenceImages.length,
+      referenceAudio: spec.referenceAudio !== null,
+    });
+    return candidate.supportStatus === 'implementation-candidate-unverified'
+      && sha256Canonical(manifest) === sha256Canonical(candidate.manifest);
+  } catch {
+    return false;
+  }
+}
+
+function capturableWorkflowMatches(manifest, spec) {
+  return trustedWorkflowMatches(spec.mode, manifest, spec)
+    || candidateWorkflowMatches(manifest, spec);
 }
 
 function receiptPayload(receipt) {
@@ -206,7 +227,7 @@ function collectInput(value) {
     || input.remoteBytes > 20_000_000_000) invalid();
   const manifest = storedManifest(input.manifest);
   const spec = generationSpec(input.generationSpec);
-  if (!trustedWorkflowMatches(spec.mode, manifest, spec)) fail('H3_WORKFLOW_UNVERIFIED');
+  if (!capturableWorkflowMatches(manifest, spec)) fail('H3_WORKFLOW_UNVERIFIED');
   return Object.freeze({ input, manifest, spec });
 }
 

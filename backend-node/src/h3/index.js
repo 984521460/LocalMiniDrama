@@ -31,11 +31,17 @@ const {
   compileH3WorkflowCandidate,
   createH3WorkflowCandidateBundle,
 } = require('./workflowCandidates');
+const {
+  H3_PHASE_7_VALIDATION_MODES,
+  createH3Phase7ValidationPlan,
+  validateH3Phase7ValidationPlan,
+} = require('./realValidationPlan');
 
 module.exports = Object.freeze({
   H3_PROFILE,
   H3_OFFICIAL_WORKFLOW_SOURCES,
   H3_PHASE_7_REQUIRED_MODES,
+  H3_PHASE_7_VALIDATION_MODES,
   H3_REAL_VALIDATION_MATRIX,
   H3ContractError,
   compileH3GenerationWorkflow,
@@ -48,6 +54,7 @@ module.exports = Object.freeze({
   createH3ExecutionIntentService,
   validateH3ExecutionIntent,
   createH3LocalVideoInspector,
+  createH3Phase7ValidationPlan,
   createH3RealValidationCollector,
   createH3TextToVideoWorkflowBundle,
   createH3WorkflowCandidateBundle,
@@ -57,6 +64,7 @@ module.exports = Object.freeze({
   evaluateH3Phase7Evidence,
   validateH3RealValidationReceipt,
   validateH3GenerationSpec,
+  validateH3Phase7ValidationPlan,
   validateH3VideoEvidence,
   validateH3VideoOutput,
 });

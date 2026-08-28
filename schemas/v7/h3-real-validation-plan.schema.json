@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-real-validation-plan.schema.json",
+  "title": "Prepared MiniMax H3 Phase 7 real-GPU validation plan",
+  "$comment": "This plan packages exact prompts and evidence identities for execution. prepared-unverified is not proof that a GPU run occurred, and candidate workflows remain excluded from the trusted evidence gate until separately reviewed and promoted. Runtime rebuilds every compiled prompt and dynamically rechecks hashes, canvas area, frame grid, unique prefixes and the complete four-case closure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "planUid", "profileUid", "gpuClass", "status", "cases", "planSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-phase7-validation-plan.v1" },
+    "planUid": { "$ref": "#/$defs/uid" },
+    "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" },
+    "gpuClass": { "const": "rtx4090-48gb" },
+    "status": { "const": "prepared-unverified" },
+    "cases": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "$ref": "#/$defs/t2vCase" },
+        { "$ref": "#/$defs/firstFrameCase" },
+        { "$ref": "#/$defs/firstLastCase" },
+        { "$ref": "#/$defs/referenceCase" }
+      ],
+      "items": false
+    },
+    "planSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetVersionUid", "sha256", "fileName"],
+      "properties": {
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){0,15}$"
+        }
+      }
+    },
+    "mediaBindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["referenceImages", "referenceAudio"],
+      "properties": {
+        "referenceImages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/binding" }
+        },
+        "referenceAudio": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/binding" }
+          ]
+        }
+      }
+    },
+    "i2vSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository", "commit", "templatePath", "templateSha256", "templateBytes", "realValidation"
+      ],
+      "properties": {
+        "repository": { "const": "Comfy-Org/workflow_templates" },
+        "commit": { "const": "0b1ef3ec90846bf82eba195ddcc30a1f5b2b6b38" },
+        "templatePath": { "const": "templates/video_minimax_h3_i2v.json" },
+        "templateSha256": { "const": "4dc94e9ea308c1d60409e7f55dba5e2788dab4659c2dbb90f1e9481498767540" },
+        "templateBytes": { "const": 71242 },
+        "realValidation": { "const": "unverified" }
+      }
+    },
+    "ref2vSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository", "commit", "templatePath", "templateSha256", "templateBytes", "realValidation"
+      ],
+      "properties": {
+        "repository": { "const": "Comfy-Org/workflow_templates" },
+        "commit": { "const": "0b1ef3ec90846bf82eba195ddcc30a1f5b2b6b38" },
+        "templatePath": { "const": "templates/video_minimax_h3_r2v.json" },
+        "templateSha256": { "const": "14b30659a057547e02bdd4bbbdda3f8670aa6d7d81d1d8d99c4f9ad1e2eabc44" },
+        "templateBytes": { "const": 45121 },
+        "realValidation": { "const": "unverified" }
+      }
+    },
+    "expectedOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "frames", "fps", "durationMs"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+        "height": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+        "frames": { "type": "integer", "minimum": 5, "maximum": 362 },
+        "fps": { "const": 24 },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 15084 }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "supportStatus", "source", "manifest", "generationSpec", "filenamePrefix",
+        "mediaBindings", "prompt", "promptSha256", "outputNodeIds", "nativeAudioOutput",
+        "expectedOutput"
+      ],
+      "properties": {
+        "mode": { "enum": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"] },
+        "supportStatus": {
+          "enum": ["trusted-workflow", "implementation-candidate-unverified"]
+        },
+        "source": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/i2vSource" },
+            { "$ref": "#/$defs/ref2vSource" }
+          ]
+        },
+        "manifest": {
+          "$ref": "https://local-mini-drama.invalid/schemas/v6/comfy-workflow-manifest.schema.json"
+        },
+        "generationSpec": {
+          "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json"
+        },
+        "filenamePrefix": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){0,15}$"
+        },
+        "mediaBindings": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/mediaBindings" }
+          ]
+        },
+        "prompt": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 5000,
+          "propertyNames": { "pattern": "^[0-9]{1,8}$" },
+          "additionalProperties": { "type": "object" }
+        },
+        "promptSha256": { "$ref": "#/$defs/sha256" },
+        "outputNodeIds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["video"],
+          "properties": {
+            "video": { "type": "string", "pattern": "^[0-9]{1,8}$" }
+          }
+        },
+        "nativeAudioOutput": { "const": true },
+        "expectedOutput": { "$ref": "#/$defs/expectedOutput" }
+      }
+    },
+    "t2vCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        {
+          "type": "object",
+          "properties": {
+            "mode": { "const": "t2v" },
+            "supportStatus": { "const": "trusted-workflow" },
+            "source": { "type": "null" },
+            "generationSpec": {
+              "allOf": [
+                { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json" },
+                { "type": "object", "properties": { "mode": { "const": "t2v" } } }
+              ]
+            },
+            "mediaBindings": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "firstFrameCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        {
+          "type": "object",
+          "properties": {
+            "mode": { "const": "fl2va-first" },
+            "supportStatus": { "const": "implementation-candidate-unverified" },
+            "source": { "$ref": "#/$defs/i2vSource" },
+            "generationSpec": {
+              "allOf": [
+                { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json" },
+                { "type": "object", "properties": { "mode": { "const": "fl2va-first" } } }
+              ]
+            },
+            "mediaBindings": {
+              "allOf": [
+                { "$ref": "#/$defs/mediaBindings" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "referenceImages": { "type": "array", "minItems": 1, "maxItems": 1 },
+                    "referenceAudio": { "type": "null" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "firstLastCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        {
+          "type": "object",
+          "properties": {
+            "mode": { "const": "fl2va-first-last" },
+            "supportStatus": { "const": "implementation-candidate-unverified" },
+            "source": { "$ref": "#/$defs/i2vSource" },
+            "generationSpec": {
+              "allOf": [
+                { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json" },
+                { "type": "object", "properties": { "mode": { "const": "fl2va-first-last" } } }
+              ]
+            },
+            "mediaBindings": {
+              "allOf": [
+                { "$ref": "#/$defs/mediaBindings" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "referenceImages": { "type": "array", "minItems": 2, "maxItems": 2 },
+                    "referenceAudio": { "type": "null" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "referenceCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        {
+          "type": "object",
+          "properties": {
+            "mode": { "const": "ref2va" },
+            "supportStatus": { "const": "implementation-candidate-unverified" },
+            "source": { "$ref": "#/$defs/ref2vSource" },
+            "generationSpec": {
+              "allOf": [
+                { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "const": "ref2va" },
+                    "referenceImages": { "type": "array", "minItems": 4, "maxItems": 4 },
+                    "referenceAudio": { "type": "object" }
+                  }
+                }
+              ]
+            },
+            "mediaBindings": {
+              "allOf": [
+                { "$ref": "#/$defs/mediaBindings" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "referenceImages": { "type": "array", "minItems": 4, "maxItems": 4 },
+                    "referenceAudio": { "$ref": "#/$defs/binding" }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
