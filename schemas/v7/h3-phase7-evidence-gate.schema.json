@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-phase7-evidence-gate.schema.json",
+  "title": "MiniMax H3 Phase 7 evidence-completeness gate",
+  "$comment": "Version 1 intentionally remains incomplete while only the T2V workflow identity is trusted. It does not replace authorized real-GPU execution or human visual acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "profileUid", "gpuClass", "evidenceComplete", "acceptedReceiptModes",
+    "missingModes", "workflowUnavailableModes", "receiptCount",
+    "receiptsSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-phase7-evidence-gate.v1" },
+    "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" },
+    "gpuClass": { "const": "rtx4090-48gb" },
+    "evidenceComplete": { "const": false },
+    "acceptedReceiptModes": {},
+    "missingModes": {},
+    "workflowUnavailableModes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "const": "fl2va-first" },
+        { "const": "fl2va-first-last" },
+        { "const": "ref2va" }
+      ],
+      "items": false
+    },
+    "receiptCount": { "enum": [0, 1] },
+    "receiptsSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "acceptedReceiptModes": { "type": "array", "maxItems": 0 },
+        "missingModes": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            { "const": "t2v" },
+            { "const": "fl2va-first" },
+            { "const": "fl2va-first-last" },
+            { "const": "ref2va" }
+          ],
+          "items": false
+        },
+        "receiptCount": { "const": 0 },
+        "receiptsSha256": { "const": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945" }
+      }
+    },
+    {
+      "properties": {
+        "acceptedReceiptModes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "prefixItems": [{ "const": "t2v" }],
+          "items": false
+        },
+        "missingModes": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "const": "fl2va-first" },
+            { "const": "fl2va-first-last" },
+            { "const": "ref2va" }
+          ],
+          "items": false
+        },
+        "receiptCount": { "const": 1 }
+      }
+    }
+  ],
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "modes": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "enum": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"] }
+    }
+  }
+}

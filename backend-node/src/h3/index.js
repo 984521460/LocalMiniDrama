@@ -14,6 +14,12 @@ const { createH3ExecutionIntent, validateH3ExecutionIntent } = require('./execut
 const { createH3ExecutionIntentService } = require('./executionIntentService');
 const { createH3LocalVideoInspector } = require('./localVideoInspector');
 const { H3_REAL_VALIDATION_MATRIX } = require('./realValidationMatrix');
+const {
+  H3_PHASE_7_REQUIRED_MODES,
+  createH3RealValidationCollector,
+  evaluateH3Phase7Evidence,
+  validateH3RealValidationReceipt,
+} = require('./realValidationEvidence');
 const { validateH3VideoEvidence, validateH3VideoOutput } = require('./outputValidation');
 const { compileH3ShotPrompt } = require('./promptCompiler');
 const {
@@ -23,6 +29,7 @@ const {
 
 module.exports = Object.freeze({
   H3_PROFILE,
+  H3_PHASE_7_REQUIRED_MODES,
   H3_REAL_VALIDATION_MATRIX,
   H3ContractError,
   compileH3GenerationWorkflow,
@@ -34,10 +41,13 @@ module.exports = Object.freeze({
   createH3ExecutionIntentService,
   validateH3ExecutionIntent,
   createH3LocalVideoInspector,
+  createH3RealValidationCollector,
   createH3TextToVideoWorkflowBundle,
   h3FramesForDuration,
   isH3ContractError,
   normalizeH3GenerationSpec,
+  evaluateH3Phase7Evidence,
+  validateH3RealValidationReceipt,
   validateH3GenerationSpec,
   validateH3VideoEvidence,
   validateH3VideoOutput,

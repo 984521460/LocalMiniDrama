@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-real-validation-receipt.schema.json",
+  "title": "Locally captured MiniMax H3 real-validation receipt",
+  "$comment": "This structural contract does not prove GPU provenance or human visual acceptance. Runtime additionally recomputes the receipt hash, binds the generation-spec hash and media dimensions/frames, and requires a locally trusted workflow identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "receiptUid", "profileUid", "gpuClass", "captureKind", "mode",
+    "promptId", "capturedAtEpochMs", "manifest", "generationSpec", "output",
+    "receiptSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-real-validation-receipt.v1" },
+    "receiptUid": { "$ref": "#/$defs/uid" },
+    "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" },
+    "gpuClass": { "enum": ["rtx4090-48gb", "rtx-pro-6000-blackwell-96gb"] },
+    "captureKind": { "const": "local-comfyui" },
+    "mode": { "enum": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"] },
+    "promptId": { "$ref": "#/$defs/uid" },
+    "capturedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 8640000000000000 },
+    "manifest": {
+      "allOf": [
+        { "$ref": "https://local-mini-drama.invalid/schemas/v6/comfy-workflow-manifest.schema.json" },
+        { "type": "object", "properties": { "modelFamily": { "const": "minimax-h3" } } }
+      ]
+    },
+    "generationSpec": {
+      "allOf": [
+        { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json" },
+        { "type": "object", "properties": { "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" } } }
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetVersionUid", "evidence"],
+      "properties": {
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "evidence": {
+          "allOf": [
+            { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-video-evidence.schema.json" },
+            { "type": "object", "properties": { "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" } } }
+          ]
+        }
+      }
+    },
+    "receiptSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "t2v" } }, "required": ["mode"] },
+      "then": { "properties": { "generationSpec": { "type": "object", "properties": { "mode": { "const": "t2v" } } } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "fl2va-first" } }, "required": ["mode"] },
+      "then": { "properties": { "generationSpec": { "type": "object", "properties": { "mode": { "const": "fl2va-first" } } } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "fl2va-first-last" } }, "required": ["mode"] },
+      "then": { "properties": { "generationSpec": { "type": "object", "properties": { "mode": { "const": "fl2va-first-last" } } } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "ref2va" } }, "required": ["mode"] },
+      "then": { "properties": { "generationSpec": { "type": "object", "properties": { "mode": { "const": "ref2va" } } } } }
+    }
+  ],
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -6,6 +6,7 @@ const MESSAGES = Object.freeze({
   H3_GENERATION_INPUT_INVALID: 'H3 generation input is invalid',
   H3_WORKFLOW_UNVERIFIED: 'H3 workflow mode has not passed its real validation gate',
   H3_OUTPUT_INVALID: 'H3 video output is invalid',
+  H3_REAL_VALIDATION_INVALID: 'H3 real validation evidence is invalid',
   H3_API_REQUEST_INVALID: 'MiniMax H3 API request is invalid',
   H3_API_UNAVAILABLE: 'MiniMax H3 API provider is unavailable',
   H3_API_REQUEST_ABORTED: 'MiniMax H3 API request did not settle in time',
