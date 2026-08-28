@@ -18,6 +18,8 @@ const { remoteExecutionRequest } = require('./remoteExecutionRequest');
 const { remoteConnectionEvidenceSha256 } = require('./connectionProfile');
 const { createComfyWorkflowManifest } = require('./workflowManifest');
 const { resolveRemoteExecutionBinding } = require('./remoteExecutionBinding');
+const { isRemoteOutputVerifier } = require('./outputVerifier');
+const { isH3GenerationHistoryService } = require('../h3/generationHistoryService');
 
 const OUTPUT_TYPES = Object.freeze({
   '.jpeg': Object.freeze({ mediaKind: 'image', mimeType: 'image/jpeg' }),
@@ -38,7 +40,8 @@ function configuration(value) {
   }
   const descriptors = Object.getOwnPropertyDescriptors(value);
   const required = [
-    'repositories', 'taskService', 'sessionService', 'transfer', 'remoteClient', 'localRoot',
+    'repositories', 'taskService', 'sessionService', 'transfer', 'remoteClient', 'outputVerifier',
+    'h3HistoryService', 'localRoot',
   ];
   const optional = ['createUid', 'timeoutMs'];
   const allowed = new Set([...required, ...optional]);
@@ -72,7 +75,8 @@ function configuration(value) {
   }
   const repositories = input.repositories;
   if (!repositories || typeof repositories !== 'object' || isProxy(repositories)
-    || !repositories.assets || !repositories.comfyManifests || !repositories.remote
+    || !repositories.assets || !repositories.comfyManifests || !repositories.h3GenerationIntents
+    || !repositories.remote
     || !repositories.workflows || !repositories.runs
     || typeof repositories.withTransaction !== 'function') {
     throw new TypeError('Remote execution coordinator configuration is invalid');
@@ -81,6 +85,8 @@ function configuration(value) {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   if (typeof input.localRoot !== 'string' || !path.isAbsolute(input.localRoot)
     || typeof createUid !== 'function' || isProxy(createUid)
+    || !isRemoteOutputVerifier(input.outputVerifier)
+    || !isH3GenerationHistoryService(input.h3HistoryService)
     || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 86_400_000) {
     throw new TypeError('Remote execution coordinator configuration is invalid');
   }
@@ -292,6 +298,35 @@ function createRemoteExecutionCoordinator(options) {
       task,
       request.output.assetUid,
     );
+    let h3Expectation;
+    try {
+      h3Expectation = configured.outputVerifier.preflight({
+        planNode: context.planNode,
+        manifest,
+        values: request.values,
+      });
+    } catch {
+      fail('REMOTE_TASK_INPUT_INVALID');
+    }
+    let h3Intent = null;
+    if (h3Expectation !== null) {
+      try {
+        h3Intent = configured.repositories.h3GenerationIntents.getByTask(task.uid);
+      } catch {
+        fail('REMOTE_TASK_INPUT_INVALID');
+      }
+      const spec = h3Intent.generationSpec;
+      if (h3Intent.taskUid !== task.uid
+        || h3Intent.assetUid !== context.asset.uid
+        || h3Intent.manifestUid !== manifest.uid
+        || spec.width !== request.values.width
+        || spec.height !== request.values.height
+        || spec.frames !== request.values.frames
+        || spec.seed !== request.values.seed
+        || spec.prompt.text !== request.values.prompt
+        || h3Intent.filenamePrefix !== request.values.filenamePrefix
+        || h3Intent.taskPromptSha256 !== task.promptSha256) fail('REMOTE_TASK_INPUT_INVALID');
+    }
     configured.repositories.withTransaction(() => {
       startNode(context, task.uid);
       task = configured.taskService.beginUpload(task.uid, {
@@ -398,10 +433,30 @@ function createRemoteExecutionCoordinator(options) {
       fail();
     }
 
+    let verifiedOutput;
+    try {
+      verifiedOutput = await configured.outputVerifier.verify({
+        planNode: context.planNode,
+        manifest,
+        localRelativePath,
+        remoteSha256: measured.sha256,
+        remoteBytes: measured.bytes,
+        mimeType: output.mimeType,
+      });
+    } catch {
+      try {
+        const target = path.resolve(configured.localRoot, ...localRelativePath.split('/'));
+        if (target.startsWith(`${configured.localRoot}${path.sep}`)) await fs.promises.unlink(target);
+      } catch { /* fixed cleanup */ }
+      failNode(task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context);
+      fail();
+    }
+
     let version;
     let node;
+    let generationHistory = null;
     try {
-      configured.repositories.withTransaction(() => {
+      configured.repositories.withTransaction((scoped) => {
         version = configured.repositories.assets.addVersion({
           uid: versionUid,
           assetUid: context.asset.uid,
@@ -410,15 +465,28 @@ function createRemoteExecutionCoordinator(options) {
           relativePath: localRelativePath,
           sha256: measured.sha256,
           mimeType: output.mimeType,
-          width: null,
-          height: null,
-          durationMs: null,
-          parentUid: context.asset.currentVersionUid,
+          width: verifiedOutput.width,
+          height: verifiedOutput.height,
+          durationMs: verifiedOutput.durationMs,
+          parentUid: h3Intent === null
+            ? context.asset.currentVersionUid
+            : h3Intent.parentVersionUid,
           status: 'ready',
-        }, { makeCurrent: true });
+        }, { makeCurrent: false });
         task = configured.taskService.markVerifying(task.uid, {
           expectedStateVersion: task.stateVersion,
         });
+        if (h3Intent !== null) {
+          generationHistory = configured.h3HistoryService.recordPrepared(
+            scoped,
+            {
+              intent: h3Intent,
+              remotePromptId: task.promptId,
+              outputVersionUid: version.uid,
+              measured: verifiedOutput.measured,
+            },
+          );
+        }
         task = configured.taskService.complete(task.uid, {
           expectedStateVersion: task.stateVersion,
           outputAssetVersionUid: version.uid,
@@ -448,7 +516,7 @@ function createRemoteExecutionCoordinator(options) {
       failNode(task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context);
       fail();
     }
-    return Object.freeze({ task, assetVersion: version, node });
+    return Object.freeze({ task, assetVersion: version, node, generationHistory });
   }
 
   function execute(taskUid, value) {

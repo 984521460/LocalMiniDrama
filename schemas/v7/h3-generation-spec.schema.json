@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json",
+  "title": "Normalized MiniMax H3 generation specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "profileUid", "mode", "prompt", "width", "height",
+    "durationSeconds", "fps", "frames", "seed", "referenceImages", "referenceAudio"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-generation-spec.v1" },
+    "profileUid": { "$ref": "#/$defs/uid" },
+    "mode": { "enum": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"] },
+    "prompt": { "$ref": "#/$defs/prompt" },
+    "width": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+    "height": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+    "durationSeconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 15, "multipleOf": 0.001 },
+    "fps": { "const": 24 },
+    "frames": { "type": "integer", "minimum": 5, "maximum": 362 },
+    "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+    "referenceImages": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/image" } },
+    "referenceAudio": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/audio" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "t2v" } }, "required": ["mode"] },
+      "then": { "properties": { "referenceImages": { "type": "array", "maxItems": 0 } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "fl2va-first" } }, "required": ["mode"] },
+      "then": { "properties": { "referenceImages": {
+        "type": "array",
+        "minItems": 1, "maxItems": 1,
+        "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/image" }, { "type": "object", "properties": { "ordinal": { "const": 1 }, "role": { "const": "first" } } }] }],
+        "items": false
+      } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "fl2va-first-last" } }, "required": ["mode"] },
+      "then": { "properties": { "referenceImages": {
+        "type": "array",
+        "minItems": 2, "maxItems": 2,
+        "prefixItems": [
+          { "allOf": [{ "$ref": "#/$defs/image" }, { "type": "object", "properties": { "ordinal": { "const": 1 }, "role": { "const": "first" } } }] },
+          { "allOf": [{ "$ref": "#/$defs/image" }, { "type": "object", "properties": { "ordinal": { "const": 2 }, "role": { "const": "last" } } }] }
+        ],
+        "items": false
+      } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "ref2va" } }, "required": ["mode"] },
+      "then": { "properties": { "referenceImages": {
+        "type": "array",
+        "minItems": 1, "maxItems": 4,
+        "items": { "allOf": [{ "$ref": "#/$defs/image" }, { "type": "object", "properties": { "role": { "const": "reference" } } }] }
+      } } }
+    }
+  ],
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "prompt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "profileUid", "dramaUid", "shotId", "continuitySnapshotUid", "semanticSha256", "promptSha256", "text"],
+      "properties": {
+        "schemaVersion": { "const": "h3-shot-prompt.v1" },
+        "profileUid": { "$ref": "#/$defs/uid" },
+        "dramaUid": { "$ref": "#/$defs/uid" },
+        "shotId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+        "continuitySnapshotUid": { "$ref": "#/$defs/uid" },
+        "semanticSha256": { "$ref": "#/$defs/sha256" },
+        "promptSha256": { "$ref": "#/$defs/sha256" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 12000 }
+      }
+    },
+    "image": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "role", "dramaUid", "assetVersionUid", "sha256", "mimeType", "width", "height"],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "role": { "enum": ["first", "last", "reference"] },
+        "dramaUid": { "$ref": "#/$defs/uid" },
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "mimeType": { "enum": ["image/jpeg", "image/png", "image/webp"] },
+        "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 16384 }
+      }
+    },
+    "audio": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dramaUid", "assetVersionUid", "sha256", "mimeType", "durationMs"],
+      "properties": {
+        "dramaUid": { "$ref": "#/$defs/uid" },
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "mimeType": { "enum": ["audio/flac", "audio/mpeg", "audio/wav", "audio/x-wav"] },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 900000 }
+      }
+    }
+  }
+}

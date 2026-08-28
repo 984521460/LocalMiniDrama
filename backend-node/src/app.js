@@ -7,8 +7,9 @@ const { loadConfig } = require('./config/index.js');
 const logger = require('./logger.js');
 const { setupRouter } = require('./routes/index.js');
 const { createProductionRemoteRuntime } = require('./remote/productionRuntime');
+const { createProductionH3Runtime } = require('./h3/productionRuntime');
 
-function createApp({ remoteDependencies = {} } = {}) {
+function createApp({ remoteDependencies = {}, h3Dependencies = {} } = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
   const { runMigrationsAndEnsure } = require('./db/migrate.js');
@@ -25,10 +26,18 @@ function createApp({ remoteDependencies = {} } = {}) {
         ? config.storage.local_path
         : path.join(process.cwd(), config.storage.local_path))
     : path.join(process.cwd(), 'data', 'storage');
-  const runtime = createProductionRemoteRuntime({
+  const remoteRuntime = createProductionRemoteRuntime({
     database: db,
     localRoot: storageRoot,
     dependencies: remoteDependencies,
+  });
+  const runtime = Object.freeze({
+    ...remoteRuntime,
+    h3: createProductionH3Runtime({
+      database: db,
+      storageBaseUrl: config.storage?.base_url || '',
+      dependencies: h3Dependencies,
+    }),
   });
 
   const taskService = require('./services/taskService');

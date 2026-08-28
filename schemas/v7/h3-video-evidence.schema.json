@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-video-evidence.schema.json",
+  "title": "Validated MiniMax H3 video evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "profileUid", "generationSpecSha256", "sha256", "bytes",
+    "mimeType", "width", "height", "durationMs", "frames", "fps", "videoCodec",
+    "audioCodec", "audioStreams", "blackFrameRatio", "frozenFrameRatio"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-video-evidence.v1" },
+    "profileUid": { "$ref": "#/$defs/uid" },
+    "generationSpecSha256": { "$ref": "#/$defs/sha256" },
+    "sha256": { "$ref": "#/$defs/sha256" },
+    "bytes": { "type": "integer", "minimum": 1, "maximum": 20000000000 },
+    "mimeType": { "const": "video/mp4" },
+    "width": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+    "height": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+    "durationMs": { "type": "integer", "minimum": 1, "maximum": 20000 },
+    "frames": { "type": "integer", "minimum": 5, "maximum": 362 },
+    "fps": { "const": 24 },
+    "videoCodec": { "const": "h264" },
+    "audioCodec": { "const": "aac" },
+    "audioStreams": { "const": 1 },
+    "blackFrameRatio": { "type": "number", "minimum": 0, "maximum": 0.95 },
+    "frozenFrameRatio": { "type": "number", "minimum": 0, "maximum": 0.95 }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -13,10 +13,13 @@ const { createSftpTransfer } = require('./sftpTransfer');
 const { createSshEnvironmentAdapter } = require('./sshEnvironmentAdapter');
 const { createSshTransport } = require('./sshTransport');
 const { createSshTunnelManager } = require('./sshTunnel');
+const { createH3LocalVideoInspector } = require('../h3/localVideoInspector');
+const { createH3GenerationHistoryService } = require('../h3/generationHistoryService');
+const { createRemoteOutputVerifier } = require('./outputVerifier');
 
 const DEPENDENCY_KEYS = Object.freeze([
   'credentialVault', 'sshTransport', 'tunnelManager', 'comfyClientFactory',
-  'remoteTimeoutMs', 'executionTimeoutMs',
+  'h3Inspector', 'remoteTimeoutMs', 'executionTimeoutMs',
 ]);
 
 function dependencySnapshot(value) {
@@ -86,12 +89,18 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
       : {}),
   });
   const transfer = createSftpTransfer({ localRoot });
+  const outputVerifier = createRemoteOutputVerifier({
+    h3Inspector: configured.h3Inspector ?? createH3LocalVideoInspector({ localRoot }),
+  });
+  const h3HistoryService = createH3GenerationHistoryService({ repositories });
   const remoteCoordinator = createRemoteExecutionCoordinator({
     repositories,
     taskService: remoteTasks,
     sessionService: remoteSessionService,
     transfer,
     remoteClient,
+    outputVerifier,
+    h3HistoryService,
     localRoot,
     ...(configured.executionTimeoutMs !== undefined
       ? { timeoutMs: configured.executionTimeoutMs }

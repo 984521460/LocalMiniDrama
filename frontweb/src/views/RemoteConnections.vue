@@ -17,6 +17,13 @@
         show-icon
       />
 
+      <H3ValidationPanel
+        :profile="h3Profile"
+        :validation="h3Validation"
+        :loading="h3Loading"
+        :error="h3Error"
+      />
+
       <section v-if="connections.length" class="connection-grid">
         <article v-for="item in connections" :key="item.uid" class="connection-card">
           <div class="card-title">
@@ -157,7 +164,9 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
+import { h3API } from '@/api/v2/h3.js'
 import { remoteConnectionAPI } from '@/api/v2/remoteConnections.js'
+import H3ValidationPanel from '@/components/h3/H3ValidationPanel.vue'
 import RemoteEnvironmentPanel from '@/components/remote/RemoteEnvironmentPanel.vue'
 import RemoteExpertMode from '@/components/remote/RemoteExpertMode.vue'
 import { remoteConnectionListView, remoteConnectionView } from '@/remote/connectionProfile.js'
@@ -183,6 +192,10 @@ const checkingEnvironmentUid = ref(null)
 const initializingEnvironmentUid = ref(null)
 const installingModelsUid = ref(null)
 const openingExpertTunnelUid = ref(null)
+const h3Profile = ref(null)
+const h3Validation = ref(null)
+const h3Loading = ref(false)
+const h3Error = ref(false)
 const form = reactive({
   name: '',
   host: '',
@@ -271,6 +284,22 @@ async function load() {
     ElMessage.error('远程连接列表加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadH3Status() {
+  h3Loading.value = true
+  h3Error.value = false
+  try {
+    const status = await h3API.status()
+    h3Profile.value = status.profile
+    h3Validation.value = status.validation
+  } catch {
+    h3Profile.value = null
+    h3Validation.value = null
+    h3Error.value = true
+  } finally {
+    h3Loading.value = false
   }
 }
 
@@ -442,7 +471,10 @@ function statusType(status) {
   return ({ ready: 'success', changed: 'danger', error: 'danger', disabled: 'info' })[status] || 'warning'
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void loadH3Status()
+})
 onBeforeUnmount(() => { void closeAllExpertTunnels() })
 </script>
 

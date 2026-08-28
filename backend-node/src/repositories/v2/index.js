@@ -6,6 +6,7 @@ const { createCharacterReferencePackageRepository } = require('./characterRefere
 const { createCharacterVersionRepository } = require('./characterVersionRepository');
 const { createComfyManifestRepository } = require('./comfyManifestRepository');
 const { createGenerationHistoryRepository } = require('./generationHistoryRepository');
+const { createH3GenerationIntentRepository } = require('./h3GenerationIntentRepository');
 const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
@@ -81,25 +82,36 @@ function createTransactionScope(repositories) {
 function createV2Repositories(database) {
   assertDatabase(database);
 
+  const assets = createAssetRepository(database);
   const characterReferencePackages = createCharacterReferencePackageRepository(database);
   const characterVersions = createCharacterVersionRepository(database);
+  const comfyManifests = createComfyManifestRepository(database);
   const narrativeReviews = createNarrativeReviewRepository(database);
+  const remote = createRemoteRepository(database);
   const scenePropVersions = createScenePropVersionRepository(database);
   const sources = createSourceRepository(database);
   const narrativeApprovalGate = createNarrativeApprovalGate({ narrativeReviews, sources });
   const generationHistory = createGenerationHistoryRepository(database, {
     requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
   });
+  const h3GenerationIntents = createH3GenerationIntentRepository(database, {
+    assets,
+    comfyManifests,
+    generationHistory,
+    remote,
+    requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
+  });
   const aggregates = {
-    assets: createAssetRepository(database),
+    assets,
     characterCandidates: createCharacterCandidateRepository(database),
     characterReferencePackages,
     characterVersions,
-    comfyManifests: createComfyManifestRepository(database),
+    comfyManifests,
     generationHistory,
+    h3GenerationIntents,
     narrativeReviews,
     projectArchives: createLazyProjectArchiveRepository(database),
-    remote: createRemoteRepository(database),
+    remote,
     runs: createRunRepository(database),
     scenePropVersions,
     shotContinuitySnapshots: createShotContinuitySnapshotRepository(database, {

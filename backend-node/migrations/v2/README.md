@@ -138,3 +138,26 @@ replacement, and freezes them after insertion. Runtime validation remains the
 authority for binding the manifest to the exact workflow bytes and compiled
 graph. Later Phase 6 tasks extend this migration with the recoverable remote-task
 evidence defined by the same product contract.
+
+Migration `0010_h3_generation_intents.sql` begins the local H3 T2V production
+binding. Before upload or prompt submission, one append-only intent freezes the
+prepared formal remote task, current approved Prompt Semantic record, official
+validated workflow manifest, target video Asset, selected parent AssetVersion,
+normalized H3 generation specification, safe output prefix, compiled prompt
+hash, and immutable workflow-plan evidence. Database writes and repository
+reads both revalidate the current approval, exact manifest, current connection
+evidence, media ownership, parent lineage, plan node parameters, and canonical
+specification/prompt hashes. Completion of a bound remote task is rejected at
+the database boundary unless the matching immutable generation run and history
+bind the full canonical specification, provider/model, parameters, prompt
+identity, manifest hash, and output/parent evidence. Output AssetVersion
+creation, H3 history append, remote-task completion, node completion, and
+workflow completion are committed by one local SQLite transaction; selection
+of the new video remains an explicit later user action.
+
+Migration `0011_h3_api_submissions.sql` reserves every chargeable MiniMax H3
+API submission before the remote POST. A canonical client operation UID is
+bound to the exact request hash and saved-configuration evidence. A returned
+provider task ID can be attached once; a timeout or indeterminate response is
+persisted as append-only `submission_unknown` and cannot be automatically
+retried under the same or a changed request.

@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-real-validation-matrix.schema.json",
+  "title": "MiniMax H3 real GPU validation matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "profileUid", "gpus"],
+  "properties": {
+    "schemaVersion": { "const": "h3-real-validation-matrix.v1" },
+    "profileUid": { "$ref": "#/$defs/uid" },
+    "gpus": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/gpu" },
+            {
+              "type": "object",
+              "properties": {
+                "gpuClass": { "const": "rtx4090-48gb" },
+                "vramGiB": { "const": 48 },
+                "modes": {
+                  "type": "object",
+                  "properties": {
+                    "t2v": { "$ref": "#/$defs/verifiedMode" },
+                    "fl2va-first": { "$ref": "#/$defs/unverifiedMode" },
+                    "fl2va-first-last": { "$ref": "#/$defs/unverifiedMode" },
+                    "ref2va": { "$ref": "#/$defs/unverifiedMode" }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/gpu" },
+            {
+              "type": "object",
+              "properties": {
+                "gpuClass": { "const": "rtx-pro-6000-blackwell-96gb" },
+                "vramGiB": { "const": 96 },
+                "modes": {
+                  "type": "object",
+                  "properties": {
+                    "t2v": { "$ref": "#/$defs/unverifiedMode" },
+                    "fl2va-first": { "$ref": "#/$defs/unverifiedMode" },
+                    "fl2va-first-last": { "$ref": "#/$defs/unverifiedMode" },
+                    "ref2va": { "$ref": "#/$defs/unverifiedMode" }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "requestedSeconds", "width", "height", "fps", "frames", "videoCodec", "audioCodec", "outputSha256", "evidenceRef"],
+      "properties": {
+        "caseId": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 64 },
+        "requestedSeconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 15 },
+        "width": { "type": "integer", "minimum": 32, "maximum": 1344 },
+        "height": { "type": "integer", "minimum": 32, "maximum": 1344 },
+        "fps": { "const": 24 },
+        "frames": { "type": "integer", "minimum": 5, "maximum": 362 },
+        "videoCodec": { "const": "h264" },
+        "audioCodec": { "const": "aac" },
+        "outputSha256": { "$ref": "#/$defs/sha256" },
+        "evidenceRef": { "type": "string", "pattern": "^phase-1:[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 128 }
+      }
+    },
+    "mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "measuredCases"],
+      "properties": {
+        "status": { "enum": ["verified", "unverified"] },
+        "measuredCases": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/case" } }
+      }
+    },
+    "verifiedMode": {
+      "allOf": [
+        { "$ref": "#/$defs/mode" },
+        {
+          "type": "object",
+          "properties": {
+            "status": { "const": "verified" },
+            "measuredCases": { "type": "array", "minItems": 1 }
+          }
+        }
+      ]
+    },
+    "unverifiedMode": {
+      "allOf": [
+        { "$ref": "#/$defs/mode" },
+        {
+          "type": "object",
+          "properties": {
+            "status": { "const": "unverified" },
+            "measuredCases": { "type": "array", "maxItems": 0 }
+          }
+        }
+      ]
+    },
+    "gpu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gpuClass", "vramGiB", "modes"],
+      "properties": {
+        "gpuClass": { "enum": ["rtx4090-48gb", "rtx-pro-6000-blackwell-96gb"] },
+        "vramGiB": { "enum": [48, 96] },
+        "modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"],
+          "properties": {
+            "t2v": { "$ref": "#/$defs/mode" },
+            "fl2va-first": { "$ref": "#/$defs/mode" },
+            "fl2va-first-last": { "$ref": "#/$defs/mode" },
+            "ref2va": { "$ref": "#/$defs/mode" }
+          }
+        }
+      }
+    }
+  }
+}

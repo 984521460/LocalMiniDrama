@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-api-task.schema.json",
+  "title": "Public MiniMax H3 API task projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "provider", "model", "taskId", "status", "outputUrl"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-api-task.v1" },
+    "provider": { "const": "minimax-api" },
+    "model": { "const": "MiniMax-H3" },
+    "taskId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "status": {
+      "enum": ["queued", "running", "succeeded", "failed", "cancelled"]
+    },
+    "outputUrl": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "string",
+          "minLength": 9,
+          "maxLength": 8192,
+          "pattern": "^https://[^\\s\\\\#]+$"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "succeeded" } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "outputUrl": { "type": "string" } } },
+      "else": { "properties": { "outputUrl": { "type": "null" } } }
+    }
+  ]
+}

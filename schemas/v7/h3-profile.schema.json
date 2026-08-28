@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-profile.schema.json",
+  "title": "MiniMax H3 local generation profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "profileId", "revision", "engine", "modelFamily",
+    "sourceRevision", "fps", "frameGrid", "canvas", "sampler", "models", "modes"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-profile.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "profileId": { "const": "minimax-h3-local-four-step-768p" },
+    "revision": { "const": 1 },
+    "engine": { "const": "comfyui" },
+    "modelFamily": { "const": "minimax-h3" },
+    "sourceRevision": { "$ref": "#/$defs/sha1" },
+    "fps": { "const": 24 },
+    "frameGrid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset", "stride", "minimum"],
+      "properties": {
+        "offset": { "const": 5 },
+        "stride": { "const": 17 },
+        "minimum": { "const": 5 }
+      }
+    },
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["multipleOf", "maximumLongEdge", "maximumShortEdge", "maximumPixels"],
+      "properties": {
+        "multipleOf": { "const": 32 },
+        "maximumLongEdge": { "const": 1344 },
+        "maximumShortEdge": { "const": 768 },
+        "maximumPixels": { "const": 1032192 }
+      }
+    },
+    "sampler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps", "samplerName", "scheduler", "denoise", "loraStrength"],
+      "properties": {
+        "steps": { "const": 4 },
+        "samplerName": { "const": "res_multistep" },
+        "scheduler": { "const": "simple" },
+        "denoise": { "const": 1 },
+        "loraStrength": { "const": 1 }
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["diffusion", "textEncoder", "videoVae", "audioVae", "turboLora"],
+      "properties": {
+        "diffusion": { "$ref": "#/$defs/model" },
+        "textEncoder": { "$ref": "#/$defs/model" },
+        "videoVae": { "$ref": "#/$defs/model" },
+        "audioVae": { "$ref": "#/$defs/model" },
+        "turboLora": { "$ref": "#/$defs/model" }
+      }
+    },
+    "modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"],
+      "properties": {
+        "t2v": { "$ref": "#/$defs/t2vMode" },
+        "fl2va-first": { "$ref": "#/$defs/firstMode" },
+        "fl2va-first-last": { "$ref": "#/$defs/firstLastMode" },
+        "ref2va": { "$ref": "#/$defs/referenceMode" }
+      }
+    }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeType", "inputName", "fileName", "sha256", "bytes", "digestStatus"],
+      "properties": {
+        "nodeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "inputName": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fileName": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "maxLength": 255 },
+        "sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 100000000000 },
+        "digestStatus": { "enum": ["verified", "historical-evidence-malformed"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "digestStatus": { "const": "verified" } }, "required": ["digestStatus"] },
+          "then": { "properties": { "sha256": { "$ref": "#/$defs/sha256" } } }
+        },
+        {
+          "if": { "properties": { "digestStatus": { "const": "historical-evidence-malformed" } }, "required": ["digestStatus"] },
+          "then": { "properties": { "sha256": { "type": "null" } } }
+        }
+      ]
+    },
+    "t2vMode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["referenceImageRoles", "minimumReferenceImages", "maximumReferenceImages", "nativeAudioOutput", "realValidation"],
+      "properties": {
+        "referenceImageRoles": { "type": "array", "maxItems": 0 },
+        "minimumReferenceImages": { "const": 0 }, "maximumReferenceImages": { "const": 0 },
+        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "validated-rtx4090" }
+      }
+    },
+    "firstMode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["referenceImageRoles", "minimumReferenceImages", "maximumReferenceImages", "nativeAudioOutput", "realValidation"],
+      "properties": {
+        "referenceImageRoles": { "const": ["first"] },
+        "minimumReferenceImages": { "const": 1 }, "maximumReferenceImages": { "const": 1 },
+        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "unverified" }
+      }
+    },
+    "firstLastMode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["referenceImageRoles", "minimumReferenceImages", "maximumReferenceImages", "nativeAudioOutput", "realValidation"],
+      "properties": {
+        "referenceImageRoles": { "const": ["first", "last"] },
+        "minimumReferenceImages": { "const": 2 }, "maximumReferenceImages": { "const": 2 },
+        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "unverified" }
+      }
+    },
+    "referenceMode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["referenceImageRoles", "minimumReferenceImages", "maximumReferenceImages", "nativeAudioOutput", "realValidation"],
+      "properties": {
+        "referenceImageRoles": { "const": ["reference"] },
+        "minimumReferenceImages": { "const": 1 }, "maximumReferenceImages": { "const": 4 },
+        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "unverified" }
+      }
+    }
+  }
+}

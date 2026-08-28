@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v7/h3-shot-prompt.schema.json",
+  "title": "Provider-neutral MiniMax H3 shot prompt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "profileUid", "dramaUid", "shotId", "continuitySnapshotUid",
+    "semanticSha256", "promptSha256", "text"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-shot-prompt.v1" },
+    "profileUid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "shotId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "continuitySnapshotUid": { "$ref": "#/$defs/uid" },
+    "semanticSha256": { "$ref": "#/$defs/sha256" },
+    "promptSha256": { "$ref": "#/$defs/sha256" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 12000 }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

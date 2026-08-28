@@ -311,8 +311,8 @@ function createApprovedShot(repositories, dramaUid, offset = 18400) {
   };
 }
 
-function seedContinuityFixture(t) {
-  const database = createMigratedV2Database(t);
+function seedContinuityFixture(t, existingDatabase = null) {
+  const database = existingDatabase ?? createMigratedV2Database(t);
   const dramaUid = uid(18000);
   insertDrama(database, dramaUid, 'Continuity fixture drama');
   database.prepare("INSERT INTO characters (id, drama_id, name) VALUES (1, 1, 'Hero')").run();

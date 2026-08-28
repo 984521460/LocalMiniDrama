@@ -283,12 +283,21 @@ function createGenerationHistoryRepository(database, {
     )));
   }
 
-  const appendTransaction = database.transaction((promptInput, historyInput) => {
-    const originalSemantic = safeSemanticValue(promptInput);
-    if (!isPromptSemanticVersioningResult(originalSemantic)) {
-      throw new V2RepositoryConflictError('prompt semantic version', 'validated');
+  const appendTransaction = database.transaction((promptInput, historyInput, existingOnly = false) => {
+    let prompt;
+    if (existingOnly) {
+      prompt = mapPrompt(requiredRow(
+        getStatements().getPrompt.get(promptInput),
+        'prompt semantic version',
+        promptInput,
+      ));
+    } else {
+      const originalSemantic = safeSemanticValue(promptInput);
+      if (!isPromptSemanticVersioningResult(originalSemantic)) {
+        throw new V2RepositoryConflictError('prompt semantic version', 'validated');
+      }
+      prompt = createPromptSemanticVersionRecord(promptInput);
     }
-    const prompt = createPromptSemanticVersionRecord(promptInput);
     const history = createGenerationHistoryRecord(historyInput);
     if (history.promptSemanticUid !== prompt.uid || history.dramaUid !== prompt.dramaUid) {
       throw new V2RepositoryConflictError('generation history', 'referenced');
@@ -444,6 +453,15 @@ function createGenerationHistoryRepository(database, {
       let uid;
       executeWrite('generation history', 'created', () => {
         uid = appendTransaction(promptSemanticInput, historyInput);
+        return { changes: 1 };
+      });
+      return get(uid);
+    },
+
+    appendPrepared(promptSemanticUid, historyInput) {
+      let uid;
+      executeWrite('generation history', 'created', () => {
+        uid = appendTransaction(promptSemanticUid, historyInput, true);
         return { changes: 1 };
       });
       return get(uid);

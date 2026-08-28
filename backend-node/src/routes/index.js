@@ -30,6 +30,7 @@ const shotContinuitySnapshotRoutes = require('./v2/shotContinuitySnapshots');
 const generationHistoryRoutes = require('./v2/generationHistory');
 const remoteConnectionRoutes = require('./v2/remoteConnections');
 const remoteExecutionRoutes = require('./v2/remoteExecution');
+const h3Routes = require('./v2/h3');
 
 function setupRouter(cfg, db, log, runtime = {}) {
   const r = express.Router();
@@ -77,6 +78,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   );
   const remoteConnections = remoteConnectionRoutes(log, runtime.remoteConnections, db);
   const remoteExecution = remoteExecutionRoutes(log, runtime.remoteExecution, db);
+  const h3 = h3Routes(log, db, runtime.h3);
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
@@ -87,6 +89,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   r.use('/v2', generationHistory);
   r.use('/v2', remoteConnections);
   r.use('/v2', remoteExecution);
+  r.use('/v2', h3);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

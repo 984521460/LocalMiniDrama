@@ -15,8 +15,20 @@ const { createV2Repositories } = require('../src/repositories/v2');
 const { createSourceDocumentService } = require('../src/narrative/sourceDocuments');
 const { hashRemoteTaskPrompt } = require('../src/remote/remoteTask');
 const { createComfyWorkflowManifest } = require('../src/remote/workflowManifest');
+const {
+  H3_PROFILE,
+  compileH3GenerationWorkflow,
+  compileH3ShotPrompt,
+  createH3TextToVideoWorkflowBundle,
+  normalizeH3GenerationSpec,
+} = require('../src/h3');
+const { createH3LocalVideoInspector } = require('../src/h3/localVideoInspector');
+const { createH3ExecutionBinding } = require('../src/h3/executionBinding');
 const { createWorkflowRunService, createWorkflowService } = require('../src/workflows');
-const { insertDrama } = require('./helpers/v2RepositoryDatabase');
+const {
+  createPromptSemanticFixture,
+  seedContinuityFixture,
+} = require('./helpers/v5ContinuityFixtures');
 
 const FINGERPRINT = `SHA256:${'A'.repeat(43)}`;
 
@@ -99,6 +111,44 @@ function objectInfoFixture() {
   };
 }
 
+function completeObjectInfoFixture() {
+  const info = objectInfoFixture();
+  for (const requirement of createH3TextToVideoWorkflowBundle().manifest.requirements) {
+    if (!Object.hasOwn(info, requirement.nodeType)) {
+      info[requirement.nodeType] = { input: { required: {} } };
+    }
+    if (requirement.kind === 'model') {
+      const current = info[requirement.nodeType].input.required[requirement.inputName];
+      const options = current && Array.isArray(current[0]) ? [...current[0]] : [];
+      if (!options.includes(requirement.fileName)) options.push(requirement.fileName);
+      info[requirement.nodeType].input.required[requirement.inputName] = [
+        options,
+        {},
+      ];
+    }
+  }
+  return info;
+}
+
+function h3ProbeJson() {
+  return JSON.stringify({
+    streams: [
+      {
+        index: 0,
+        codec_type: 'video',
+        codec_name: 'h264',
+        width: 608,
+        height: 352,
+        avg_frame_rate: '24/1',
+        nb_read_frames: '39',
+        duration: '1.625000',
+      },
+      { index: 1, codec_type: 'audio', codec_name: 'aac' },
+    ],
+    format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', duration: '1.625000' },
+  });
+}
+
 class LocalSftp {
   constructor(root) { this.root = root; }
 
@@ -150,7 +200,7 @@ function fakeCredentialVault() {
   });
 }
 
-function remoteDependencies(remoteRoot, comfyOrigin, connectionEndpoints) {
+function remoteDependencies(remoteRoot, comfyOrigin, connectionEndpoints, h3Inspector) {
   const origin = new URL(comfyOrigin);
   const sshTransport = Object.freeze({
     async probeHostIdentity() {
@@ -178,6 +228,7 @@ function remoteDependencies(remoteRoot, comfyOrigin, connectionEndpoints) {
     credentialVault: fakeCredentialVault(),
     sshTransport,
     tunnelManager,
+    h3Inspector,
     remoteTimeoutMs: 2000,
     executionTimeoutMs: 2000,
   });
@@ -223,7 +274,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
       if (dependencyDelay === delay) dependencyDelay = null;
     }
     return res.json(
-      dependencyReady ? objectInfoFixture() : { PromptNode: { input: { required: {} } } },
+      dependencyReady ? completeObjectInfoFixture() : { PromptNode: { input: { required: {} } } },
     );
   });
   comfyApp.get('/queue', (_req, res) => res.json({ queue_running: [], queue_pending: [] }));
@@ -231,7 +282,10 @@ test('the actual application production runtime executes and phase-fails Mock Co
     promptOrdinal += 1;
     const promptId = `production-prompt-${promptOrdinal}`;
     const taskUid = req.body.client_id;
-    prompts.set(promptId, taskUid);
+    prompts.set(promptId, Object.freeze({
+      taskUid,
+      outputNodeId: Object.hasOwn(req.body.prompt, '92') ? 92 : 20,
+    }));
     const target = path.join(
       remoteRoot, 'ai-drama-studio', 'jobs', taskUid, 'output', 'result.mp4',
     );
@@ -240,16 +294,16 @@ test('the actual application production runtime executes and phase-fails Mock Co
     res.json({ prompt_id: promptId, number: promptOrdinal, node_errors: {} });
   });
   comfyApp.get('/history/:promptId', (req, res) => {
-    const taskUid = prompts.get(req.params.promptId);
-    if (!taskUid) return res.json({});
+    const prompt = prompts.get(req.params.promptId);
+    if (!prompt) return res.json({});
     return res.json({
       [req.params.promptId]: {
         status: { completed: true, status_str: 'success' },
         outputs: {
-          20: {
+          [prompt.outputNodeId]: {
             gifs: [{
               filename: 'result.mp4',
-              subfolder: `ai-drama-studio/jobs/${taskUid}/output`,
+              subfolder: `ai-drama-studio/jobs/${prompt.taskUid}/output`,
               type: 'output',
             }],
           },
@@ -258,6 +312,17 @@ test('the actual application production runtime executes and phase-fails Mock Co
     });
   });
   const comfyOrigin = await listen(t, comfyApp);
+  const h3Inspector = createH3LocalVideoInspector({
+    localRoot: storagePath,
+    ffprobePath: 'synthetic-ffprobe',
+    ffmpegPath: 'synthetic-ffmpeg',
+    timeoutMs: 1000,
+    async runProcess(command) {
+      return command === 'synthetic-ffprobe'
+        ? { exitCode: 0, stdout: h3ProbeJson(), stderr: '' }
+        : { exitCode: 0, stdout: '', stderr: '' };
+    },
+  });
 
   fs.mkdirSync(path.join(tempRoot, 'configs'), { recursive: true });
   fs.writeFileSync(path.join(tempRoot, 'configs', 'config.yaml'), [
@@ -283,12 +348,17 @@ test('the actual application production runtime executes and phase-fails Mock Co
     const { closeDb } = require('../src/db');
     closeDatabase = closeDb;
     const { app, db } = createApp({
-      remoteDependencies: remoteDependencies(remoteRoot, comfyOrigin, connectionEndpoints),
+      remoteDependencies: remoteDependencies(
+        remoteRoot,
+        comfyOrigin,
+        connectionEndpoints,
+        h3Inspector,
+      ),
     });
     const origin = await listen(t, app);
     const base = `${origin}/api/v1/v2`;
-    const dramaUid = crypto.randomUUID();
-    insertDrama(db, dramaUid, 'Production coordinator fixture');
+    const continuityFixture = seedContinuityFixture(t, db);
+    const dramaUid = continuityFixture.dramaUid;
     const repositories = createV2Repositories(db);
     const workflowBytes = Buffer.from(JSON.stringify(workflowFixture()));
     const manifestUid = crypto.randomUUID();
@@ -338,6 +408,21 @@ test('the actual application production runtime executes and phase-fails Mock Co
       assetType: 'video',
       status: 'draft',
     });
+    const selectedBeforeExecutionUid = crypto.randomUUID();
+    repositories.assets.addVersion({
+      uid: selectedBeforeExecutionUid,
+      assetUid: outputAssetUid,
+      storageProvider: 'local',
+      logicalUri: `asset://dramas/${dramaUid}/selected/${selectedBeforeExecutionUid}`,
+      relativePath: `projects/${dramaUid}/assets/${selectedBeforeExecutionUid}.mp4`,
+      sha256: 'e'.repeat(64),
+      mimeType: 'video/mp4',
+      width: 608,
+      height: 352,
+      durationMs: 1625,
+      parentUid: null,
+      status: 'ready',
+    }, { makeCurrent: true });
     const workflowService = createWorkflowService({ repositories });
     const workflow = workflowService.createWorkflow({ dramaId: 1, name: 'Remote execution' });
     const sourceService = createSourceDocumentService({ repositories });
@@ -389,6 +474,10 @@ test('the actual application production runtime executes and phase-fails Mock Co
 
     async function preparedExecution(
       connectionEvidenceSha256 = frozenConnectionEvidenceSha256,
+      {
+        taskManifestUid = manifestUid,
+        promptSha256 = hashRemoteTaskPrompt(compiled.prompt),
+      } = {},
     ) {
       const run = runService.createRun({ workflowUid: workflow.definition.uid, triggerType: 'manual' });
       const taskUid = crypto.randomUUID();
@@ -397,9 +486,9 @@ test('the actual application production runtime executes and phase-fails Mock Co
         connectionUid,
         connectionEvidenceSha256,
         workflowRunUid: run.run.uid,
-        workflowManifestUid: manifestUid,
+        workflowManifestUid: taskManifestUid,
         idempotencyKey: `remote-task:v1:${run.nodes[0].uid}`,
-        promptSha256: hashRemoteTaskPrompt(compiled.prompt),
+        promptSha256,
         remoteRelativeDir: `jobs/${taskUid}`,
       });
       assert.equal(prepared.response.status, 201);
@@ -433,10 +522,141 @@ test('the actual application production runtime executes and phase-fails Mock Co
     assert.equal(runService.getRun(successful.run.run.uid).run.status, 'succeeded');
     const version = repositories.assets.getVersion(executed.body.data.assetVersion.uid);
     assert.equal(version.sha256, sha256(outputBytes));
+    assert.equal(
+      repositories.assets.get(outputAssetUid).currentVersionUid,
+      selectedBeforeExecutionUid,
+    );
     assert.deepEqual(
       fs.readFileSync(path.join(storagePath, ...version.relativePath.split('/'))),
       outputBytes,
     );
+
+    const promptFixture = createPromptSemanticFixture(continuityFixture, 34000);
+    const semanticShot = promptFixture.semantic.output.semanticShots[0];
+    const h3Prompt = compileH3ShotPrompt({ dramaUid, semanticShot });
+    const h3Spec = normalizeH3GenerationSpec({
+      mode: 't2v',
+      prompt: h3Prompt,
+      width: 608,
+      height: 352,
+      durationSeconds: 1,
+      seed: 9,
+      referenceImages: [],
+    });
+    const h3Bundle = createH3TextToVideoWorkflowBundle();
+    const h3Compiled = compileH3GenerationWorkflow({
+      generationSpec: h3Spec,
+      filenamePrefix: 'video/production-h3',
+    });
+    workflowService.replaceGraph(workflow.definition.uid, {
+      expectedRevision: 1,
+      nodes: [videoNode('ready', {
+        profileUid: H3_PROFILE.uid,
+        manifestUid: h3Bundle.manifest.uid,
+        width: h3Spec.width,
+        height: h3Spec.height,
+        durationMs: 1625,
+        fps: h3Spec.fps,
+        seed: h3Spec.seed,
+      })],
+      edges: [],
+    });
+    const h3Execution = await preparedExecution(undefined, {
+      taskManifestUid: h3Bundle.manifest.uid,
+      promptSha256: hashRemoteTaskPrompt(h3Compiled.prompt),
+    });
+    const persistedH3Task = repositories.remote.getFormalTask(h3Execution.task.uid);
+    const h3Binding = createH3ExecutionBinding({
+      generationSpec: h3Spec,
+      filenamePrefix: 'video/production-h3',
+      task: persistedH3Task,
+      graphSnapshot: h3Execution.run.run.graphSnapshot,
+      nodeUid: h3Execution.run.nodes[0].nodeUid,
+      connection: repositories.remote.getConnection(persistedH3Task.connectionUid),
+      asset: repositories.assets.get(outputAssetUid),
+      manifestUid: h3Bundle.manifest.uid,
+    });
+    const h3Intent = repositories.h3GenerationIntents.prepare({
+      uid: crypto.randomUUID(),
+      taskUid: h3Execution.task.uid,
+      generationRunUid: crypto.randomUUID(),
+      historyUid: crypto.randomUUID(),
+      assetUid: outputAssetUid,
+      promptSemantic: {
+        uid: crypto.randomUUID(),
+        semantic: promptFixture.semantic,
+        createdAtEpochMs: 0,
+      },
+      generationSpec: h3Spec,
+      manifestUid: h3Bundle.manifest.uid,
+      parentVersionUid: selectedBeforeExecutionUid,
+      ...h3Binding,
+      createdAtEpochMs: 0,
+    });
+    const h3Executed = await jsonRequest(
+      `${base}/remote-tasks/${h3Execution.task.uid}/execute`,
+      'POST',
+      {
+        expectedStateVersion: h3Execution.task.stateVersion,
+        workflowBase64: Buffer.from(h3Bundle.workflowJson, 'utf8').toString('base64'),
+        values: {
+          prompt: h3Spec.prompt.text,
+          width: h3Spec.width,
+          height: h3Spec.height,
+          frames: h3Spec.frames,
+          seed: h3Spec.seed,
+          filenamePrefix: 'video/production-h3',
+        },
+        uploads: [],
+        output: { logicalName: 'video', assetUid: outputAssetUid },
+      },
+    );
+    assert.equal(h3Executed.response.status, 200, JSON.stringify({
+      body: h3Executed.body,
+      task: repositories.remote.getFormalTask(h3Execution.task.uid),
+      histories: repositories.generationHistory.listByAsset(outputAssetUid),
+      generationRunCount: db.prepare(
+        'SELECT count(*) AS count FROM generation_runs WHERE uid = ?',
+      ).get(h3Intent.generationRunUid).count,
+    }));
+    assert.equal(h3Executed.body.data.generationHistory.uid, h3Intent.historyUid);
+    assert.equal(h3Executed.body.data.generationHistory.input.remotePromptId, 'production-prompt-2');
+    assert.equal(repositories.generationHistory.listByAsset(outputAssetUid).length, 1);
+    assert.equal(repositories.assets.get(outputAssetUid).currentVersionUid, selectedBeforeExecutionUid);
+
+    workflowService.replaceGraph(workflow.definition.uid, {
+      expectedRevision: 2,
+      nodes: [videoNode('ready', {
+        profileUid: H3_PROFILE.uid,
+        width: 608,
+        height: 352,
+        durationMs: 1625,
+        fps: 24,
+      })],
+      edges: [],
+    });
+    const invalidH3Output = await preparedExecution();
+    const rejectedH3Output = await jsonRequest(
+      `${base}/remote-tasks/${invalidH3Output.task.uid}/execute`,
+      'POST',
+      executeBody(invalidH3Output),
+    );
+    assert.equal(rejectedH3Output.response.status, 400);
+    assert.equal(rejectedH3Output.body.error.code, 'REMOTE_TASK_INPUT_INVALID');
+    const invalidH3Task = repositories.remote.getFormalTask(invalidH3Output.task.uid);
+    assert.equal(invalidH3Task.stage, 'prepared');
+    assert.equal(invalidH3Task.errorPhase, null);
+    assert.equal(invalidH3Task.errorCode, null);
+    assert.equal(runService.getRun(invalidH3Output.run.run.uid).run.status, 'queued');
+    assert.equal(repositories.assets.listVersions(outputAssetUid).length, 3);
+    assert.equal(repositories.assets.get(outputAssetUid).currentVersionUid, selectedBeforeExecutionUid);
+    assert.equal(fs.readdirSync(path.join(storagePath, 'projects', dramaUid, 'assets')).length, 2);
+
+    workflowService.replaceGraph(workflow.definition.uid, {
+      expectedRevision: 3,
+      nodes: [videoNode()],
+      edges: [],
+    });
 
     dependencyReady = false;
     const failed = await preparedExecution();
@@ -453,12 +673,12 @@ test('the actual application production runtime executes and phase-fails Mock Co
     assert.equal(failedTask.errorPhase, 'dependency');
     assert.equal(failedTask.errorCode, 'ERR_REMOTE_DEPENDENCY_FAILED');
     assert.equal(runService.getRun(failed.run.run.uid).run.status, 'failed');
-    assert.equal(repositories.assets.listVersions(failed.assetUid).length, 1);
+    assert.equal(repositories.assets.listVersions(failed.assetUid).length, 3);
     assert.equal(JSON.stringify(failedTask).includes('synthetic-password'), false);
 
     dependencyReady = true;
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 1,
+      expectedRevision: 4,
       nodes: [videoNode('disabled')],
       edges: [],
     });
@@ -476,13 +696,13 @@ test('the actual application production runtime executes and phase-fails Mock Co
       assert.equal(fs.existsSync(path.join(
         remoteRoot, 'ai-drama-studio', 'jobs', execution.task.uid,
       )), false);
-      assert.equal(promptOrdinal, 1);
+      assert.equal(promptOrdinal, 2);
     }
 
     await rejectsBeforeRemote(await preparedExecution());
 
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 2,
+      expectedRevision: 5,
       nodes: [{
         uid: nodeUid,
         nodeType: 'source.selection',
@@ -496,21 +716,21 @@ test('the actual application production runtime executes and phase-fails Mock Co
     await rejectsBeforeRemote(await preparedExecution());
 
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 3,
+      expectedRevision: 6,
       nodes: [videoNode('ready', { manifestUid: crypto.randomUUID() })],
       edges: [],
     });
     await rejectsBeforeRemote(await preparedExecution());
 
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 4,
+      expectedRevision: 7,
       nodes: [videoNode('ready', { connectionUid: crypto.randomUUID() })],
       edges: [],
     });
     await rejectsBeforeRemote(await preparedExecution());
 
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 5,
+      expectedRevision: 8,
       nodes: [videoNode('ready', {
         credentialRef: `credential:v1:${crypto.randomUUID()}`,
       })],
@@ -519,7 +739,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
     await rejectsBeforeRemote(await preparedExecution());
 
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 6,
+      expectedRevision: 9,
       nodes: [videoNode()],
       edges: [],
     });
@@ -538,7 +758,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
     });
 
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 7,
+      expectedRevision: 10,
       nodes: [videoNode()],
       edges: [],
     });
@@ -578,7 +798,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
     await rejectsBeforeRemote(staleConnectionExecution);
 
     workflowService.replaceGraph(workflow.definition.uid, {
-      expectedRevision: 8,
+      expectedRevision: 11,
       nodes: [videoNode('ready', {
         connectionEvidenceSha256: rotatedConnection.connectionEvidenceSha256,
       })],
@@ -631,7 +851,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
     const racedTask = repositories.remote.getFormalTask(racingExecution.task.uid);
     assert.equal(racedTask.promptId, null);
     assert.equal(racedTask.stage, 'failed');
-    assert.equal(promptOrdinal, 1);
+    assert.equal(promptOrdinal, 2);
     assert.equal(fs.existsSync(path.join(
       remoteRoot,
       'ai-drama-studio-v2',

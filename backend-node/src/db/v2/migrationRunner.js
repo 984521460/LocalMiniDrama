@@ -1,5 +1,6 @@
 const { V2MigrationError, migrationError } = require('./errors.js');
 const { discoverV2Migrations } = require('./migrationFiles.js');
+const { registerV2SqlFunctions } = require('./sqlFunctions.js');
 
 const CREATE_LEDGER_SQL = `CREATE TABLE schema_migrations (
     version INTEGER PRIMARY KEY,
@@ -64,7 +65,8 @@ function assertSafeConnection(database) {
 
 function assertDatabase(database) {
   if (!database || typeof database.exec !== 'function'
-    || typeof database.prepare !== 'function' || typeof database.pragma !== 'function') {
+    || typeof database.prepare !== 'function' || typeof database.pragma !== 'function'
+    || typeof database.function !== 'function') {
     throw migrationError('INVALID_DATABASE', 'A synchronous SQLite database connection is required.');
   }
   if (database.inTransaction) {
@@ -225,6 +227,15 @@ function assertMigrationSnapshotUnchanged(migrationsDir, expectedMigrations) {
 
 function runV2Migrations(database, options = {}) {
   assertDatabase(database);
+  try {
+    registerV2SqlFunctions(database);
+  } catch (cause) {
+    throw migrationError(
+      'INVALID_DATABASE',
+      'Required deterministic SQLite functions could not be registered.',
+      cause,
+    );
+  }
   const migrations = discoverV2Migrations(options.migrationsDir);
   beginImmediate(database);
 

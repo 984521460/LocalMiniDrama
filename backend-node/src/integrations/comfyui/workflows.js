@@ -1,11 +1,14 @@
 'use strict';
 
+const { h3FramesForDuration } = require('../../h3/generationSpec');
+const { H3_PROFILE } = require('../../h3/profile');
+
 const H3_MODEL_FILES = Object.freeze({
-  diffusionModel: 'minimax_h3_fl2va_pruned_int8_convrot.safetensors',
-  textEncoder: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',
-  videoVae: 'minimax_h3_video_vae_fp16.safetensors',
-  audioVae: 'minimax_h3_audio_vae_fp32.safetensors',
-  turboLora4Step: 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors',
+  diffusionModel: H3_PROFILE.models.diffusion.fileName,
+  textEncoder: H3_PROFILE.models.textEncoder.fileName,
+  videoVae: H3_PROFILE.models.videoVae.fileName,
+  audioVae: H3_PROFILE.models.audioVae.fileName,
+  turboLora4Step: H3_PROFILE.models.turboLora.fileName,
 });
 
 function requirePositiveInteger(value, label) {
@@ -32,15 +35,6 @@ function requireFilenamePrefix(value) {
     throw new TypeError('filenamePrefix must be a safe relative prefix');
   }
   return prefix;
-}
-
-function h3FramesForDuration(durationSeconds) {
-  const seconds = Number(durationSeconds);
-  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 15) {
-    throw new TypeError('durationSeconds must be greater than 0 and no more than 15');
-  }
-  const rawFrames = Math.max(5, Math.round(seconds * 24));
-  return rawFrames + ((5 - (rawFrames % 17) + 17) % 17);
 }
 
 function buildMinimalImagePrompt({
@@ -91,9 +85,9 @@ function buildMinimaxH3TextToVideoPrompt({
   const normalizedWidth = requireDimension(width, 'width', { multipleOf32: true });
   const normalizedHeight = requireDimension(height, 'height', { multipleOf32: true });
   if (
-    Math.max(normalizedWidth, normalizedHeight) > 1344
-    || Math.min(normalizedWidth, normalizedHeight) > 768
-    || normalizedWidth * normalizedHeight > 1344 * 768
+    Math.max(normalizedWidth, normalizedHeight) > H3_PROFILE.canvas.maximumLongEdge
+    || Math.min(normalizedWidth, normalizedHeight) > H3_PROFILE.canvas.maximumShortEdge
+    || normalizedWidth * normalizedHeight > H3_PROFILE.canvas.maximumPixels
   ) {
     throw new TypeError('H3 canvas must fit within the official 768 x 1344 limit');
   }
@@ -107,7 +101,12 @@ function buildMinimaxH3TextToVideoPrompt({
     123: { class_type: 'KSamplerSelect', inputs: { sampler_name: 'res_multistep' } },
     124: {
       class_type: 'BasicScheduler',
-      inputs: { model: ['134', 0], scheduler: 'simple', steps: 4, denoise: 1 },
+      inputs: {
+        model: ['134', 0],
+        scheduler: H3_PROFILE.sampler.scheduler,
+        steps: H3_PROFILE.sampler.steps,
+        denoise: H3_PROFILE.sampler.denoise,
+      },
     },
     125: {
       class_type: 'SamplerCustomAdvanced',
@@ -134,7 +133,7 @@ function buildMinimaxH3TextToVideoPrompt({
     129: { class_type: 'RandomNoise', inputs: { noise_seed: seed } },
     130: {
       class_type: 'CreateVideo',
-      inputs: { images: ['122', 0], audio: ['121', 0], fps: 24, bit_depth: 8 },
+      inputs: { images: ['122', 0], audio: ['121', 0], fps: H3_PROFILE.fps, bit_depth: 8 },
     },
     131: {
       class_type: 'MiniMaxH3ImageToVideo',
@@ -152,7 +151,7 @@ function buildMinimaxH3TextToVideoPrompt({
       inputs: {
         model: ['127', 0],
         lora_name: H3_MODEL_FILES.turboLora4Step,
-        strength_model: 1,
+        strength_model: H3_PROFILE.sampler.loraStrength,
       },
     },
     92: {
