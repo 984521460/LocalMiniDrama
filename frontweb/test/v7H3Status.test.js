@@ -10,8 +10,10 @@ import {
   h3ProfileView,
   h3RealValidationMatrixView,
 } from '../src/h3/contracts.js'
+import { parseStrictJson } from '../src/security/strictJson.js'
 
 const PROFILE_UID = '70d4f190-d54d-4d27-9a45-c97807ea1b9d'
+const json = (value) => JSON.stringify(value)
 
 function profileFixture() {
   const model = (nodeType, inputName, fileName, sha256, bytes, digestStatus = 'verified') => ({
@@ -80,11 +82,20 @@ function matrixFixture() {
         modes: {
           t2v: {
             status: 'verified',
-            measuredCases: [{
-              caseId: 'h3-fight-15s', requestedSeconds: 15, width: 608, height: 352,
-              fps: 24, frames: 362, videoCodec: 'h264', audioCodec: 'aac',
-              outputSha256: 'e'.repeat(64), evidenceRef: 'phase-1:h3-fight-15s',
-            }],
+            measuredCases: [
+              {
+                caseId: 'h3-client-smoke', requestedSeconds: 0.2, width: 608, height: 352,
+                fps: 24, frames: 5, videoCodec: 'h264', audioCodec: 'aac',
+                outputSha256: 'd8d9af12a1ea45fe054308dd83ad7183421471fd3fbb534b54f7e10c425e29cf',
+                evidenceRef: 'phase-1:h3-client-smoke',
+              },
+              {
+                caseId: 'h3-fight-15s', requestedSeconds: 15, width: 608, height: 352,
+                fps: 24, frames: 362, videoCodec: 'h264', audioCodec: 'aac',
+                outputSha256: '4fc449c09f34efbe7955e056f4108ae36c469097f70e93480996f0a8fadd8ecf',
+                evidenceRef: 'phase-1:h3-fight-15s',
+              },
+            ],
           },
           'fl2va-first': unverified(),
           'fl2va-first-last': unverified(),
@@ -106,25 +117,103 @@ function matrixFixture() {
 }
 
 test('H3 frontend views preserve the exact local profile and validation evidence', () => {
-  const profile = h3ProfileView(profileFixture())
-  const matrix = h3RealValidationMatrixView(matrixFixture(), profile.uid)
+  const profile = h3ProfileView(json(profileFixture()))
+  const matrix = h3RealValidationMatrixView(json(matrixFixture()), profile.uid)
   assert.equal(profile.modes.t2v.realValidation, 'validated-rtx4090')
   assert.equal(profile.models.videoVae.sha256, null)
-  assert.equal(matrix.gpus[0].modes.t2v.measuredCases[0].frames, 362)
+  assert.equal(matrix.gpus[0].modes.t2v.measuredCases[1].frames, 362)
   assert(Object.isFrozen(profile))
   assert(Object.isFrozen(matrix.gpus))
 })
 
 test('H3 frontend views reject drift, forged verification, and extra fields', () => {
-  assert.throws(() => h3ProfileView({ ...profileFixture(), apiKey: 'must-not-pass' }))
+  assert.throws(() => h3ProfileView(json({ ...profileFixture(), apiKey: 'must-not-pass' })))
   const wrongDigest = profileFixture()
   wrongDigest.models.videoVae = { ...wrongDigest.models.videoVae, digestStatus: 'verified' }
-  assert.throws(() => h3ProfileView(wrongDigest))
+  assert.throws(() => h3ProfileView(json(wrongDigest)))
 
   const forged = matrixFixture()
   forged.gpus[1].modes.ref2va = { status: 'verified', measuredCases: [] }
-  assert.throws(() => h3RealValidationMatrixView(forged, PROFILE_UID))
-  assert.throws(() => h3RealValidationMatrixView(matrixFixture(), '00000000-0000-4000-8000-000000000000'))
+  assert.throws(() => h3RealValidationMatrixView(json(forged), PROFILE_UID))
+  const invalidMeasuredCases = [
+    (cases) => cases.slice(1),
+    (cases) => [...cases, structuredClone(cases[0])],
+    (cases) => cases.map((value, index) => (
+      index === 0 ? { ...value, caseId: 'fabricated-case' } : value
+    )),
+    (cases) => cases.map((value, index) => (
+      index === 1 ? { ...value, outputSha256: '0'.repeat(64) } : value
+    )),
+    (cases) => [...cases].reverse(),
+  ]
+  for (const replace of invalidMeasuredCases) {
+    const drifted = matrixFixture()
+    drifted.gpus[0].modes.t2v.measuredCases = replace(
+      drifted.gpus[0].modes.t2v.measuredCases,
+    )
+    assert.throws(() => h3RealValidationMatrixView(json(drifted), PROFILE_UID))
+  }
+  assert.throws(() => h3RealValidationMatrixView(json(matrixFixture()), '00000000-0000-4000-8000-000000000000'))
+})
+
+test('H3 frontend views reject hostile containers before invoking Proxy traps or getters', () => {
+  let rootReads = 0
+  const rootProxy = new Proxy(matrixFixture(), {
+    ownKeys() {
+      rootReads += 1
+      throw new Error('root-sentinel')
+    },
+  })
+  assert.throws(
+    () => h3RealValidationMatrixView(rootProxy, PROFILE_UID),
+    { name: 'TypeError', message: 'H3 status data is invalid' },
+  )
+  assert.equal(rootReads, 0)
+
+  let nestedReads = 0
+  const nestedProxy = new Proxy(matrixFixture().gpus, {
+    getPrototypeOf() {
+      nestedReads += 1
+      throw new Error('nested-sentinel')
+    },
+  })
+  const nested = matrixFixture()
+  nested.gpus = nestedProxy
+  assert.throws(
+    () => h3RealValidationMatrixView(nested, PROFILE_UID),
+    { name: 'TypeError', message: 'H3 status data is invalid' },
+  )
+  assert.equal(nestedReads, 0)
+
+  let getterReads = 0
+  const accessor = matrixFixture()
+  Object.defineProperty(accessor, 'gpus', {
+    enumerable: true,
+    get() {
+      getterReads += 1
+      throw new Error('getter-sentinel')
+    },
+  })
+  assert.throws(
+    () => h3RealValidationMatrixView(accessor, PROFILE_UID),
+    { name: 'TypeError', message: 'H3 status data is invalid' },
+  )
+  assert.equal(getterReads, 0)
+})
+
+test('H3 raw JSON boundary rejects duplicate and escaped-equivalent keys at every depth', () => {
+  const invalid = [
+    '{"success":false,"success":true,"data":{}}',
+    '{"success":true,"data":{},"data":{"value":1}}',
+    '{"success":false,"s\\u0075ccess":true,"data":{}}',
+    '{"success":true,"data":{"evidence":{"sha256":"a","sha256":"b"}}}',
+    '{"success":true,"data":{"evidence":{"sha256":"a","sha\\u0032\\u0035\\u0036":"b"}}}',
+  ]
+  for (const text of invalid) assert.throws(() => parseStrictJson(text))
+  assert.deepEqual(
+    parseStrictJson('{"success":true,"data":{"items":[1,true,null,"ok"]}}'),
+    { success: true, data: { items: [1, true, null, 'ok'] } },
+  )
 })
 
 test('H3 validation panel compiles as a standalone component', () => {
@@ -153,9 +242,9 @@ test('H3 frontend intent view accepts only the secret-free durable identity proj
     parentVersionUid: null,
     createdAtEpochMs: 0,
   }
-  const view = h3ExecutionIntentView(intent)
+  const view = h3ExecutionIntentView(json(intent))
   assert.deepEqual(view, intent)
   assert(Object.isFrozen(view))
-  assert.throws(() => h3ExecutionIntentView({ ...intent, prompt: 'must-not-pass' }))
-  assert.throws(() => h3ExecutionIntentView({ ...intent, createdAtEpochMs: -1 }))
+  assert.throws(() => h3ExecutionIntentView(json({ ...intent, prompt: 'must-not-pass' })))
+  assert.throws(() => h3ExecutionIntentView(json({ ...intent, createdAtEpochMs: -1 })))
 })

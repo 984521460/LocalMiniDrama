@@ -1,4 +1,4 @@
-import request from './workflowRequest.js'
+import { workflowJsonTextRequest } from './workflowRequest.js'
 import {
   h3ExecutionIntentView,
   h3ProfileView,
@@ -7,16 +7,16 @@ import {
 
 export const h3API = Object.freeze({
   async status() {
-    const profile = h3ProfileView(await request.get('/v2/h3/profile'))
+    const profile = h3ProfileView(await workflowJsonTextRequest.get('/v2/h3/profile'))
     const validation = h3RealValidationMatrixView(
-      await request.get('/v2/h3/real-validation'),
+      await workflowJsonTextRequest.get('/v2/h3/real-validation'),
       profile.uid,
     )
     return Object.freeze({ profile, validation })
   },
   async prepareT2VIntent(input) {
     return h3ExecutionIntentView(
-      await request.post('/v2/h3/prepare-t2v-intent', input),
+      await workflowJsonTextRequest.post('/v2/h3/prepare-t2v-intent', input),
     )
   },
 })

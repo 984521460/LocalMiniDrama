@@ -43,5 +43,18 @@ test('H3 real-validation matrix preserves measured 4090 evidence and explicit GP
     structuredClone(rtx4090.modes.t2v.measuredCases[0]),
   ];
   assert.equal(validate(unverifiedWithEvidence), false);
+  const measuredCases = H3_REAL_VALIDATION_MATRIX.gpus[0].modes.t2v.measuredCases;
+  const invalidMeasuredCases = [
+    measuredCases.slice(1),
+    [...measuredCases, structuredClone(measuredCases[0])],
+    measuredCases.map((value, index) => (index === 0 ? { ...value, caseId: 'fabricated-case' } : value)),
+    measuredCases.map((value, index) => (index === 1 ? { ...value, outputSha256: '0'.repeat(64) } : value)),
+    [...measuredCases].reverse(),
+  ];
+  for (const replacement of invalidMeasuredCases) {
+    const drifted = structuredClone(H3_REAL_VALIDATION_MATRIX);
+    drifted.gpus[0].modes.t2v.measuredCases = structuredClone(replacement);
+    assert.equal(validate(drifted), false);
+  }
   assert.equal(Object.isFrozen(H3_REAL_VALIDATION_MATRIX.gpus), true);
 });

@@ -9,6 +9,15 @@ function fail() {
   throw new TypeError('H3 status data is invalid')
 }
 
+function jsonData(value) {
+  if (typeof value !== 'string' || value.length > 1048576) fail()
+  try {
+    return parseStrictJson(value)
+  } catch {
+    fail()
+  }
+}
+
 function exactObject(value, keys) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) fail()
   let descriptors
@@ -94,6 +103,33 @@ const MODE_SPECS = Object.freeze({
   ref2va: Object.freeze({ roles: ['reference'], minimum: 1, maximum: 4, realValidation: 'unverified' }),
 })
 
+const RTX4090_T2V_MEASURED_CASES = Object.freeze([
+  Object.freeze({
+    caseId: 'h3-client-smoke',
+    requestedSeconds: 0.2,
+    width: 608,
+    height: 352,
+    fps: 24,
+    frames: 5,
+    videoCodec: 'h264',
+    audioCodec: 'aac',
+    outputSha256: 'd8d9af12a1ea45fe054308dd83ad7183421471fd3fbb534b54f7e10c425e29cf',
+    evidenceRef: 'phase-1:h3-client-smoke',
+  }),
+  Object.freeze({
+    caseId: 'h3-fight-15s',
+    requestedSeconds: 15,
+    width: 608,
+    height: 352,
+    fps: 24,
+    frames: 362,
+    videoCodec: 'h264',
+    audioCodec: 'aac',
+    outputSha256: '4fc449c09f34efbe7955e056f4108ae36c469097f70e93480996f0a8fadd8ecf',
+    evidenceRef: 'phase-1:h3-fight-15s',
+  }),
+])
+
 function modeView(value, mode) {
   const input = exactObject(value, [
     'referenceImageRoles', 'minimumReferenceImages', 'maximumReferenceImages',
@@ -117,7 +153,7 @@ function modeView(value, mode) {
 }
 
 export function h3ProfileView(value) {
-  const input = exactObject(value, [
+  const input = exactObject(jsonData(value), [
     'schemaVersion', 'uid', 'profileId', 'revision', 'engine', 'modelFamily',
     'sourceRevision', 'fps', 'frameGrid', 'canvas', 'sampler', 'models', 'modes',
   ])
@@ -193,11 +229,14 @@ function measuredCaseView(value) {
   }
 }
 
-function validationModeView(value, expectedStatus) {
+function validationModeView(value, expectedStatus, expectedCases = []) {
   const input = exactObject(value, ['status', 'measuredCases'])
   if (input.status !== expectedStatus) fail()
   const measuredCases = denseArray(input.measuredCases, 16).map(measuredCaseView)
-  if ((expectedStatus === 'verified') !== (measuredCases.length > 0)) fail()
+  if (measuredCases.length !== expectedCases.length
+    || measuredCases.some((measuredCase, index) => (
+      Object.keys(expectedCases[index]).some((key) => measuredCase[key] !== expectedCases[index][key])
+    ))) fail()
   return { status: input.status, measuredCases }
 }
 
@@ -209,7 +248,11 @@ function gpuView(value, expectedClass, expectedVram, verifiedT2v) {
     gpuClass: input.gpuClass,
     vramGiB: input.vramGiB,
     modes: {
-      t2v: validationModeView(modes.t2v, verifiedT2v ? 'verified' : 'unverified'),
+      t2v: validationModeView(
+        modes.t2v,
+        verifiedT2v ? 'verified' : 'unverified',
+        verifiedT2v ? RTX4090_T2V_MEASURED_CASES : [],
+      ),
       'fl2va-first': validationModeView(modes['fl2va-first'], 'unverified'),
       'fl2va-first-last': validationModeView(modes['fl2va-first-last'], 'unverified'),
       ref2va: validationModeView(modes.ref2va, 'unverified'),
@@ -218,7 +261,7 @@ function gpuView(value, expectedClass, expectedVram, verifiedT2v) {
 }
 
 export function h3RealValidationMatrixView(value, expectedProfileUid) {
-  const input = exactObject(value, ['schemaVersion', 'profileUid', 'gpus'])
+  const input = exactObject(jsonData(value), ['schemaVersion', 'profileUid', 'gpus'])
   if (input.schemaVersion !== 'h3-real-validation-matrix.v1'
     || input.profileUid !== expectedProfileUid || !UUID_V4.test(input.profileUid)) fail()
   const gpus = denseArray(input.gpus, 2)
@@ -234,7 +277,7 @@ export function h3RealValidationMatrixView(value, expectedProfileUid) {
 }
 
 export function h3ExecutionIntentView(value) {
-  const input = exactObject(value, [
+  const input = exactObject(jsonData(value), [
     'schemaVersion', 'uid', 'taskUid', 'generationRunUid', 'historyUid',
     'assetUid', 'manifestUid', 'parentVersionUid', 'createdAtEpochMs',
   ])
@@ -254,3 +297,4 @@ export function h3ExecutionIntentView(value) {
     createdAtEpochMs: integer(input.createdAtEpochMs, 0, 253402300799999),
   })
 }
+import { parseStrictJson } from '../security/strictJson.js'

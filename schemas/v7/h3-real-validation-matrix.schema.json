@@ -24,7 +24,7 @@
                 "modes": {
                   "type": "object",
                   "properties": {
-                    "t2v": { "$ref": "#/$defs/verifiedMode" },
+                    "t2v": { "$ref": "#/$defs/verifiedRtx4090T2v" },
                     "fl2va-first": { "$ref": "#/$defs/unverifiedMode" },
                     "fl2va-first-last": { "$ref": "#/$defs/unverifiedMode" },
                     "ref2va": { "$ref": "#/$defs/unverifiedMode" }
@@ -96,6 +96,65 @@
           "properties": {
             "status": { "const": "verified" },
             "measuredCases": { "type": "array", "minItems": 1 }
+          }
+        }
+      ]
+    },
+    "verifiedRtx4090T2v": {
+      "allOf": [
+        { "$ref": "#/$defs/verifiedMode" },
+        {
+          "type": "object",
+          "properties": {
+            "status": { "const": "verified" },
+            "measuredCases": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "allOf": [
+                    { "$ref": "#/$defs/case" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "caseId": { "const": "h3-client-smoke" },
+                        "requestedSeconds": { "const": 0.2 },
+                        "width": { "const": 608 },
+                        "height": { "const": 352 },
+                        "fps": { "const": 24 },
+                        "frames": { "const": 5 },
+                        "videoCodec": { "const": "h264" },
+                        "audioCodec": { "const": "aac" },
+                        "outputSha256": { "const": "d8d9af12a1ea45fe054308dd83ad7183421471fd3fbb534b54f7e10c425e29cf" },
+                        "evidenceRef": { "const": "phase-1:h3-client-smoke" }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "allOf": [
+                    { "$ref": "#/$defs/case" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "caseId": { "const": "h3-fight-15s" },
+                        "requestedSeconds": { "const": 15 },
+                        "width": { "const": 608 },
+                        "height": { "const": 352 },
+                        "fps": { "const": 24 },
+                        "frames": { "const": 362 },
+                        "videoCodec": { "const": "h264" },
+                        "audioCodec": { "const": "aac" },
+                        "outputSha256": { "const": "4fc449c09f34efbe7955e056f4108ae36c469097f70e93480996f0a8fadd8ecf" },
+                        "evidenceRef": { "const": "phase-1:h3-fight-15s" }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "items": false
+            }
           }
         }
       ]
