@@ -11,6 +11,10 @@ const {
   uid,
 } = require('./contract');
 const { fail } = require('./errors');
+const {
+  H3_REAL_VALIDATION_GPU_CLASSES,
+  RTX_4090_GPU_CLASS,
+} = require('./gpuClasses');
 const { validateH3GenerationSpec } = require('./generationSpec');
 const { isH3LocalVideoInspector } = require('./localVideoInspector');
 const { validateH3VideoEvidence, validateH3VideoOutput } = require('./outputValidation');
@@ -20,8 +24,7 @@ const { createH3WorkflowCandidateBundle } = require('./workflowCandidates');
 const { assertH3WorkflowVerified } = require('./workflowSupport');
 
 const CODE = 'H3_REAL_VALIDATION_INVALID';
-const PHASE_7_GPU_CLASS = 'rtx4090-48gb';
-const GPU_CLASSES = new Set(['rtx4090-48gb', 'rtx-pro-6000-blackwell-96gb']);
+const PHASE_7_GPU_CLASS = RTX_4090_GPU_CLASS;
 const H3_PHASE_7_REQUIRED_MODES = Object.freeze([
   't2v', 'fl2va-first', 'fl2va-first-last', 'ref2va',
 ]);
@@ -127,7 +130,7 @@ function validateH3RealValidationReceipt(value) {
   exactKeys(receipt, RECEIPT_FIELDS, CODE);
   if (receipt.schemaVersion !== 'h3-real-validation-receipt.v1'
     || receipt.profileUid !== H3_PROFILE.uid
-    || !GPU_CLASSES.has(receipt.gpuClass)
+    || !H3_REAL_VALIDATION_GPU_CLASSES.has(receipt.gpuClass)
     || receipt.captureKind !== 'local-comfyui'
     || !H3_PHASE_7_REQUIRED_MODES.includes(receipt.mode)
     || !validEpochMilliseconds(receipt.capturedAtEpochMs)) invalid();
@@ -222,7 +225,7 @@ function collectInput(value) {
   uid(input.promptId, CODE);
   uid(input.assetVersionUid, CODE);
   sha256(input.remoteSha256, CODE);
-  if (!GPU_CLASSES.has(input.gpuClass)
+  if (!H3_REAL_VALIDATION_GPU_CLASSES.has(input.gpuClass)
     || !Number.isSafeInteger(input.remoteBytes) || input.remoteBytes < 1
     || input.remoteBytes > 20_000_000_000) invalid();
   const manifest = storedManifest(input.manifest);

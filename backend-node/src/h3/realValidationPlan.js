@@ -8,6 +8,7 @@ const {
   uid,
 } = require('./contract');
 const { fail } = require('./errors');
+const { RTX_4090_GPU_CLASS } = require('./gpuClasses');
 const { validateH3GenerationSpec } = require('./generationSpec');
 const { H3_PROFILE } = require('./profile');
 const {
@@ -131,7 +132,7 @@ function createH3Phase7ValidationPlan(value) {
   const input = snapshot(value, CODE, LIMITS);
   exactKeys(input, ['planUid', 'gpuClass', 'cases'], CODE);
   uid(input.planUid, CODE);
-  if (input.gpuClass !== 'rtx4090-48gb'
+  if (input.gpuClass !== RTX_4090_GPU_CLASS
     || !Array.isArray(input.cases)
     || input.cases.length !== H3_PHASE_7_VALIDATION_MODES.length) invalid();
 
@@ -162,7 +163,7 @@ function validateH3Phase7ValidationPlan(value) {
   sha256(stored.planSha256, CODE);
   if (stored.schemaVersion !== 'h3-phase7-validation-plan.v1'
     || stored.profileUid !== H3_PROFILE.uid
-    || stored.gpuClass !== 'rtx4090-48gb'
+    || stored.gpuClass !== RTX_4090_GPU_CLASS
     || stored.status !== 'prepared-unverified'
     || !Array.isArray(stored.cases)
     || stored.cases.length !== H3_PHASE_7_VALIDATION_MODES.length

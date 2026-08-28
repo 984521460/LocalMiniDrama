@@ -270,8 +270,8 @@ export function h3RealValidationMatrixView(value, expectedProfileUid) {
     schemaVersion: input.schemaVersion,
     profileUid: input.profileUid,
     gpus: [
-      gpuView(gpus[0], 'rtx4090-48gb', 48, true),
-      gpuView(gpus[1], 'rtx-pro-6000-blackwell-96gb', 96, false),
+      gpuView(gpus[0], RTX_4090_GPU_CLASS, RTX_4090_VRAM_GIB, true),
+      gpuView(gpus[1], RTX_PRO_6000_GPU_CLASS, RTX_PRO_6000_VRAM_GIB, false),
     ],
   })
 }
@@ -298,3 +298,9 @@ export function h3ExecutionIntentView(value) {
   })
 }
 import { parseStrictJson } from '../security/strictJson.js'
+import {
+  RTX_4090_GPU_CLASS,
+  RTX_4090_VRAM_GIB,
+  RTX_PRO_6000_GPU_CLASS,
+  RTX_PRO_6000_VRAM_GIB,
+} from './gpuClasses.js'

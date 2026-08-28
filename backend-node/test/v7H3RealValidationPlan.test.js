@@ -115,7 +115,7 @@ function validationCase(mode) {
 function planInput() {
   return {
     planUid: PLAN_UID,
-    gpuClass: 'rtx4090-48gb',
+    gpuClass: 'rtx4090-24gb',
     cases: ['t2v', 'fl2va-first', 'fl2va-first-last', 'ref2va'].map(validationCase),
   };
 }
@@ -257,7 +257,7 @@ test('collector can seal an exact pinned candidate receipt while the trust gate 
   const candidate = createH3Phase7ValidationPlan(planInput()).cases[1];
   const receipt = await collector.collect({
     receiptUid: uid(741),
-    gpuClass: 'rtx4090-48gb',
+    gpuClass: 'rtx4090-24gb',
     promptId: uid(742),
     manifest: candidate.manifest,
     generationSpec: candidate.generationSpec,

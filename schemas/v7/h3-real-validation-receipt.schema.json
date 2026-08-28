@@ -14,7 +14,7 @@
     "schemaVersion": { "const": "h3-real-validation-receipt.v1" },
     "receiptUid": { "$ref": "#/$defs/uid" },
     "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" },
-    "gpuClass": { "enum": ["rtx4090-48gb", "rtx-pro-6000-blackwell-96gb"] },
+    "gpuClass": { "enum": ["rtx4090-24gb", "rtx-pro-6000-blackwell-96gb"] },
     "captureKind": { "const": "local-comfyui" },
     "mode": { "enum": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"] },
     "promptId": { "$ref": "#/$defs/uid" },

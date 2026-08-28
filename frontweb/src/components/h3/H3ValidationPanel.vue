@@ -51,6 +51,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { RTX_4090_GPU_CLASS } from '../../h3/gpuClasses.js'
 
 const props = defineProps({
   profile: { type: Object, default: null },
@@ -71,7 +72,7 @@ const hasMalformedDigest = computed(() => (
 ))
 
 function gpuLabel(gpuClass) {
-  return gpuClass === 'rtx4090-48gb' ? 'RTX 4090 测试实例' : 'RTX PRO 6000 正式制作'
+  return gpuClass === RTX_4090_GPU_CLASS ? 'RTX 4090 测试实例' : 'RTX PRO 6000 正式制作'
 }
 </script>
 

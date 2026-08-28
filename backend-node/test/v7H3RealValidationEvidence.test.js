@@ -79,7 +79,7 @@ function receiptFixture(overrides = {}) {
     schemaVersion: 'h3-real-validation-receipt.v1',
     receiptUid: RECEIPT_UID,
     profileUid: PROFILE_UID,
-    gpuClass: 'rtx4090-48gb',
+    gpuClass: 'rtx4090-24gb',
     captureKind: 'local-comfyui',
     mode: spec.mode,
     promptId: PROMPT_ID,
@@ -272,7 +272,7 @@ test('collector re-inspects a local output and refuses modes without a trusted w
   const spec = generationSpec();
   const receipt = await collector.collect({
     receiptUid: RECEIPT_UID,
-    gpuClass: 'rtx4090-48gb',
+    gpuClass: 'rtx4090-24gb',
     promptId: PROMPT_ID,
     manifest: createH3TextToVideoWorkflowBundle().manifest,
     generationSpec: spec,
@@ -300,7 +300,7 @@ test('collector re-inspects a local output and refuses modes without a trusted w
   assertH3Error(
     () => collector.collect({
       receiptUid: '00000000-0000-4000-8000-000000000077',
-      gpuClass: 'rtx4090-48gb',
+      gpuClass: 'rtx4090-24gb',
       promptId: '00000000-0000-4000-8000-000000000078',
       manifest: createH3TextToVideoWorkflowBundle().manifest,
       generationSpec: firstFrameSpec,

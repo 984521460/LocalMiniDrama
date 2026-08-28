@@ -16,11 +16,12 @@ test('H3 real-validation matrix preserves measured 4090 evidence and explicit GP
   ));
   const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);
   assert.equal(validate(H3_REAL_VALIDATION_MATRIX), true, JSON.stringify(validate.errors));
-  const rtx4090 = H3_REAL_VALIDATION_MATRIX.gpus.find(({ gpuClass }) => gpuClass === 'rtx4090-48gb');
+  const rtx4090 = H3_REAL_VALIDATION_MATRIX.gpus.find(({ gpuClass }) => gpuClass === 'rtx4090-24gb');
   const pro6000 = H3_REAL_VALIDATION_MATRIX.gpus.find(
     ({ gpuClass }) => gpuClass === 'rtx-pro-6000-blackwell-96gb',
   );
   assert.equal(rtx4090.modes.t2v.status, 'verified');
+  assert.equal(rtx4090.vramGiB, 24);
   assert.deepEqual(rtx4090.modes.t2v.measuredCases.map(({ width, height, frames }) => (
     { width, height, frames }
   )), [

@@ -13,7 +13,7 @@
   "properties": {
     "schemaVersion": { "const": "h3-phase7-evidence-gate.v1" },
     "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" },
-    "gpuClass": { "const": "rtx4090-48gb" },
+    "gpuClass": { "const": "rtx4090-24gb" },
     "evidenceComplete": { "const": false },
     "acceptedReceiptModes": {},
     "missingModes": {},

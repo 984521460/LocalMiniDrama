@@ -77,8 +77,8 @@ function matrixFixture() {
     profileUid: PROFILE_UID,
     gpus: [
       {
-        gpuClass: 'rtx4090-48gb',
-        vramGiB: 48,
+        gpuClass: 'rtx4090-24gb',
+        vramGiB: 24,
         modes: {
           t2v: {
             status: 'verified',

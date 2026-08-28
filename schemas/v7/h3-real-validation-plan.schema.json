@@ -12,7 +12,7 @@
     "schemaVersion": { "const": "h3-phase7-validation-plan.v1" },
     "planUid": { "$ref": "#/$defs/uid" },
     "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" },
-    "gpuClass": { "const": "rtx4090-48gb" },
+    "gpuClass": { "const": "rtx4090-24gb" },
     "status": { "const": "prepared-unverified" },
     "cases": {
       "type": "array",

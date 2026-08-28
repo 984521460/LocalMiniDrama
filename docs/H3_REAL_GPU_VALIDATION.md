@@ -18,7 +18,7 @@
 输入 JSON 必须包含：
 
 - `planUid`：新的规范 UUIDv4；
-- `gpuClass`：固定为 `rtx4090-48gb`；
+- `gpuClass`：固定为 `rtx4090-24gb`；标准 RTX 4090 的显存为 24 GiB，实例平台显示值可能因单位和保留显存略低；
 - `cases`：四个按上述顺序排列的对象；
 - 每个 case 只含 `generationSpec`、`filenamePrefix`、`mediaBindings`；
 - T2V 的 `mediaBindings` 必须为 `null`；
@@ -67,7 +67,7 @@ npm run h3:validation -- check --input D:\h3-validation\plan.json --output D:\h3
   "timeoutMs": 60000,
   "receipt": {
     "receiptUid": "00000000-0000-4000-8000-000000000000",
-    "gpuClass": "rtx4090-48gb",
+    "gpuClass": "rtx4090-24gb",
     "promptId": "00000000-0000-4000-8000-000000000000",
     "manifest": {},
     "generationSpec": {},

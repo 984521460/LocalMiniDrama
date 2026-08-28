@@ -19,8 +19,8 @@
             {
               "type": "object",
               "properties": {
-                "gpuClass": { "const": "rtx4090-48gb" },
-                "vramGiB": { "const": 48 },
+                "gpuClass": { "const": "rtx4090-24gb" },
+                "vramGiB": { "const": 24 },
                 "modes": {
                   "type": "object",
                   "properties": {
@@ -176,8 +176,8 @@
       "additionalProperties": false,
       "required": ["gpuClass", "vramGiB", "modes"],
       "properties": {
-        "gpuClass": { "enum": ["rtx4090-48gb", "rtx-pro-6000-blackwell-96gb"] },
-        "vramGiB": { "enum": [48, 96] },
+        "gpuClass": { "enum": ["rtx4090-24gb", "rtx-pro-6000-blackwell-96gb"] },
+        "vramGiB": { "enum": [24, 96] },
         "modes": {
           "type": "object",
           "additionalProperties": false,

@@ -1,5 +1,12 @@
 'use strict';
 
+const {
+  RTX_4090_GPU_CLASS,
+  RTX_4090_VRAM_GIB,
+  RTX_PRO_6000_GPU_CLASS,
+  RTX_PRO_6000_VRAM_GIB,
+} = require('./gpuClasses');
+
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     for (const child of Object.values(value)) deepFreeze(child);
@@ -17,8 +24,8 @@ const H3_REAL_VALIDATION_MATRIX = deepFreeze({
   profileUid: '70d4f190-d54d-4d27-9a45-c97807ea1b9d',
   gpus: [
     {
-      gpuClass: 'rtx4090-48gb',
-      vramGiB: 48,
+      gpuClass: RTX_4090_GPU_CLASS,
+      vramGiB: RTX_4090_VRAM_GIB,
       modes: {
         t2v: {
           status: 'verified',
@@ -55,8 +62,8 @@ const H3_REAL_VALIDATION_MATRIX = deepFreeze({
       },
     },
     {
-      gpuClass: 'rtx-pro-6000-blackwell-96gb',
-      vramGiB: 96,
+      gpuClass: RTX_PRO_6000_GPU_CLASS,
+      vramGiB: RTX_PRO_6000_VRAM_GIB,
       modes: {
         t2v: unverified(),
         'fl2va-first': unverified(),
