@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/remote-initialization-plan.schema.json",
+  "title": "Versioned Remote Initialization Plan",
+  "$comment": "This schema validates structure. Every consumer MUST additionally apply the semantic plan validator, which requires modelDownloads to be in strictly ascending modelId order, thereby enforcing modelId uniqueness, and verifies computed confirmation consistency.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion", "profileId", "profileVersion", "connectionUid", "planHash",
+    "steps", "modelDownloads", "requiresLargeModelConfirmation"
+  ],
+  "properties": {
+    "contractVersion": { "const": "remote-initialization-plan.v1" },
+    "profileId": { "const": "featurize-comfyui" },
+    "profileVersion": { "const": "1.0.0" },
+    "connectionUid": { "$ref": "#/$defs/uuid" },
+    "planHash": { "$ref": "#/$defs/sha256" },
+    "steps": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        { "$ref": "#/$defs/workspaceStep" },
+        { "$ref": "#/$defs/pythonStep" },
+        { "$ref": "#/$defs/comfyStep" },
+        { "$ref": "#/$defs/nodesStep" },
+        { "$ref": "#/$defs/ffmpegStep" },
+        { "$ref": "#/$defs/workflowsStep" },
+        { "$ref": "#/$defs/verifyStep" }
+      ],
+      "items": false
+    },
+    "modelDownloads": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "$comment": "The semantic plan validator requires strictly ascending modelId order; JSON Schema uniqueItems alone only rejects fully identical entries.",
+      "items": { "$ref": "#/$defs/model" }
+    },
+    "requiresLargeModelConfirmation": {
+      "type": "boolean",
+      "$comment": "Runtime requires true exactly when modelDownloads is non-empty."
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "token": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$" },
+    "workspaceStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "id", "action", "parameters"],
+      "properties": {
+        "ordinal": { "const": 0 }, "id": { "const": "workspace-layout.v1" },
+        "action": { "const": "ensure-workspace-layout" },
+        "parameters": {
+          "type": "object", "additionalProperties": false, "required": ["layoutVersion"],
+          "properties": { "layoutVersion": { "const": "1.0.0" } }
+        }
+      }
+    },
+    "pythonStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "id", "action", "parameters"],
+      "properties": {
+        "ordinal": { "const": 1 }, "id": { "const": "python-runtime.v1" },
+        "action": { "const": "ensure-python-runtime" },
+        "parameters": {
+          "type": "object", "additionalProperties": false,
+          "required": ["pythonVersion", "torchVersion", "cudaVersion"],
+          "properties": {
+            "pythonVersion": { "const": "3.11" },
+            "torchVersion": { "const": "2.7.1" },
+            "cudaVersion": { "const": "12.8" }
+          }
+        }
+      }
+    },
+    "comfyStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "id", "action", "parameters"],
+      "properties": {
+        "ordinal": { "const": 2 }, "id": { "const": "comfyui-version.v1" },
+        "action": { "const": "ensure-comfyui-version" },
+        "parameters": {
+          "type": "object", "additionalProperties": false, "required": ["comfyUiVersion"],
+          "properties": { "comfyUiVersion": { "const": "0.3.50" } }
+        }
+      }
+    },
+    "nodesStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "id", "action", "parameters"],
+      "properties": {
+        "ordinal": { "const": 3 }, "id": { "const": "custom-node-lock.v1" },
+        "action": { "const": "ensure-custom-nodes" },
+        "parameters": {
+          "type": "object", "additionalProperties": false, "required": ["lockVersion"],
+          "properties": { "lockVersion": { "const": "builtin-nodes.1" } }
+        }
+      }
+    },
+    "ffmpegStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "id", "action", "parameters"],
+      "properties": {
+        "ordinal": { "const": 4 }, "id": { "const": "ffmpeg-runtime.v1" },
+        "action": { "const": "verify-ffmpeg" },
+        "parameters": {
+          "type": "object", "additionalProperties": false, "required": ["minimumMajor"],
+          "properties": { "minimumMajor": { "const": 7 } }
+        }
+      }
+    },
+    "workflowsStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "id", "action", "parameters"],
+      "properties": {
+        "ordinal": { "const": 5 }, "id": { "const": "workflow-bundle.v1" },
+        "action": { "const": "install-bundled-workflows" },
+        "parameters": {
+          "type": "object", "additionalProperties": false, "required": ["bundleVersion"],
+          "properties": { "bundleVersion": { "const": "mvp-workflows.1" } }
+        }
+      }
+    },
+    "verifyStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "id", "action", "parameters"],
+      "properties": {
+        "ordinal": { "const": 6 }, "id": { "const": "environment-gate.v1" },
+        "action": { "const": "verify-environment" },
+        "parameters": {
+          "type": "object", "additionalProperties": false, "required": ["profileVersion"],
+          "properties": { "profileVersion": { "const": "1.0.0" } }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelId", "version", "sizeBytes", "licenseId", "artifactSha256"],
+      "properties": {
+        "modelId": { "$ref": "#/$defs/token" },
+        "version": { "$ref": "#/$defs/token" },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 1125899906842624 },
+        "licenseId": { "$ref": "#/$defs/token" },
+        "artifactSha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

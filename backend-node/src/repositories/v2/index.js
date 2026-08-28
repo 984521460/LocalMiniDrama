@@ -4,6 +4,7 @@ const { createAssetRepository } = require('./assetRepository');
 const { createCharacterCandidateRepository } = require('./characterCandidateRepository');
 const { createCharacterReferencePackageRepository } = require('./characterReferencePackageRepository');
 const { createCharacterVersionRepository } = require('./characterVersionRepository');
+const { createComfyManifestRepository } = require('./comfyManifestRepository');
 const { createGenerationHistoryRepository } = require('./generationHistoryRepository');
 const {
   V2RepositoryConflictError,
@@ -94,6 +95,7 @@ function createV2Repositories(database) {
     characterCandidates: createCharacterCandidateRepository(database),
     characterReferencePackages,
     characterVersions,
+    comfyManifests: createComfyManifestRepository(database),
     generationHistory,
     narrativeReviews,
     projectArchives: createLazyProjectArchiveRepository(database),

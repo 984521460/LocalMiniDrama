@@ -298,9 +298,13 @@ test('remote repository preserves opaque credentials and prompt identity through
     host: 'workspace.example.invalid',
     port: 22,
     username: 'worker',
-    hostFingerprint: 'SHA256:fixture',
+    hostFingerprint: `SHA256:${'A'.repeat(43)}`,
     credentialRef: `credential:v1:${uid(2401)}`,
     status: 'ready',
+    authMethod: 'password',
+    comfyHost: '127.0.0.1',
+    comfyPort: 8188,
+    remoteWorkDir: 'ai-drama-studio',
   });
   assert.match(connection.credentialRef, /^credential:v1:/);
   assert.throws(
@@ -313,6 +317,10 @@ test('remote repository preserves opaque credentials and prompt identity through
       hostFingerprint: null,
       credentialRef: `credential:v1:${uid(2411)}`,
       status: 'ready',
+      authMethod: 'password',
+      comfyHost: '127.0.0.1',
+      comfyPort: 8188,
+      remoteWorkDir: 'ai-drama-studio',
       password: 'must-never-be-accepted',
     }),
     /unsupported field.*password/i,

@@ -121,3 +121,20 @@ may retain the same-asset ready parent version even though it has no output, so
 the attempted lineage is not lost. History start/end epochs must exactly match
 the terminal generation run timestamps, and generation payloads, Prompt text,
 and exported history reject raw credential-shaped values before persistence.
+
+Migration `0009_remote_execution_productization.sql` begins Phase 6 by making
+remote connection profiles explicit while retaining only opaque Windows
+Credential Manager references. Profiles pin password authentication, the
+remote ComfyUI loopback endpoint, a safe relative work directory, and a
+monotonic state version. The environment report and its checked-at timestamp
+are reserved for P6-09 and must both remain `NULL` until that exact,
+secret-free report contract is introduced. Endpoint identity
+changes clear any previously confirmed host fingerprint and return the profile
+to `unverified`; optimistic updates prevent stale UI writes from restoring an
+older connection state. The migration also recognizes formal ComfyUI manifests
+by their `comfy-workflow-manifest.v1` validation marker, checks their bounded
+node/model and marker-binding structure at the database boundary, prevents
+replacement, and freezes them after insertion. Runtime validation remains the
+authority for binding the manifest to the exact workflow bytes and compiled
+graph. Later Phase 6 tasks extend this migration with the recoverable remote-task
+evidence defined by the same product contract.

@@ -23,18 +23,18 @@ test('ComfyUI client accepts loopback tunnels and rejects remote or credentialed
     baseUrl: 'http://127.0.0.1:18188',
     fetchImpl: async () => jsonResponse({}),
   }));
-  assert.doesNotThrow(() => createComfyUiClient({
+  assert.throws(() => createComfyUiClient({
     baseUrl: 'http://localhost:8188/',
     fetchImpl: async () => jsonResponse({}),
-  }));
+  }), /invalid/i);
 
   assert.throws(
     () => createComfyUiClient({ baseUrl: 'http://192.0.2.10:8188', fetchImpl: async () => jsonResponse({}) }),
-    /loopback/i
+    /invalid/i
   );
   assert.throws(
     () => createComfyUiClient({ baseUrl: 'http://user:pass@127.0.0.1:8188', fetchImpl: async () => jsonResponse({}) }),
-    /credentials/i
+    /invalid/i
   );
 });
 
@@ -53,8 +53,8 @@ test('ComfyUI client maps health, queue, prompt and history to the native API', 
   const client = createComfyUiClient({ baseUrl: 'http://127.0.0.1:18188/', fetchImpl });
 
   assert.equal((await client.health()).system.comfyui_version, '0.33.0');
-  assert.deepEqual(await client.queue(), { queue_running: [], queue_pending: [] });
-  assert.equal((await client.submitPrompt({ 1: { class_type: 'EmptyImage', inputs: {} } }, { clientId: 'test-client' })).prompt_id, 'prompt-1');
+  assert.deepEqual({ ...await client.queue() }, { queue_running: [], queue_pending: [] });
+  assert.equal((await client.submitPrompt({ 1: { class_type: 'EmptyImage', inputs: {} } }, { clientId: 'test-client' })).promptId, 'prompt-1');
   assert.equal((await client.history('prompt-1'))['prompt-1'].status.completed, true);
 
   assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [
@@ -86,7 +86,7 @@ test('waitForPrompt polls history until success and reports execution failures',
   });
 
   const record = await successClient.waitForPrompt('prompt-2', { timeoutMs: 100, pollIntervalMs: 1 });
-  assert.equal(record.status.status_str, 'success');
+  assert.equal(record.state, 'succeeded');
   assert.equal(historyCalls, 2);
 
   const failedClient = createComfyUiClient({

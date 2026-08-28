@@ -248,6 +248,7 @@ test('runtime and schema share exact per-node configuration contracts', () => {
   const validateNode = ajv.getSchema(`${schema.$id}#/$defs/node`);
   assert.equal(typeof validateNode, 'function');
   const credentialRef = `credential:v1:${uid(6200)}`;
+  const connectionEvidenceSha256 = 'b'.repeat(64);
   const examples = {
     'source.selection': { contextAfterBlocks: 2, contextBeforeBlocks: 1 },
     'story.facts': { profileUid: uid(6201), temperature: 0.5 },
@@ -267,8 +268,14 @@ test('runtime and schema share exact per-node configuration contracts', () => {
     'asset.scene': { candidateCount: 4, height: 1024, width: 1024 },
     'asset.prop': { candidateCount: 4, seed: 7 },
     'shot.plan': { maxShots: 6, profileUid: uid(6208), targetSeconds: 60, temperature: 0.2 },
-    'shot.image': { credentialRef, height: 1080, manifestUid: uid(6209), seed: 9, width: 1920 },
-    'shot.video': { credentialRef, durationMs: 15000, fps: 24, height: 1080, width: 1920 },
+    'shot.image': {
+      connectionEvidenceSha256, connectionUid: uid(6212), credentialRef, height: 1080,
+      manifestUid: uid(6209), seed: 9, width: 1920,
+    },
+    'shot.video': {
+      connectionEvidenceSha256, connectionUid: uid(6213), credentialRef, durationMs: 15000,
+      fps: 24, height: 1080, width: 1920,
+    },
     'audio.tts': { credentialRef, profileUid: uid(6210), speed: 1 },
     'subtitle.align': { profileUid: uid(6211) },
     'bgm.track': { credentialRef, targetSeconds: 60 },
@@ -294,6 +301,7 @@ test('runtime and schema share exact per-node configuration contracts', () => {
   for (const invalid of [
     ['shot.image', { apiKey: 'fixture-secret' }],
     ['shot.image', { credentialRef: 'fixture-secret' }],
+    ['shot.video', { connectionEvidenceSha256: 'A'.repeat(64) }],
     ['source.selection', { width: 1920 }],
     ['export.final', { format: 'provider-specific' }],
   ]) {

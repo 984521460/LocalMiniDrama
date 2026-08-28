@@ -6,6 +6,8 @@ const FIELD_RULES = Object.freeze({
   candidateCount: { kind: 'integer', minimum: 1, maximum: 16 },
   contextAfterBlocks: { kind: 'integer', minimum: 0, maximum: 50 },
   contextBeforeBlocks: { kind: 'integer', minimum: 0, maximum: 50 },
+  connectionEvidenceSha256: { kind: 'sha256' },
+  connectionUid: { kind: 'uuid' },
   credentialRef: { kind: 'credentialRef' },
   durationMs: { kind: 'integer', minimum: 1, maximum: 3_600_000 },
   format: { kind: 'enum', values: Object.freeze(['mp4']) },
@@ -39,10 +41,12 @@ const NODE_CONFIG_FIELDS = Object.freeze({
   ]),
   'shot.plan': Object.freeze(['maxShots', 'profileUid', 'targetSeconds', 'temperature']),
   'shot.image': Object.freeze([
-    'credentialRef', 'height', 'manifestUid', 'profileUid', 'seed', 'width',
+    'connectionEvidenceSha256', 'connectionUid', 'credentialRef', 'height', 'manifestUid',
+    'profileUid', 'seed', 'width',
   ]),
   'shot.video': Object.freeze([
-    'credentialRef', 'durationMs', 'fps', 'height', 'manifestUid', 'profileUid', 'seed', 'width',
+    'connectionEvidenceSha256', 'connectionUid', 'credentialRef', 'durationMs', 'fps', 'height',
+    'manifestUid', 'profileUid', 'seed', 'width',
   ]),
   'audio.tts': Object.freeze(['credentialRef', 'profileUid', 'speed']),
   'subtitle.align': Object.freeze(['profileUid']),
@@ -69,6 +73,10 @@ function assertRule(value, rule) {
   }
   if (rule.kind === 'credentialRef') {
     if (!isCredentialReference(value)) invalidConfig();
+    return;
+  }
+  if (rule.kind === 'sha256') {
+    if (typeof value !== 'string' || !/^[0-9a-f]{64}$/u.test(value)) invalidConfig();
     return;
   }
   if (rule.kind === 'enum') {

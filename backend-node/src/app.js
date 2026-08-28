@@ -6,8 +6,9 @@ const { getDb } = require('./db/index.js');
 const { loadConfig } = require('./config/index.js');
 const logger = require('./logger.js');
 const { setupRouter } = require('./routes/index.js');
+const { createProductionRemoteRuntime } = require('./remote/productionRuntime');
 
-function createApp() {
+function createApp({ remoteDependencies = {} } = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
   const { runMigrationsAndEnsure } = require('./db/migrate.js');
@@ -17,6 +18,18 @@ function createApp() {
   const { applyVendorLock } = require('./services/aiConfigService');
   applyVendorLock(db, logger, config);
   const log = logger;
+
+  // 静态资源目录：统一转为绝对路径（打包 exe 下相对路径可能解析异常）
+  const storageRoot = config.storage?.local_path
+    ? (path.isAbsolute(config.storage.local_path)
+        ? config.storage.local_path
+        : path.join(process.cwd(), config.storage.local_path))
+    : path.join(process.cwd(), 'data', 'storage');
+  const runtime = createProductionRemoteRuntime({
+    database: db,
+    localRoot: storageRoot,
+    dependencies: remoteDependencies,
+  });
 
   const taskService = require('./services/taskService');
   taskService.failOrphanedAsyncTasksOnStartup(db, log);
@@ -41,12 +54,6 @@ function createApp() {
     next();
   });
 
-  // 静态资源目录：统一转为绝对路径（打包 exe 下相对路径可能解析异常）
-  const storageRoot = config.storage?.local_path
-    ? (path.isAbsolute(config.storage.local_path)
-        ? config.storage.local_path
-        : path.join(process.cwd(), config.storage.local_path))
-    : path.join(process.cwd(), 'data', 'storage');
   try {
     if (!fs.existsSync(storageRoot)) fs.mkdirSync(storageRoot, { recursive: true });
     app.use('/static', express.static(storageRoot));
@@ -62,7 +69,7 @@ function createApp() {
     });
   });
 
-  app.use('/api/v1', setupRouter(config, db, log));
+  app.use('/api/v1', setupRouter(config, db, log, runtime));
 
   // 前端静态资源（sxy：web/dist）；Electron 打包时可设 WEB_DIST_PATH
   const webDist = process.env.WEB_DIST_PATH || path.join(process.cwd(), '..', 'frontweb', 'dist');
@@ -110,7 +117,7 @@ function createApp() {
     }
   });
 
-  return { app, config, db };
+  return { app, config, db, runtime };
 }
 
 module.exports = { createApp };

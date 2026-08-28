@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/remote-task.schema.json",
+  "title": "Versioned Remote Task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "uid", "connectionUid", "connectionEvidenceSha256", "workflowRunUid", "workflowManifestUid", "contractVersion",
+    "idempotencyKey", "requestSha256", "promptSha256", "provider", "promptId", "remoteRelativeDir",
+    "stage", "status", "heartbeatAt", "retryCount", "outputAssetVersionUid",
+    "errorCode", "errorDetailRef", "errorPhase", "errorRetryable", "recoveryState",
+    "stateVersion", "submissionLeaseExpiresAtEpochMs",
+    "createdAt", "startedAt", "completedAt", "updatedAt"
+  ],
+  "properties": {
+    "uid": { "$ref": "#/$defs/uuid" },
+    "connectionUid": { "$ref": "#/$defs/uuid" },
+    "connectionEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "workflowRunUid": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+    "workflowManifestUid": { "$ref": "#/$defs/uuid" },
+    "contractVersion": { "const": "remote-task.v1" },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^remote-task:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "requestSha256": { "$ref": "#/$defs/sha256" },
+    "promptSha256": { "$ref": "#/$defs/sha256" },
+    "provider": { "const": "comfyui" },
+    "promptId": {
+      "oneOf": [
+        { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+        { "type": "null" }
+      ]
+    },
+    "remoteRelativeDir": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){0,31}$"
+    },
+    "stage": {
+      "enum": [
+        "prepared", "uploading", "submitted", "executing", "downloading",
+        "verifying", "completed", "failed", "cancelled"
+      ]
+    },
+    "status": { "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
+    "heartbeatAt": { "$ref": "#/$defs/nullableTimestamp" },
+    "retryCount": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "outputAssetVersionUid": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+    "errorCode": {
+      "oneOf": [
+        { "type": "string", "pattern": "^ERR_[A-Z0-9_]{1,60}$" },
+        { "type": "null" }
+      ]
+    },
+    "errorDetailRef": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^error-detail:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        { "type": "null" }
+      ]
+    },
+    "errorPhase": {
+      "oneOf": [
+        {
+          "enum": [
+            "connection", "dependency", "upload", "submission", "execution",
+            "download", "verification", "recovery"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "errorRetryable": { "type": ["boolean", "null"] },
+    "recoveryState": { "enum": ["none", "completed", "retryable", "orphaned"] },
+    "stateVersion": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+    "submissionLeaseExpiresAtEpochMs": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 8640000000000000
+    },
+    "createdAt": { "$ref": "#/$defs/timestamp" },
+    "startedAt": { "$ref": "#/$defs/nullableTimestamp" },
+    "completedAt": { "$ref": "#/$defs/nullableTimestamp" },
+    "updatedAt": { "$ref": "#/$defs/timestamp" }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        { "properties": { "stage": { "const": "prepared" }, "status": { "const": "queued" } } },
+        {
+          "properties": {
+            "stage": { "enum": ["uploading", "submitted", "executing", "downloading", "verifying"] },
+            "status": { "const": "running" }
+          }
+        },
+        { "properties": { "stage": { "const": "completed" }, "status": { "const": "succeeded" } } },
+        { "properties": { "stage": { "const": "failed" }, "status": { "const": "failed" } } },
+        { "properties": { "stage": { "const": "cancelled" }, "status": { "const": "cancelled" } } }
+      ]
+    },
+    {
+      "if": { "properties": { "stage": { "const": "failed" } }, "required": ["stage"] },
+      "then": {
+        "properties": {
+          "errorCode": { "type": "string" },
+          "errorPhase": { "type": "string" },
+          "errorRetryable": { "type": "boolean" },
+          "recoveryState": { "enum": ["retryable", "orphaned"] }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "recoveryState": { "const": "retryable" } } },
+            "then": { "properties": { "errorRetryable": { "const": true } } },
+            "else": { "properties": { "errorRetryable": { "const": false } } }
+          }
+        ]
+      },
+      "else": {
+        "properties": {
+          "errorCode": { "type": "null" },
+          "errorDetailRef": { "type": "null" },
+          "errorPhase": { "type": "null" },
+          "errorRetryable": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": { "enum": ["executing", "downloading", "verifying", "completed"] }
+        },
+        "required": ["stage"]
+      },
+      "then": { "properties": { "promptId": { "type": "string" } } }
+    },
+    {
+      "if": {
+        "properties": { "stage": { "enum": ["prepared", "uploading"] } },
+        "required": ["stage"]
+      },
+      "then": { "properties": { "promptId": { "type": "null" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": { "const": "submitted" },
+          "promptId": { "type": "null" }
+        },
+        "required": ["stage", "promptId"]
+      },
+      "then": {
+        "properties": { "submissionLeaseExpiresAtEpochMs": { "type": "integer" } }
+      },
+      "else": {
+        "properties": { "submissionLeaseExpiresAtEpochMs": { "type": "null" } }
+      }
+    },
+    {
+      "if": { "properties": { "stage": { "const": "prepared" } }, "required": ["stage"] },
+      "then": { "properties": { "startedAt": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "running" } }, "required": ["status"] },
+      "then": { "properties": { "startedAt": { "type": "string" } } },
+      "else": { "properties": { "heartbeatAt": { "type": "null" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["succeeded", "failed", "cancelled"] } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "completedAt": { "type": "string" } } },
+      "else": { "properties": { "completedAt": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "recoveryState": { "const": "completed" } }, "required": ["recoveryState"] },
+      "then": {
+        "properties": { "stage": { "enum": ["downloading", "verifying", "completed"] } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "recoveryState": { "enum": ["retryable", "orphaned"] } },
+        "required": ["recoveryState"]
+      },
+      "then": { "properties": { "stage": { "const": "failed" } } }
+    },
+    {
+      "if": {
+        "properties": { "outputAssetVersionUid": { "type": "string" } },
+        "required": ["outputAssetVersionUid"]
+      },
+      "then": { "properties": { "stage": { "const": "completed" } } }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "nullableTimestamp": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/remote-environment-report.schema.json",
+  "title": "Sanitized Remote Environment Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion", "connectionUid", "collectedAtEpochMs", "profileVersion",
+    "platform", "architecture", "gpuVendor", "gpuCount", "totalVramMiB",
+    "systemMemoryMiB", "diskFreeMiB", "pythonVersion", "torchVersion",
+    "cudaVersion", "ffmpegVersion", "comfyUiVersion", "workspaceWritable",
+    "directoriesReady", "comfyUiReachable", "ready"
+  ],
+  "properties": {
+    "contractVersion": { "const": "remote-environment-report.v1" },
+    "connectionUid": { "$ref": "#/$defs/uuid" },
+    "collectedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 8640000000000000 },
+    "profileVersion": { "const": "1.0.0" },
+    "platform": { "const": "linux" },
+    "architecture": { "enum": ["x64", "arm64"] },
+    "gpuVendor": { "enum": ["nvidia", "amd", "other", "none"] },
+    "gpuCount": { "type": "integer", "minimum": 0, "maximum": 16 },
+    "totalVramMiB": { "type": "integer", "minimum": 0, "maximum": 2097152 },
+    "systemMemoryMiB": { "type": "integer", "minimum": 1, "maximum": 4194304 },
+    "diskFreeMiB": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
+    "pythonVersion": { "$ref": "#/$defs/nullableVersion" },
+    "torchVersion": { "$ref": "#/$defs/nullableVersion" },
+    "cudaVersion": { "$ref": "#/$defs/nullableVersion" },
+    "ffmpegVersion": { "$ref": "#/$defs/nullableVersion" },
+    "comfyUiVersion": { "$ref": "#/$defs/nullableVersion" },
+    "workspaceWritable": { "type": "boolean" },
+    "directoriesReady": { "type": "boolean" },
+    "comfyUiReachable": { "type": "boolean" },
+    "ready": {
+      "type": "boolean",
+      "$comment": "Runtime derives readiness from the pinned profile and capability fields."
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "nullableVersion": {
+      "oneOf": [
+        { "type": "string", "maxLength": 32, "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\+[0-9a-z.]+)?$" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

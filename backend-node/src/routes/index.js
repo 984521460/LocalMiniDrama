@@ -28,6 +28,8 @@ const characterCandidateRoutes = require('./v2/characterCandidates');
 const characterReferencePackageRoutes = require('./v2/characterReferencePackages');
 const shotContinuitySnapshotRoutes = require('./v2/shotContinuitySnapshots');
 const generationHistoryRoutes = require('./v2/generationHistory');
+const remoteConnectionRoutes = require('./v2/remoteConnections');
+const remoteExecutionRoutes = require('./v2/remoteExecution');
 
 function setupRouter(cfg, db, log, runtime = {}) {
   const r = express.Router();
@@ -73,6 +75,8 @@ function setupRouter(cfg, db, log, runtime = {}) {
     runtime.generationHistory,
     db,
   );
+  const remoteConnections = remoteConnectionRoutes(log, runtime.remoteConnections, db);
+  const remoteExecution = remoteExecutionRoutes(log, runtime.remoteExecution, db);
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
@@ -81,6 +85,8 @@ function setupRouter(cfg, db, log, runtime = {}) {
   r.use('/v2', characterReferencePackages);
   r.use('/v2', shotContinuitySnapshots);
   r.use('/v2', generationHistory);
+  r.use('/v2', remoteConnections);
+  r.use('/v2', remoteExecution);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

@@ -13,6 +13,10 @@ const NARRATIVE_RESULT_TYPES = Object.freeze({
   'script.structured': 'script',
   'shot.plan': 'shot',
 });
+const REMOTE_ASSET_TYPES = Object.freeze({
+  'shot.image': 'image',
+  'shot.video': 'video',
+});
 
 function sameDrama(value, dramaUid) {
   return value?.dramaUid === dramaUid;
@@ -31,12 +35,25 @@ function validateNarrativeResult(repositories, uid, dramaUid, expectedType) {
   return true;
 }
 
+function validateRemoteAsset(repositories, uid, dramaUid, expectedType) {
+  const asset = repositories.assets.get(uid);
+  return asset.ownerType === 'drama'
+    && asset.ownerUid === dramaUid
+    && asset.assetType === expectedType
+    && asset.status !== 'deleted';
+}
+
 function isValidBoundDomainReference(node, repositories, dramaUid) {
   if (!node.domainRefType || !node.domainRefUid) return false;
   try {
     if (node.nodeType === 'source.selection') {
       return node.domainRefType === 'source_selection'
         && validateSourceSelection(repositories, node.domainRefUid, dramaUid);
+    }
+    const expectedAssetType = REMOTE_ASSET_TYPES[node.nodeType];
+    if (expectedAssetType) {
+      return node.domainRefType === 'asset'
+        && validateRemoteAsset(repositories, node.domainRefUid, dramaUid, expectedAssetType);
     }
     const expectedResultType = NARRATIVE_RESULT_TYPES[node.nodeType];
     if (expectedResultType) {

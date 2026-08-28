@@ -1,195 +1,201 @@
 'use strict';
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+const {
+  clientConfiguration,
+  normalizeBaseUrl,
+  parsePromptState,
+  parseSubmissionResponse,
+  parseUploadResponse,
+  promptGraph,
+  promptId,
+  requestOptions,
+  submissionOptions,
+  signalAborted,
+  uploadInput: uploadInputContract,
+  waitOptions,
+} = require('./contracts');
+const {
+  ComfyUiClientError,
+  createComfyUiClientError,
+  isComfyUiClientError,
+} = require('./errors');
+const { createComfyHttpTransport } = require('./httpTransport');
+const {
+  isComfyAsyncControlError,
+  raceNativePromise,
+} = require('./asyncControl');
 
-class ComfyUiClientError extends Error {
-  constructor(message, { status, code } = {}) {
-    super(message);
-    this.name = 'ComfyUiClientError';
-    if (status !== undefined) this.status = status;
-    if (code !== undefined) this.code = code;
-  }
-}
-
-function normalizeBaseUrl(value) {
-  let parsed;
-  try {
-    parsed = new URL(String(value || '').trim());
-  } catch (_) {
-    throw new TypeError('ComfyUI baseUrl must be a valid URL');
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new TypeError('ComfyUI baseUrl must use http or https');
-  }
-  if (parsed.username || parsed.password) {
-    throw new TypeError('ComfyUI baseUrl must not contain credentials');
-  }
-  if (!LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
-    throw new TypeError('ComfyUI baseUrl must target a loopback SSH tunnel');
-  }
-  if ((parsed.pathname && parsed.pathname !== '/') || parsed.search || parsed.hash) {
-    throw new TypeError('ComfyUI baseUrl must not contain a path, query, or fragment');
-  }
-  return parsed.origin;
-}
-
-function requirePlainObject(value, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be an object`);
-  }
-  return value;
-}
-
-function requirePromptId(value) {
-  const promptId = String(value || '').trim();
-  if (!promptId) throw new TypeError('promptId is required');
-  return promptId;
-}
-
-function defaultSleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function createComfyUiClient({
-  baseUrl,
-  fetchImpl = globalThis.fetch,
-  requestTimeoutMs = 30_000,
-  sleepImpl = defaultSleep,
-} = {}) {
-  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
-  if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl must be a function');
-  if (typeof sleepImpl !== 'function') throw new TypeError('sleepImpl must be a function');
-  if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
-    throw new TypeError('requestTimeoutMs must be positive');
-  }
-
-  async function requestJson(pathname, { method = 'GET', body, signal } = {}) {
-    const controller = new AbortController();
-    const abortFromCaller = () => controller.abort();
-    if (signal) {
-      if (signal.aborted) controller.abort();
-      else signal.addEventListener('abort', abortFromCaller, { once: true });
-    }
-    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
-
-    try {
-      const response = await fetchImpl(new URL(pathname, `${normalizedBaseUrl}/`).toString(), {
-        method,
-        redirect: 'error',
-        headers: {
-          Accept: 'application/json',
-          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: controller.signal,
-      });
-
-      if (!response || typeof response.ok !== 'boolean') {
-        throw new ComfyUiClientError(`ComfyUI returned an invalid response for ${method} ${pathname}`);
-      }
-      if (!response.ok) {
-        throw new ComfyUiClientError(`ComfyUI request failed: ${method} ${pathname} (${response.status})`, {
-          status: response.status,
-          code: 'HTTP_ERROR',
-        });
-      }
-
-      let payload;
-      try {
-        payload = await response.json();
-      } catch (_) {
-        throw new ComfyUiClientError(`ComfyUI returned invalid JSON for ${method} ${pathname}`, {
-          status: response.status,
-          code: 'INVALID_JSON',
-        });
-      }
-      return requirePlainObject(payload, 'ComfyUI response');
-    } catch (error) {
-      if (error instanceof ComfyUiClientError) throw error;
-      if (controller.signal.aborted) {
-        throw new ComfyUiClientError(`ComfyUI request timed out or was aborted: ${method} ${pathname}`, {
-          code: 'ABORTED',
-        });
-      }
-      throw new ComfyUiClientError(`ComfyUI request could not be completed: ${method} ${pathname}`, {
-        code: 'NETWORK_ERROR',
-      });
-    } finally {
+function defaultSleep(milliseconds, signal) {
+  return new Promise((resolve) => {
+    const finish = () => {
       clearTimeout(timer);
-      if (signal) signal.removeEventListener('abort', abortFromCaller);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, milliseconds);
+    signal?.addEventListener('abort', finish, { once: true });
+  });
+}
+
+function createComfyUiClient(value = {}) {
+  const configuration = clientConfiguration(value);
+  const baseUrl = configuration.baseUrl;
+  const fetchImpl = configuration.fetchImpl === undefined ? globalThis.fetch : configuration.fetchImpl;
+  const requestTimeoutMs = configuration.requestTimeoutMs === undefined
+    ? 30_000
+    : configuration.requestTimeoutMs;
+  const sleepImpl = configuration.sleepImpl === undefined ? defaultSleep : configuration.sleepImpl;
+  const maxUploadBytes = configuration.maxUploadBytes === undefined
+    ? 64 * 1024 * 1024
+    : configuration.maxUploadBytes;
+  if (typeof sleepImpl !== 'function' || !Number.isSafeInteger(maxUploadBytes)
+    || maxUploadBytes < 1 || maxUploadBytes > 256 * 1024 * 1024) {
+    throw new TypeError('ComfyUI client dependencies are invalid');
+  }
+  const transport = createComfyHttpTransport({ baseUrl, fetchImpl, requestTimeoutMs });
+
+  function systemStats(options) {
+    return transport.requestJson('/system_stats', requestOptions(options));
+  }
+
+  function objectInfo(options) {
+    return transport.requestJson('/object_info', requestOptions(options));
+  }
+
+  function queueSnapshot(options) {
+    return transport.requestJson('/queue', requestOptions(options));
+  }
+
+  async function submitPrompt(prompt, options) {
+    const submittedOptions = submissionOptions(options);
+    const body = Object.create(null);
+    try {
+      body.prompt = promptGraph(prompt);
+      if (submittedOptions.clientId !== undefined) body.client_id = submittedOptions.clientId;
+    } catch {
+      throw new TypeError('ComfyUI prompt submission input is invalid');
+    }
+    try {
+      const response = await transport.requestJson('/prompt', {
+        method: 'POST',
+        jsonBody: Object.freeze(body),
+        signal: submittedOptions.signal,
+        maxResponseBytes: 2 * 1024 * 1024,
+      });
+      return parseSubmissionResponse(response);
+    } catch (error) {
+      if (isComfyUiClientError(error) && error.code === 'COMFY_HTTP_ERROR'
+        && (error.status === 400 || error.status === 422)) {
+        throw createComfyUiClientError('COMFY_SUBMISSION_REJECTED');
+      }
+      throw error;
     }
   }
 
-  async function health(options) {
-    return requestJson('/system_stats', options);
+  function history(prompt, options) {
+    const normalizedPromptId = promptId(prompt);
+    return transport.requestJson(
+      `/history/${encodeURIComponent(normalizedPromptId)}`,
+      requestOptions(options),
+    );
   }
 
-  async function queue(options) {
-    return requestJson('/queue', options);
+  async function getPromptState(prompt, options) {
+    const normalizedPromptId = promptId(prompt);
+    const response = await history(normalizedPromptId, options);
+    return parsePromptState(response, normalizedPromptId);
   }
 
-  async function submitPrompt(prompt, { clientId, extraData, signal } = {}) {
-    requirePlainObject(prompt, 'prompt');
-    if (Object.keys(prompt).length === 0) throw new TypeError('prompt must not be empty');
-
-    const body = { prompt };
-    if (clientId !== undefined) {
-      const normalizedClientId = String(clientId).trim();
-      if (!normalizedClientId) throw new TypeError('clientId must not be empty');
-      body.client_id = normalizedClientId;
-    }
-    if (extraData !== undefined) body.extra_data = requirePlainObject(extraData, 'extraData');
-    return requestJson('/prompt', { method: 'POST', body, signal });
-  }
-
-  async function history(promptId, options) {
-    return requestJson(`/history/${encodeURIComponent(requirePromptId(promptId))}`, options);
-  }
-
-  async function waitForPrompt(promptId, {
-    timeoutMs = 10 * 60_000,
-    pollIntervalMs = 1_000,
-    signal,
-  } = {}) {
-    const normalizedPromptId = requirePromptId(promptId);
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TypeError('timeoutMs must be positive');
-    if (!Number.isFinite(pollIntervalMs) || pollIntervalMs < 0) {
-      throw new TypeError('pollIntervalMs must not be negative');
-    }
-    const deadline = Date.now() + timeoutMs;
-
+  async function waitForPrompt(prompt, options) {
+    const normalizedPromptId = promptId(prompt);
+    const waiting = waitOptions(options);
+    const deadline = Date.now() + waiting.timeoutMs;
     while (true) {
-      if (signal?.aborted) {
-        throw new ComfyUiClientError('ComfyUI prompt wait was aborted', { code: 'ABORTED' });
+      if (waiting.signal && signalAborted(waiting.signal)) {
+        throw createComfyUiClientError('COMFY_REQUEST_ABORTED');
       }
-      const records = await history(normalizedPromptId, { signal });
-      const record = records[normalizedPromptId];
-      if (record) {
-        const status = record.status || {};
-        const statusText = String(status.status_str || '').toLowerCase();
-        if (status.completed && statusText === 'success') return record;
-        if (statusText === 'error' || statusText === 'failed' || (status.completed && statusText !== 'success')) {
-          throw new ComfyUiClientError(`ComfyUI prompt failed: ${normalizedPromptId}`, {
-            code: 'PROMPT_FAILED',
-          });
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw createComfyUiClientError('COMFY_PROMPT_TIMEOUT');
+      let state;
+      const requestController = new AbortController();
+      try {
+        state = await raceNativePromise(
+          getPromptState(normalizedPromptId, { signal: requestController.signal }),
+          {
+            signal: waiting.signal,
+            timeoutMs: remaining,
+            onAbort: () => requestController.abort(),
+            onTimeout: () => requestController.abort(),
+          },
+        );
+      } catch (error) {
+        if (isComfyAsyncControlError(error, 'COMFY_ASYNC_ABORTED')) {
+          throw createComfyUiClientError('COMFY_REQUEST_ABORTED');
         }
+        if (isComfyAsyncControlError(error, 'COMFY_ASYNC_TIMEOUT')) {
+          throw createComfyUiClientError('COMFY_PROMPT_TIMEOUT');
+        }
+        throw error;
       }
-      if (Date.now() >= deadline) {
-        throw new ComfyUiClientError(`Timed out waiting for ComfyUI prompt: ${normalizedPromptId}`, {
-          code: 'PROMPT_TIMEOUT',
+      if (state.state === 'succeeded') return state;
+      if (state.state === 'failed') throw createComfyUiClientError('COMFY_EXECUTION_FAILED');
+      if (Date.now() >= deadline) throw createComfyUiClientError('COMFY_PROMPT_TIMEOUT');
+      const sleepRemaining = deadline - Date.now();
+      if (sleepRemaining <= 0) throw createComfyUiClientError('COMFY_PROMPT_TIMEOUT');
+      let sleeping;
+      const sleepController = new AbortController();
+      try { sleeping = sleepImpl(waiting.pollIntervalMs, sleepController.signal); } catch {
+        throw createComfyUiClientError('COMFY_CONNECTION_FAILED');
+      }
+      try {
+        await raceNativePromise(sleeping, {
+          signal: waiting.signal,
+          timeoutMs: sleepRemaining,
+          onAbort: () => sleepController.abort(),
+          onTimeout: () => sleepController.abort(),
         });
+      } catch (error) {
+        if (isComfyAsyncControlError(error, 'COMFY_ASYNC_ABORTED')) {
+          throw createComfyUiClientError('COMFY_REQUEST_ABORTED');
+        }
+        if (isComfyAsyncControlError(error, 'COMFY_ASYNC_TIMEOUT')) {
+          throw createComfyUiClientError('COMFY_PROMPT_TIMEOUT');
+        }
+        throw createComfyUiClientError('COMFY_CONNECTION_FAILED');
       }
-      await sleepImpl(pollIntervalMs);
     }
+  }
+
+  function uploadInput(value) {
+    const input = uploadInputContract(value, maxUploadBytes);
+    const form = new FormData();
+    form.append('image', new Blob([input.bytes]), input.fileName);
+    form.append('subfolder', input.subfolder);
+    form.append('type', 'input');
+    form.append('overwrite', input.overwrite ? 'true' : 'false');
+    return transport.requestJson('/upload/image', {
+      method: 'POST',
+      formBody: form,
+      maxResponseBytes: 1024 * 1024,
+    }).then(parseUploadResponse, (error) => {
+      if (isComfyUiClientError(error) && error.code === 'COMFY_HTTP_ERROR') {
+        throw createComfyUiClientError('COMFY_UPLOAD_FAILED', { status: error.status });
+      }
+      throw error;
+    });
   }
 
   return Object.freeze({
-    baseUrl: normalizedBaseUrl,
-    health,
-    queue,
-    submitPrompt,
+    baseUrl: transport.origin,
+    getPromptState,
+    health: systemStats,
     history,
+    objectInfo,
+    queue: queueSnapshot,
+    queueSnapshot,
+    submitPrompt,
+    systemStats,
+    uploadInput,
     waitForPrompt,
   });
 }
@@ -197,5 +203,6 @@ function createComfyUiClient({
 module.exports = {
   ComfyUiClientError,
   createComfyUiClient,
+  isComfyUiClientError,
   normalizeBaseUrl,
 };

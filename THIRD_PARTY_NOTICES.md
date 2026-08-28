@@ -30,6 +30,7 @@ node licenses/collect-direct-npm-licenses.mjs
 | backend-node | dependencies | `jsonwebtoken` | `9.0.3` | `MIT` |
 | backend-node | dependencies | `multer` | `1.4.5-lts.2` | `MIT` |
 | backend-node | dependencies | `sharp` | `0.34.5` | `Apache-2.0` |
+| backend-node | dependencies | `ssh2` | `1.17.0` | `MIT` |
 | backend-node | dependencies | `uuid` | `10.0.0` | `MIT` |
 | frontweb | dependencies | `@element-plus/icons-vue` | `2.3.2` | `MIT` |
 | frontweb | dependencies | `@vue-flow/background` | `1.3.2` | `MIT` |
@@ -53,6 +54,7 @@ node licenses/collect-direct-npm-licenses.mjs
 | desktop | dependencies | `jsonwebtoken` | `9.0.3` | `MIT` |
 | desktop | dependencies | `multer` | `1.4.5-lts.2` | `MIT` |
 | desktop | dependencies | `sharp` | `0.34.5` | `Apache-2.0` |
+| desktop | dependencies | `ssh2` | `1.17.0` | `MIT` |
 | desktop | dependencies | `uuid` | `10.0.0` | `MIT` |
 | desktop | devDependencies | `electron` | `28.3.3` | `MIT` |
 | desktop | devDependencies | `electron-builder` | `24.13.3` | `MIT` |

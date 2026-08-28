@@ -424,7 +424,7 @@ test('startup migration keeps v1 ZIP import compatible and installs the v2 ledge
   const result = projectZipService.importDrama(database, { storage: { local_path: storage } }, createLog(), createV1Zip());
 
   assert.equal(result.title, 'Phase 0 最小迁移样例');
-  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 8);
+  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 9);
   assert.equal(database.prepare('SELECT count(*) AS count FROM source_documents').get().count, 0);
 });
 
@@ -821,9 +821,13 @@ test('v2 import checks global-only UID tables inside the import boundary and lea
     host: '127.0.0.1',
     port: 22,
     username: 'fixture',
-    hostFingerprint: 'SHA256:fixture',
+    hostFingerprint: `SHA256:${'A'.repeat(43)}`,
     credentialRef: 'credential:v1:90000000-0000-4000-8000-000000000003',
     status: 'ready',
+    authMethod: 'password',
+    comfyHost: '127.0.0.1',
+    comfyPort: 8188,
+    remoteWorkDir: 'ai-drama-studio',
   });
   assert.throws(
     () => projectZipService.importDrama(conflictDb, { storage: { local_path: createStorage(t) } }, log, exported.buffer),

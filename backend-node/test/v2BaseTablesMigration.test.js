@@ -81,8 +81,8 @@ function migrateEmptyLegacyDatabase(database) {
     VALUES ('legacy poster', 'image', 'legacy://poster', '2026-01-01', '2026-01-01')
   `).run();
   const result = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8]);
-  assert.equal(result.currentVersion, 8);
+  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.equal(result.currentVersion, 9);
 }
 
 function assertBaseTableContract(database) {
@@ -251,8 +251,8 @@ function insertValidGraph(database) {
   database.prepare(`
     INSERT INTO remote_connections
       (uid, name, host, port, username, host_fingerprint, credential_ref, status)
-    VALUES (?, 'Synthetic remote', 'gpu.example.invalid', 65022, 'fixture-user', 'SHA256:fixture', ?, 'ready')
-  `).run(ids.remoteConnection, `credential:v1:${uid(20)}`);
+    VALUES (?, 'Synthetic remote', 'gpu.example.invalid', 65022, 'fixture-user', ?, ?, 'ready')
+  `).run(ids.remoteConnection, `SHA256:${'A'.repeat(43)}`, `credential:v1:${uid(20)}`);
   database.prepare(`
     INSERT INTO remote_tasks
       (uid, connection_uid, workflow_run_uid, provider, prompt_id, remote_relative_dir,
@@ -492,7 +492,7 @@ test('enforces UUID, JSON, status, relationship, uniqueness, and relative-path b
     for (const invalidUid of [`${uid(900)}\0tail`, Buffer.from(uid(901))]) {
       assert.throws(
         () => database.prepare(`UPDATE ${table} SET uid = ? WHERE uid = (SELECT min(uid) FROM ${table})`).run(invalidUid),
-        /CHECK constraint failed|(?:run|task) (?:ownership|identity|snapshot and identity) (?:is|are) immutable|source (?:document|block|selection).*immutable/i,
+        /CHECK constraint failed|(?:run|task) (?:ownership|identity|snapshot and identity) (?:is|are) immutable|remote connection identity is immutable|source (?:document|block|selection).*immutable/i,
         `${table}.uid must reject NUL-suffixed text and BLOB values`,
       );
     }
@@ -678,8 +678,8 @@ test('rolls back a failed base-table migration and succeeds after the schema col
 
   database.exec('DROP TABLE source_documents');
   const recovered = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8]);
-  assert.equal(recovered.currentVersion, 8);
+  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.equal(recovered.currentVersion, 9);
   assertBaseTableContract(database);
   assert.equal(database.prepare('SELECT count(*) AS count FROM legacy_assets').get().count, 0);
   assert.equal(database.pragma('integrity_check', { simple: true }), 'ok');

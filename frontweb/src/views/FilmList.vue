@@ -36,6 +36,9 @@
           <el-button class="btn-settings" @click="showAiConfigDialog = true">
             <el-icon><Setting /></el-icon>AI配置
           </el-button>
+          <el-button class="btn-settings" @click="$router.push('/remote-connections')">
+            远程算力
+          </el-button>
           <el-button class="btn-import" :loading="importing" @click="triggerImport">
             <el-icon><Upload /></el-icon>导入项目
           </el-button>

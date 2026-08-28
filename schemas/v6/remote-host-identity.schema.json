@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/remote-host-identity.schema.json",
+  "title": "Remote Host Identity Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "connectionUid",
+    "algorithm",
+    "fingerprint",
+    "stateVersion",
+    "requiresConfirmation",
+    "status"
+  ],
+  "properties": {
+    "connectionUid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "algorithm": {
+      "enum": ["ssh-ed25519", "ecdsa-sha2-nistp256", "rsa-sha2-256", "rsa-sha2-512", "ssh-rsa"]
+    },
+    "fingerprint": { "type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]{43}$" },
+    "stateVersion": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+    "requiresConfirmation": { "type": "boolean" },
+    "status": { "enum": ["pending", "confirmed"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "pending" } } },
+      "then": { "properties": { "requiresConfirmation": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "confirmed" } } },
+      "then": { "properties": { "requiresConfirmation": { "const": false } } }
+    }
+  ]
+}

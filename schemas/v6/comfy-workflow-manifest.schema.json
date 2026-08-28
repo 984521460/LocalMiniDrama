@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/comfy-workflow-manifest.schema.json",
+  "title": "Validated ComfyUI API Workflow Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "manifestId", "version", "engine", "workflowFile",
+    "workflowSha256", "modelFamily", "requirements", "inputs", "outputs",
+    "validation", "status"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "comfy-workflow-manifest.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "manifestId": { "$ref": "#/$defs/kebabName" },
+    "version": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$" },
+    "engine": { "const": "comfyui" },
+    "workflowFile": { "$ref": "#/$defs/relativePath" },
+    "workflowSha256": { "$ref": "#/$defs/sha256" },
+    "modelFamily": { "$ref": "#/$defs/kebabName" },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/nodeRequirement" },
+          { "$ref": "#/$defs/modelRequirement" }
+        ]
+      }
+    },
+    "inputs": {
+      "$comment": "Runtime and SQLite additionally require every marker/inputName target pair to be unique.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 64,
+      "propertyNames": { "$ref": "#/$defs/logicalName" },
+      "additionalProperties": { "$ref": "#/$defs/inputBinding" }
+    },
+    "outputs": {
+      "$comment": "Runtime and SQLite additionally require every output marker to be unique.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 16,
+      "propertyNames": { "$ref": "#/$defs/logicalName" },
+      "additionalProperties": { "$ref": "#/$defs/outputBinding" }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "workflowFormat", "markersValidated"],
+      "properties": {
+        "schemaVersion": { "const": "comfy-workflow-manifest.v1" },
+        "workflowFormat": { "const": "api" },
+        "markersValidated": { "const": true }
+      }
+    },
+    "status": { "const": "validated" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "kebabName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "logicalName": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$" },
+    "marker": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^APP_[A-Z0-9]+(?:_[A-Z0-9]+)*$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$",
+      "not": { "pattern": "(^|/)\\.{1,2}(/|$)" }
+    },
+    "nodeRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "nodeType"],
+      "properties": {
+        "kind": { "const": "node" },
+        "nodeType": { "$ref": "#/$defs/logicalName" }
+      }
+    },
+    "modelRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "nodeType", "inputName", "fileName"],
+      "properties": {
+        "kind": { "const": "model" },
+        "nodeType": { "$ref": "#/$defs/logicalName" },
+        "inputName": { "$ref": "#/$defs/logicalName" },
+        "fileName": { "$ref": "#/$defs/relativePath" }
+      }
+    },
+    "inputBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["marker", "inputName", "valueType", "required"],
+      "properties": {
+        "marker": { "$ref": "#/$defs/marker" },
+        "inputName": { "$ref": "#/$defs/logicalName" },
+        "valueType": { "enum": ["string", "integer", "number", "boolean", "string-array"] },
+        "required": { "type": "boolean" }
+      }
+    },
+    "outputBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["marker"],
+      "properties": { "marker": { "$ref": "#/$defs/marker" } }
+    }
+  }
+}

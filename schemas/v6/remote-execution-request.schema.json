@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/remote-execution-request.schema.json",
+  "title": "Remote Execution Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expectedStateVersion", "workflowBase64", "values", "uploads", "output"],
+  "properties": {
+    "expectedStateVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "workflowBase64": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 6291456,
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+    },
+    "values": {
+      "type": "object",
+      "$comment": "Runtime validation additionally enforces descriptor safety, depth, entry, string-byte, and total-byte bounds."
+    },
+    "uploads": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["localRelativePath", "remoteRelativePath", "sha256"],
+        "properties": {
+          "localRelativePath": { "$ref": "#/$defs/relativePath" },
+          "remoteRelativePath": { "$ref": "#/$defs/relativePath" },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logicalName", "assetUid"],
+      "properties": {
+        "logicalName": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,63}$"
+        },
+        "assetUid": { "$ref": "#/$defs/uuid" }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){0,31}$"
+    }
+  }
+}

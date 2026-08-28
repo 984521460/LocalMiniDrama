@@ -47,6 +47,12 @@ const router = createRouter({
       meta: { title: 'AI 配置' }
     },
     {
+      path: '/remote-connections',
+      name: 'remote-connections',
+      component: () => import('@/views/RemoteConnections.vue'),
+      meta: { title: '远程算力连接' }
+    },
+    {
       path: '/free-create',
       name: 'free-create',
       component: () => import('@/views/FreeCreate.vue'),

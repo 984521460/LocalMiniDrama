@@ -17,6 +17,8 @@ const DOMAIN_REF_TYPES = Object.freeze({
   'episode.adaptation': 'narrative_result',
   'script.structured': 'narrative_result',
   'shot.plan': 'narrative_result',
+  'shot.image': 'asset',
+  'shot.video': 'asset',
 });
 const MAX_POSITION = 1_000_000;
 
