@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/dialogue-delivery.schema.json",
+  "title": "DialogueDeliveryPlan v8",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "timingAlgorithmVersion",
+    "uid",
+    "dramaUid",
+    "scriptResultUid",
+    "shotId",
+    "dialogueEntryId",
+    "characterUid",
+    "voiceProfileUid",
+    "text",
+    "textSha256",
+    "timingSha256",
+    "emotion",
+    "emotionIntensityPermille",
+    "speedPermille",
+    "pauseBeforeMs",
+    "pauseAfterMs",
+    "spokenUnitCount",
+    "punctuationPauseMs",
+    "estimatedSpeechDurationMs",
+    "estimatedTotalDurationMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "8.0" },
+    "timingAlgorithmVersion": { "const": "dialogue-timing.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "scriptResultUid": { "$ref": "#/$defs/uid" },
+    "shotId": { "$ref": "#/$defs/sourceId" },
+    "dialogueEntryId": { "$ref": "#/$defs/sourceId" },
+    "characterUid": { "$ref": "#/$defs/uid" },
+    "voiceProfileUid": { "$ref": "#/$defs/uid" },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!\\s)(?![\\s\\S]*[\\u0000-\\u0008\\u000b-\\u001f\\u007f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ud800-\\udfff])(?:(?:\\u{1f3f4}\\ufe0f?[\\u{e0020}-\\u{e007e}]+\\u{e007f})|[^\\u{e0020}-\\u{e007f}])*(?<!\\s)$"
+    },
+    "textSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timingSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "emotion": { "$ref": "#/$defs/emotion" },
+    "emotionIntensityPermille": { "type": "integer", "minimum": 0, "maximum": 1000 },
+    "speedPermille": { "type": "integer", "minimum": 500, "maximum": 2000 },
+    "pauseBeforeMs": { "type": "integer", "minimum": 0, "maximum": 5000 },
+    "pauseAfterMs": { "type": "integer", "minimum": 0, "maximum": 5000 },
+    "spokenUnitCount": { "type": "integer", "minimum": 1, "maximum": 1024 },
+    "punctuationPauseMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
+    "estimatedSpeechDurationMs": { "type": "integer", "minimum": 1, "maximum": 600000 },
+    "estimatedTotalDurationMs": { "type": "integer", "minimum": 1, "maximum": 600000 }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sourceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9])?$"
+    },
+    "emotion": {
+      "type": "string",
+      "enum": ["neutral", "happy", "sad", "angry", "fearful", "surprised"]
+    }
+  },
+  "$comment": "Runtime additionally requires NFC UTF-8 text within 4096 bytes and recomputes every hash and timing field with the project-owned dialogue-timing.v1 scalar algorithm; it does not use host Intl/ICU segmentation."
+}
