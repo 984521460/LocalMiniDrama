@@ -388,5 +388,6 @@ module.exports = Object.freeze({
   AUDIO_TIMELINE_ALGORITHM_VERSION,
   createAudioTimeline,
   createAudioTimelineVerifier,
+  parseAudioTimelineRecord,
   requireTrustedAudioTimeline,
 });

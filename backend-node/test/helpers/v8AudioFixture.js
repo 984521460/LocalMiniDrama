@@ -11,7 +11,16 @@ const {
   createAudioTimeline,
   createAudioTimelineVerifier,
 } = require('../../src/audio/audioTimeline');
+const {
+  createAudioMixPlan,
+  createAudioMixPlanVerifier,
+} = require('../../src/audio/audioMixPlan');
+const {
+  createProductionTimelineSnapshot,
+  createProductionTimelineSnapshotVerifier,
+} = require('../../src/audio/productionTimelineSnapshot');
 const { createBgmTrack } = require('../../src/audio/bgmTrack');
+const { createGenerationHistoryRecord } = require('../../src/assets/generationHistory');
 const {
   compileH3ShotPrompt,
   normalizeH3GenerationSpec,
@@ -331,8 +340,196 @@ function createBgmTrackFixture(overrides = {}) {
   });
 }
 
+function mixSettings(mode, overrides = {}) {
+  return {
+    dialogueGainMilliDb: mode === 'h3_native' ? null : 0,
+    nativeGainMilliDb: mode === 'independent_tts' ? null : -3000,
+    bgmGainMilliDb: -9000,
+    duckedBgmGainMilliDb: -18000,
+    fadeInMs: 200,
+    fadeOutMs: 300,
+    duckingAttackMs: 50,
+    duckingReleaseMs: 100,
+    ...overrides,
+  };
+}
+
+function createAudioMixFixture(mode = 'independent_tts', durations = [700, 800]) {
+  const timelineFixture = createTimelineFixture(mode, durations);
+  const bgmTrack = createBgmTrackFixture();
+  const input = {
+    schemaVersion: '8.0',
+    uid: uid(1100),
+    audioTimeline: timelineFixture.timeline,
+    bgmTrack,
+    settings: mixSettings(mode),
+    createdAtEpochMs: 1_800_000_400_000,
+  };
+  const candidate = createAudioMixPlan(input);
+  const verifier = createAudioMixPlanVerifier({
+    loadTrustedEnvelope(expectedUid) {
+      if (expectedUid !== input.uid) throw new Error('synthetic-mix-anchor-mismatch');
+      return input;
+    },
+  });
+  return Object.freeze({
+    input,
+    candidate,
+    verifier,
+    plan: verifier.verify(JSON.parse(JSON.stringify(candidate)), input.uid),
+    timelineFixture,
+    bgmTrack,
+  });
+}
+
+function sourceEvidenceFromTimeline(timeline) {
+  const sources = [];
+  const seen = new Set();
+  function add(source) {
+    if (seen.has(source.sourceAssetVersionUid)) return;
+    seen.add(source.sourceAssetVersionUid);
+    const native = source.sourceKind === 'h3_native';
+    const durationMs = native
+      ? timeline.nativeTrack.durationMs
+      : source.durationMs;
+    const version = {
+      uid: source.sourceAssetVersionUid,
+      assetUid: source.sourceAssetUid,
+      storageProvider: 'local',
+      logicalUri: `asset://dramas/${timeline.dramaUid}/timeline/${source.sourceAssetUid}/${source.sourceAssetVersionUid}`,
+      relativePath: native
+        ? `projects/${timeline.dramaUid}/assets/video/${source.sourceAssetUid}/${source.sourceAssetVersionUid}.mp4`
+        : `projects/${timeline.dramaUid}/assets/audio/${source.sourceAssetUid}/${source.sourceAssetVersionUid}.wav`,
+      sha256: source.sourceMediaSha256,
+      mimeType: source.sourceMimeType,
+      width: native ? 608 : null,
+      height: native ? 352 : null,
+      durationMs,
+      parentUid: null,
+      status: 'ready',
+      createdAt: '2027-01-15T08:00:00.000Z',
+    };
+    sources.push({
+      sourceKind: source.sourceKind,
+      asset: {
+        uid: source.sourceAssetUid,
+        ownerType: 'drama',
+        ownerUid: timeline.dramaUid,
+        assetType: native ? 'video' : 'audio',
+        currentVersionUid: source.sourceAssetVersionUid,
+        status: 'ready',
+        createdAt: '2027-01-15T07:59:59.000Z',
+        updatedAt: '2027-01-15T08:00:00.000Z',
+      },
+      assetVersion: version,
+    });
+  }
+  timeline.segments.forEach(add);
+  if (timeline.nativeTrack !== null) {
+    add({
+      sourceKind: 'h3_native',
+      sourceAssetUid: timeline.nativeTrack.sourceAssetUid,
+      sourceAssetVersionUid: timeline.nativeTrack.sourceAssetVersionUid,
+      sourceMediaSha256: timeline.nativeTrack.sourceMediaSha256,
+      sourceMimeType: timeline.nativeTrack.sourceMimeType,
+      durationMs: timeline.nativeTrack.durationMs,
+    });
+  }
+  return sources;
+}
+
+function timelineShots(durationMs, dramaUid, workflowRunUid) {
+  const durations = durationMs === 1500 ? [700, 800] : [800, durationMs - 800];
+  return durations.map((clipDurationMs, index) => {
+    const assetNumber = 1210 + index;
+    const versionNumber = 1200 + index;
+    const asset = assetEvidence({ asset: assetNumber, version: versionNumber, assetType: 'video' });
+    const assetVersion = assetVersionEvidence({
+      version: versionNumber,
+      asset: assetNumber,
+      mimeType: 'video/mp4',
+      durationMs: clipDurationMs,
+      width: 608,
+      height: 352,
+      sha: String(index + 4).repeat(64),
+      relativePath: `videos/shot-${index + 1}.mp4`,
+    });
+    const promptSemanticUid = uid(1240 + index);
+    const manifestUid = uid(1250 + index);
+    const generationHistory = createGenerationHistoryRecord({
+      uid: uid(1220 + index),
+      runUid: workflowRunUid,
+      dramaUid,
+      assetUid: asset.uid,
+      promptSemanticUid,
+      manifestUid,
+      manifestSha256: String(index + 6).repeat(64),
+      provider: 'local',
+      model: 'synthetic-video-v1',
+      seed: index + 1,
+      parameters: { width: 608, height: 352 },
+      input: { promptSemanticUid, manifestUid },
+      status: 'succeeded',
+      outputVersionUid: assetVersion.uid,
+      outputVersionEvidence: assetVersion,
+      parentVersionUid: null,
+      parentVersionEvidence: null,
+      errorCode: null,
+      errorDetailRef: null,
+      createdAtEpochMs: 1_800_000_100_000 + index,
+      completedAtEpochMs: 1_800_000_200_000 + index,
+    });
+    return {
+      shotId: `shot-${index + 1}`,
+      plannedOrdinal: index + 1,
+      generationHistory,
+      asset,
+      assetVersion,
+    };
+  });
+}
+
+function createProductionTimelineFixture(mode = 'independent_tts') {
+  const mixFixture = createAudioMixFixture(mode);
+  const input = {
+    schemaVersion: '8.0',
+    uid: uid(1300),
+    audioTimeline: mixFixture.timelineFixture.timeline,
+    audioMixPlan: mixFixture.plan,
+    shots: timelineShots(
+      mixFixture.plan.durationMs,
+      mixFixture.plan.dramaUid,
+      mixFixture.plan.workflowRunUid,
+    ),
+    audioSources: sourceEvidenceFromTimeline(mixFixture.timelineFixture.timeline),
+    bgmTrack: mixFixture.bgmTrack,
+    createdAtEpochMs: 1_800_000_500_000,
+  };
+  const candidate = createProductionTimelineSnapshot(input);
+  const verifier = createProductionTimelineSnapshotVerifier({
+    loadTrustedEnvelope(expectedUid) {
+      if (expectedUid !== input.uid) throw new Error('synthetic-snapshot-anchor-mismatch');
+      return input;
+    },
+    loadGenerationHistory(expectedUid) {
+      const shot = input.shots.find((entry) => entry.generationHistory.uid === expectedUid);
+      if (!shot) throw new Error('synthetic-history-anchor-mismatch');
+      return shot.generationHistory;
+    },
+  });
+  return Object.freeze({
+    input,
+    candidate,
+    verifier,
+    snapshot: verifier.verify(JSON.parse(JSON.stringify(candidate)), input.uid),
+    mixFixture,
+  });
+}
+
 module.exports = Object.freeze({
+  createAudioMixFixture,
   createBgmTrackFixture,
+  createProductionTimelineFixture,
   createTimelineFixture,
   uid,
 });

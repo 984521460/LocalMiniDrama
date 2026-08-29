@@ -407,5 +407,6 @@ module.exports = Object.freeze({
   AUDIO_MIX_ALGORITHM_VERSION,
   createAudioMixPlan,
   createAudioMixPlanVerifier,
+  parseAudioMixPlanRecord,
   requireTrustedAudioMixPlan,
 });
