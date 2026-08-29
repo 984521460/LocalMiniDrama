@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/media-normalization-plan.schema.json",
+  "title": "Deterministic media normalization plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "algorithmVersion", "uid", "dramaUid", "workflowRunUid",
+    "durationMs", "productionTimelineSnapshotUid", "productionTimelineSnapshotSha256",
+    "profile", "mediaProbeUids", "videoInputs", "audioInputs", "subtitleTrackSha256",
+    "audioMixPlanUid", "audioMixPlanSha256", "createdAtEpochMs", "planSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "media-normalization-plan.v1" },
+    "algorithmVersion": { "const": "media-normalization.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "workflowRunUid": { "$ref": "#/$defs/uid" },
+    "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+    "productionTimelineSnapshotUid": { "$ref": "#/$defs/uid" },
+    "productionTimelineSnapshotSha256": { "$ref": "#/$defs/sha256" },
+    "profile": { "$ref": "https://local-mini-drama.invalid/schemas/v8/media-export-profile.schema.json" },
+    "mediaProbeUids": {
+      "type": "array", "minItems": 1, "maxItems": 2001, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/uid" }
+    },
+    "videoInputs": {
+      "type": "array", "minItems": 1, "maxItems": 1000,
+      "items": { "$ref": "#/$defs/videoInput" }
+    },
+    "audioInputs": {
+      "type": "array", "minItems": 1, "maxItems": 1001,
+      "items": { "$ref": "#/$defs/audioInput" }
+    },
+    "subtitleTrackSha256": { "$ref": "#/$defs/sha256" },
+    "audioMixPlanUid": { "$ref": "#/$defs/uid" },
+    "audioMixPlanSha256": { "$ref": "#/$defs/sha256" },
+    "createdAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "planSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "rational": {
+      "type": "object", "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "denominator": { "type": "integer", "minimum": 1, "maximum": 1000000000 }
+      }
+    },
+    "videoSource": {
+      "type": "object", "additionalProperties": false,
+      "required": ["durationMs", "width", "height", "frameRate"],
+      "properties": {
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "frameRate": { "$ref": "#/$defs/rational" }
+      }
+    },
+    "videoTarget": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "width", "height", "frameRate", "pixelFormat", "scaleMode", "padColor",
+        "sampleAspectRatio"
+      ],
+      "properties": {
+        "width": { "const": 1920 },
+        "height": { "const": 1080 },
+        "frameRate": {
+          "type": "object", "additionalProperties": false,
+          "required": ["numerator", "denominator"],
+          "properties": { "numerator": { "const": 24 }, "denominator": { "const": 1 } }
+        },
+        "pixelFormat": { "const": "yuv420p" },
+        "scaleMode": { "const": "contain" },
+        "padColor": { "const": "#000000" },
+        "sampleAspectRatio": { "const": "1:1" }
+      }
+    },
+    "videoInput": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "ordinal", "shotId", "assetVersionUid", "assetVersionSha256", "mediaProbeUid",
+        "mediaProbeSha256", "source", "target"
+      ],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "shotId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "assetVersionSha256": { "$ref": "#/$defs/sha256" },
+        "mediaProbeUid": { "$ref": "#/$defs/uid" },
+        "mediaProbeSha256": { "$ref": "#/$defs/sha256" },
+        "source": { "$ref": "#/$defs/videoSource" },
+        "target": { "$ref": "#/$defs/videoTarget" }
+      }
+    },
+    "audioSource": {
+      "type": "object", "additionalProperties": false,
+      "required": ["durationMs", "codec", "sampleRateHz", "channels", "channelLayout"],
+      "properties": {
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "codec": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$" },
+        "sampleRateHz": { "type": "integer", "minimum": 8000, "maximum": 384000 },
+        "channels": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "channelLayout": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+()\\-]{0,127}$" }
+      }
+    },
+    "audioTarget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["codec", "sampleRateHz", "channels", "channelLayout"],
+      "properties": {
+        "codec": { "const": "aac" },
+        "sampleRateHz": { "const": 48000 },
+        "channels": { "const": 2 },
+        "channelLayout": { "const": "stereo" }
+      }
+    },
+    "audioInput": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "ordinal", "role", "sourceKind", "assetVersionUid", "assetVersionSha256",
+        "mediaProbeUid", "mediaProbeSha256", "source", "target"
+      ],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "role": { "enum": ["dialogue", "native", "bgm"] },
+        "sourceKind": { "enum": ["tts_asset", "h3_native", "bgm"] },
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "assetVersionSha256": { "$ref": "#/$defs/sha256" },
+        "mediaProbeUid": { "$ref": "#/$defs/uid" },
+        "mediaProbeSha256": { "$ref": "#/$defs/sha256" },
+        "source": { "$ref": "#/$defs/audioSource" },
+        "target": { "$ref": "#/$defs/audioTarget" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "role": { "const": "dialogue" } }, "required": ["role"] },
+          "then": { "properties": { "sourceKind": { "const": "tts_asset" } } }
+        },
+        {
+          "if": { "properties": { "role": { "const": "native" } }, "required": ["role"] },
+          "then": { "properties": { "sourceKind": { "const": "h3_native" } } }
+        },
+        {
+          "if": { "properties": { "role": { "const": "bgm" } }, "required": ["role"] },
+          "then": { "properties": { "sourceKind": { "const": "bgm" } } }
+        }
+      ]
+    }
+  },
+  "$comment": "Runtime requires a trusted ProductionTimelineSnapshot and one trusted current media probe for every unique shot, dialogue/native source and BGM version in canonical order. It replays an external immutable envelope before granting execution trust; the public plan hash is not a trust root."
+}

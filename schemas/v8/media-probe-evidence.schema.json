@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/media-probe-evidence.schema.json",
+  "title": "Local media probe evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "algorithmVersion", "uid", "assetVersionUid", "assetUid",
+    "assetVersionSha256", "relativePathSha256", "mimeType", "mediaKind", "bytes",
+    "durationMs", "formatNames", "video", "audio", "decoded", "probedAtEpochMs",
+    "evidenceSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "media-probe-evidence.v1" },
+    "algorithmVersion": { "const": "ffprobe-full-decode.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "assetVersionUid": { "$ref": "#/$defs/uid" },
+    "assetUid": { "$ref": "#/$defs/uid" },
+    "assetVersionSha256": { "$ref": "#/$defs/sha256" },
+    "relativePathSha256": { "$ref": "#/$defs/sha256" },
+    "mimeType": {
+      "enum": ["audio/aac", "audio/flac", "audio/mpeg", "audio/wav", "audio/x-wav", "video/mp4"]
+    },
+    "mediaKind": { "enum": ["video", "audio"] },
+    "bytes": { "type": "integer", "minimum": 1, "maximum": 68719476736 },
+    "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+    "formatNames": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$" }
+    },
+    "video": {
+      "oneOf": [
+        { "$ref": "#/$defs/video" },
+        { "type": "null" }
+      ]
+    },
+    "audio": {
+      "oneOf": [
+        { "$ref": "#/$defs/audio" },
+        { "type": "null" }
+      ]
+    },
+    "decoded": { "const": true },
+    "probedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "evidenceSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mediaKind": { "const": "video" } }, "required": ["mediaKind"] },
+      "then": {
+        "properties": {
+          "mimeType": { "const": "video/mp4" },
+          "video": { "$ref": "#/$defs/video" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "mediaKind": { "const": "audio" } }, "required": ["mediaKind"] },
+      "then": {
+        "properties": {
+          "mimeType": { "enum": ["audio/aac", "audio/flac", "audio/mpeg", "audio/wav", "audio/x-wav"] },
+          "video": { "type": "null" },
+          "audio": { "$ref": "#/$defs/audio" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "rational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "denominator": { "type": "integer", "minimum": 1, "maximum": 1000000000 }
+      }
+    },
+    "video": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "codecName", "width", "height", "pixelFormat", "averageFrameRate", "timeBase",
+        "sampleAspectRatio", "displayAspectRatio", "frameCount"
+      ],
+      "properties": {
+        "codecName": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]*$", "maxLength": 64 },
+        "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "pixelFormat": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]*$", "maxLength": 64 },
+        "averageFrameRate": { "$ref": "#/$defs/rational" },
+        "timeBase": { "$ref": "#/$defs/rational" },
+        "sampleAspectRatio": { "type": "string", "pattern": "^[1-9][0-9]{0,5}:[1-9][0-9]{0,5}$" },
+        "displayAspectRatio": { "type": "string", "pattern": "^[1-9][0-9]{0,5}:[1-9][0-9]{0,5}$" },
+        "frameCount": { "type": "integer", "minimum": 1, "maximum": 10000000 }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codecName", "sampleRateHz", "channels", "channelLayout", "sampleFormat"],
+      "properties": {
+        "codecName": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]*$", "maxLength": 64 },
+        "sampleRateHz": { "type": "integer", "minimum": 8000, "maximum": 384000 },
+        "channels": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "channelLayout": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+()\\-]*$", "maxLength": 128 },
+        "sampleFormat": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]*$", "maxLength": 64 }
+      }
+    }
+  },
+  "$comment": "Runtime rechecks the exact local AssetVersion, path hash, actual file SHA-256, duration/dimensions, bounded duplicate-aware ffprobe output and a full ffmpeg decode before granting trust. Absolute paths and raw process errors are not representable."
+}

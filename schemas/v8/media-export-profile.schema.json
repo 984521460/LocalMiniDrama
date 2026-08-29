@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/media-export-profile.schema.json",
+  "title": "Fixed MVP media export profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "profileId", "revision", "container", "video", "audio",
+    "subtitles", "mux", "profileSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "media-export-profile.v1" },
+    "profileId": { "const": "mvp-1080p-16x9" },
+    "revision": { "const": 1 },
+    "container": { "const": "mp4" },
+    "video": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width", "height", "displayAspectRatio", "frameRate", "timeBase", "codec",
+        "pixelFormat", "scaleMode", "padColor", "sampleAspectRatio"
+      ],
+      "properties": {
+        "width": { "const": 1920 },
+        "height": { "const": 1080 },
+        "displayAspectRatio": { "const": "16:9" },
+        "frameRate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["numerator", "denominator", "mode"],
+          "properties": {
+            "numerator": { "const": 24 },
+            "denominator": { "const": 1 },
+            "mode": { "const": "cfr" }
+          }
+        },
+        "timeBase": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["numerator", "denominator"],
+          "properties": {
+            "numerator": { "const": 1 },
+            "denominator": { "const": 90000 }
+          }
+        },
+        "codec": { "const": "h264" },
+        "pixelFormat": { "const": "yuv420p" },
+        "scaleMode": { "const": "contain" },
+        "padColor": { "const": "#000000" },
+        "sampleAspectRatio": { "const": "1:1" }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codec", "sampleRateHz", "channels", "channelLayout", "bitrateKbps"],
+      "properties": {
+        "codec": { "const": "aac" },
+        "sampleRateHz": { "const": 48000 },
+        "channels": { "const": 2 },
+        "channelLayout": { "const": "stereo" },
+        "bitrateKbps": { "const": 192 }
+      }
+    },
+    "subtitles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "format", "timeBaseMs"],
+      "properties": {
+        "mode": { "const": "burn_in" },
+        "format": { "const": "ass" },
+        "timeBaseMs": { "const": 1 }
+      }
+    },
+    "mux": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fastStart"],
+      "properties": { "fastStart": { "const": true } }
+    },
+    "profileSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$comment": "Runtime additionally recomputes profileSha256 from this exact record and only brands the one application-owned profile constant as trusted."
+}
