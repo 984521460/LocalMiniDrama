@@ -19,6 +19,8 @@ const ERROR_MESSAGES = Object.freeze({
   AUDIO_EXECUTION_EVIDENCE_INVALID: 'Audio execution evidence is invalid',
   AUDIO_TIMELINE_INPUT_INVALID: 'Audio timeline input is invalid',
   AUDIO_TIMELINE_DATA_INVALID: 'Audio timeline data is invalid',
+  AUDIO_MIX_INPUT_INVALID: 'Audio mix input is invalid',
+  AUDIO_MIX_DATA_INVALID: 'Audio mix data is invalid',
   BGM_LICENSE_INVALID: 'BGM license metadata is invalid',
   BGM_LICENSE_NOT_EXPORTABLE: 'BGM license does not permit project export',
   BGM_TRACK_INVALID: 'BGM track is invalid',
