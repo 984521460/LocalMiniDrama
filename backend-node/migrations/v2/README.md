@@ -169,3 +169,14 @@ opaque canonical CredentialVault reference. Public projections never contain
 that reference. Profile revisions and fixed-voice selections are monotonic,
 owner-scoped event chains; replacement, update, delete, cross-drama links, and
 persisted Character Voice evidence drift fail closed.
+
+Migration `0013_bgm_tracks.sql` stores append-only BGM candidates. Each record
+binds one same-drama ready local AssetVersion and its complete portable media
+evidence to an immutable, self-identifying user license attestation. User
+absolute paths and credentials are not representable in the public license
+projection. The local-import provider writes media through the
+StorageProvider locator boundary and removes a newly written object if the
+database transaction cannot commit. Each license UID is permanently assigned
+to one track UID. The authoritative attestation is an independent append-only
+`bgm_licenses` row; each track freezes a complete snapshot and every read
+cross-checks the assignment and snapshot against that license row.

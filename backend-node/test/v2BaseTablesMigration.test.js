@@ -81,8 +81,8 @@ function migrateEmptyLegacyDatabase(database) {
     VALUES ('legacy poster', 'image', 'legacy://poster', '2026-01-01', '2026-01-01')
   `).run();
   const result = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  assert.equal(result.currentVersion, 12);
+  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.equal(result.currentVersion, 13);
 }
 
 function assertBaseTableContract(database) {
@@ -678,8 +678,8 @@ test('rolls back a failed base-table migration and succeeds after the schema col
 
   database.exec('DROP TABLE source_documents');
   const recovered = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  assert.equal(recovered.currentVersion, 12);
+  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.equal(recovered.currentVersion, 13);
   assertBaseTableContract(database);
   assert.equal(database.prepare('SELECT count(*) AS count FROM legacy_assets').get().count, 0);
   assert.equal(database.pragma('integrity_check', { simple: true }), 'ok');

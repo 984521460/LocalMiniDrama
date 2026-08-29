@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/bgm-track.schema.json",
+  "title": "Immutable local BGM track",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "uid",
+    "dramaUid",
+    "title",
+    "sourceKind",
+    "providerId",
+    "assetVersion",
+    "license",
+    "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bgm-track.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?:[\\p{L}\\p{N}]|[\\p{L}\\p{N}](?:[\\p{L}\\p{N} ._()'&-]{0,254}[\\p{L}\\p{N}._()'&-]))$",
+      "not": {
+        "pattern": "(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~-]{8,}|[Ss][Kk]-[A-Za-z0-9_-]{8,}|[Aa][Kk][Ii][Aa][0-9A-Za-z]{12,})"
+      }
+    },
+    "sourceKind": { "const": "local-import" },
+    "providerId": { "const": "local-library" },
+    "assetVersion": { "$ref": "#/$defs/assetVersion" },
+    "license": { "$ref": "#/$defs/license" },
+    "createdAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "assetVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid", "assetUid", "storageProvider", "logicalUri", "relativePath",
+        "sha256", "mimeType", "width", "height", "durationMs", "parentUid",
+        "status", "createdAt"
+      ],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uid" },
+        "assetUid": { "$ref": "#/$defs/uid" },
+        "storageProvider": { "const": "local" },
+        "logicalUri": {
+          "type": "string",
+          "minLength": 9,
+          "maxLength": 2048,
+          "pattern": "^asset://dramas/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/bgm/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^projects/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/assets/bgm/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.(aac|flac|mp3|wav)$"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "mimeType": { "enum": ["audio/aac", "audio/flac", "audio/mpeg", "audio/wav", "audio/x-wav"] },
+        "width": { "type": "null" },
+        "height": { "type": "null" },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        "parentUid": {
+          "oneOf": [
+            { "$ref": "#/$defs/uid" },
+            { "type": "null" }
+          ]
+        },
+        "status": { "const": "ready" },
+        "createdAt": { "$ref": "#/$defs/timestamp" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mimeType": { "const": "audio/aac" } }, "required": ["mimeType"] },
+          "then": { "properties": { "relativePath": { "type": "string", "pattern": "\\.aac$" } } }
+        },
+        {
+          "if": { "properties": { "mimeType": { "const": "audio/flac" } }, "required": ["mimeType"] },
+          "then": { "properties": { "relativePath": { "type": "string", "pattern": "\\.flac$" } } }
+        },
+        {
+          "if": { "properties": { "mimeType": { "const": "audio/mpeg" } }, "required": ["mimeType"] },
+          "then": { "properties": { "relativePath": { "type": "string", "pattern": "\\.mp3$" } } }
+        },
+        {
+          "if": { "properties": { "mimeType": { "enum": ["audio/wav", "audio/x-wav"] } }, "required": ["mimeType"] },
+          "then": { "properties": { "relativePath": { "type": "string", "pattern": "\\.wav$" } } }
+        }
+      ]
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "uid", "basis", "attestationKind", "commercialUseAllowed",
+        "derivativesAllowed", "attributionRequired", "attributionText", "attestedAtEpochMs"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "bgm-license.v1" },
+        "uid": { "$ref": "#/$defs/uid" },
+        "basis": { "enum": ["user-owned", "licensed", "public-domain", "provider-grant"] },
+        "attestationKind": { "const": "user-attestation" },
+        "commercialUseAllowed": { "type": "boolean" },
+        "derivativesAllowed": { "type": "boolean" },
+        "attributionRequired": { "const": false },
+        "attributionText": { "type": "null" },
+        "attestedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }
+      }
+    }
+  },
+  "$comment": "Runtime additionally binds drama, asset and version identities, the exact portable locator, NFC text, and attestation time ordering. Persistence assigns each license UID to exactly one track UID and revalidates that cross-record relation on every read."
+}

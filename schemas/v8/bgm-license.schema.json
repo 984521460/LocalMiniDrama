@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/bgm-license.schema.json",
+  "title": "BGM license metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "uid",
+    "basis",
+    "attestationKind",
+    "commercialUseAllowed",
+    "derivativesAllowed",
+    "attributionRequired",
+    "attributionText",
+    "attestedAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bgm-license.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "basis": { "enum": ["user-owned", "licensed", "public-domain", "provider-grant"] },
+    "attestationKind": { "const": "user-attestation" },
+    "commercialUseAllowed": { "type": "boolean" },
+    "derivativesAllowed": { "type": "boolean" },
+    "attributionRequired": { "const": false },
+    "attributionText": { "type": "null" },
+    "attestedAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

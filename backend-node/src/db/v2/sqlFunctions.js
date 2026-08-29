@@ -7,6 +7,9 @@ const { createH3TextToVideoWorkflowBundle } = require('../../h3/workflowBundle')
 const { createH3ExecutionBinding } = require('../../h3/executionBinding');
 const { h3HistoryMatchesIntent } = require('../../h3/historyCompletion');
 const { createRemoteConnectionRecord } = require('../../remote/connectionProfile');
+const { canonicalUid } = require('../../audio/audioContract');
+const { createBgmLicense } = require('../../audio/bgmLicense');
+const { createBgmTrack } = require('../../audio/bgmTrack');
 
 const MAXIMUM_SPEC_BYTES = 1024 * 1024;
 const MAXIMUM_SEMANTIC_BYTES = 1024 * 1024;
@@ -160,7 +163,117 @@ function h3SemanticShotSha256(
   }
 }
 
+function bgmTrackValid(
+  uid,
+  dramaUid,
+  title,
+  sourceKind,
+  providerId,
+  assetVersionUid,
+  assetUid,
+  storageProvider,
+  logicalUri,
+  relativePath,
+  sha256,
+  mimeType,
+  width,
+  height,
+  durationMs,
+  parentUid,
+  versionStatus,
+  versionCreatedAt,
+  licenseUid,
+  licenseBasis,
+  commercialUseAllowed,
+  derivativesAllowed,
+  attributionRequired,
+  attributionText,
+  licenseAttestedAtEpochMs,
+  createdAtEpochMs,
+) {
+  try {
+    createBgmTrack({
+      schemaVersion: 'bgm-track.v1',
+      uid,
+      dramaUid,
+      title,
+      sourceKind,
+      providerId,
+      assetVersion: {
+        uid: assetVersionUid,
+        assetUid,
+        storageProvider,
+        logicalUri,
+        relativePath,
+        sha256,
+        mimeType,
+        width,
+        height,
+        durationMs,
+        parentUid,
+        status: versionStatus,
+        createdAt: versionCreatedAt,
+      },
+      license: {
+        schemaVersion: 'bgm-license.v1',
+        uid: licenseUid,
+        basis: licenseBasis,
+        attestationKind: 'user-attestation',
+        commercialUseAllowed: commercialUseAllowed === 1,
+        derivativesAllowed: derivativesAllowed === 1,
+        attributionRequired: attributionRequired === 1,
+        attributionText,
+        attestedAtEpochMs: licenseAttestedAtEpochMs,
+      },
+      createdAtEpochMs,
+    });
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
+function bgmLicenseValid(
+  uid,
+  trackUid,
+  basis,
+  attestationKind,
+  commercialUseAllowed,
+  derivativesAllowed,
+  attributionRequired,
+  attributionText,
+  attestedAtEpochMs,
+) {
+  try {
+    canonicalUid(trackUid, 'BGM_LICENSE_INVALID');
+    createBgmLicense({
+      schemaVersion: 'bgm-license.v1',
+      uid,
+      basis,
+      attestationKind,
+      commercialUseAllowed: commercialUseAllowed === 1,
+      derivativesAllowed: derivativesAllowed === 1,
+      attributionRequired: attributionRequired === 1,
+      attributionText,
+      attestedAtEpochMs,
+    });
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
 function registerV2SqlFunctions(database) {
+  database.function(
+    'bgm_license_valid',
+    { deterministic: true },
+    bgmLicenseValid,
+  );
+  database.function(
+    'bgm_track_valid',
+    { deterministic: true },
+    bgmTrackValid,
+  );
   database.function(
     'h3_generation_spec_sha256',
     { deterministic: true },
@@ -196,6 +309,8 @@ function registerV2SqlFunctions(database) {
 }
 
 module.exports = Object.freeze({
+  bgmLicenseValid,
+  bgmTrackValid,
   h3GenerationSpecSha256,
   h3HistoryMatchesIntent,
   h3OfficialManifestMatches,

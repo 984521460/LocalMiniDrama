@@ -1,6 +1,7 @@
 const { types: { isPromise } } = require('node:util');
 
 const { createAssetRepository } = require('./assetRepository');
+const { createBgmTrackRepository } = require('./bgmTrackRepository');
 const { createCharacterCandidateRepository } = require('./characterCandidateRepository');
 const { createCharacterReferencePackageRepository } = require('./characterReferencePackageRepository');
 const { createCharacterVersionRepository } = require('./characterVersionRepository');
@@ -104,6 +105,7 @@ function createV2Repositories(database) {
   });
   const aggregates = {
     assets,
+    bgmTracks: createBgmTrackRepository(database),
     characterCandidates: createCharacterCandidateRepository(database),
     characterReferencePackages,
     characterVersions,

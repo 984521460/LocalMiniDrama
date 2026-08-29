@@ -76,7 +76,7 @@ test('migration eight creates append-only scene and prop version tables', (t) =>
     WHERE type = 'table' AND name IN ('scene_versions', 'prop_versions')
     ORDER BY name
   `).pluck().all(), ['prop_versions', 'scene_versions']);
-  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 12);
+  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 13);
 });
 
 test('repository appends owner-bound scene and prop versions and resolves only ready references', (t) => {

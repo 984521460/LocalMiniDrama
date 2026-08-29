@@ -19,6 +19,12 @@ const ERROR_MESSAGES = Object.freeze({
   AUDIO_EXECUTION_EVIDENCE_INVALID: 'Audio execution evidence is invalid',
   AUDIO_TIMELINE_INPUT_INVALID: 'Audio timeline input is invalid',
   AUDIO_TIMELINE_DATA_INVALID: 'Audio timeline data is invalid',
+  BGM_LICENSE_INVALID: 'BGM license metadata is invalid',
+  BGM_LICENSE_NOT_EXPORTABLE: 'BGM license does not permit project export',
+  BGM_TRACK_INVALID: 'BGM track is invalid',
+  BGM_IMPORT_INVALID: 'BGM import input is invalid',
+  BGM_IMPORT_FAILED: 'BGM local import failed',
+  BGM_IMPORT_CLEANUP_FAILED: 'BGM local import cleanup failed',
 });
 
 class AudioModeContractError extends Error {
