@@ -17,6 +17,8 @@ const ERROR_MESSAGES = Object.freeze({
   AUDIO_TTS_NOT_CONFIGURED: 'Independent TTS is not configured',
   AUDIO_H3_NATIVE_UNAVAILABLE: 'H3 native audio is unavailable',
   AUDIO_EXECUTION_EVIDENCE_INVALID: 'Audio execution evidence is invalid',
+  AUDIO_TIMELINE_INPUT_INVALID: 'Audio timeline input is invalid',
+  AUDIO_TIMELINE_DATA_INVALID: 'Audio timeline data is invalid',
 });
 
 class AudioModeContractError extends Error {

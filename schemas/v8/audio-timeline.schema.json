@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/audio-timeline.schema.json",
+  "title": "AudioTimeline v8",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "timingAlgorithmVersion", "uid", "dramaUid", "workflowRunUid",
+    "planUid", "planSha256", "executionUid", "executionSha256", "mode",
+    "durationMs", "nativeTrack", "segments", "subtitleTrack", "timelineSha256",
+    "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "8.0" },
+    "timingAlgorithmVersion": { "const": "audio-timeline-ms.v1" },
+    "uid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+    "dramaUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+    "workflowRunUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+    "planUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+    "planSha256": { "$ref": "#/$defs/sha256" },
+    "executionUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+    "executionSha256": { "$ref": "#/$defs/sha256" },
+    "mode": { "type": "string", "enum": ["independent_tts", "h3_native", "hybrid"] },
+    "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+    "nativeTrack": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/nativeTrack" }
+      ]
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/segment" }
+    },
+    "subtitleTrack": { "$ref": "subtitle-track.schema.json" },
+    "timelineSha256": { "$ref": "#/$defs/sha256" },
+    "createdAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "independent_tts" } }, "required": ["mode"] },
+      "then": {
+        "properties": {
+          "nativeTrack": { "type": "null" },
+          "segments": { "type": "array", "items": { "type": "object", "properties": { "sourceKind": { "const": "tts_asset" } }, "required": ["sourceKind"] } },
+          "subtitleTrack": { "type": "object", "properties": { "cues": { "type": "array", "items": { "type": "object", "properties": { "sourceKind": { "const": "tts_asset" } }, "required": ["sourceKind"] } } }, "required": ["cues"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "h3_native" } }, "required": ["mode"] },
+      "then": {
+        "properties": {
+          "nativeTrack": { "$ref": "#/$defs/nativeTrack" },
+          "segments": { "type": "array", "items": { "type": "object", "properties": { "sourceKind": { "const": "h3_native" } }, "required": ["sourceKind"] } },
+          "subtitleTrack": { "type": "object", "properties": { "cues": { "type": "array", "items": { "type": "object", "properties": { "sourceKind": { "const": "h3_native" } }, "required": ["sourceKind"] } } }, "required": ["cues"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "hybrid" } }, "required": ["mode"] },
+      "then": {
+        "properties": {
+          "nativeTrack": { "$ref": "#/$defs/nativeTrack" },
+          "segments": { "type": "array", "items": { "type": "object", "properties": { "sourceKind": { "const": "tts_asset" } }, "required": ["sourceKind"] } },
+          "subtitleTrack": { "type": "object", "properties": { "cues": { "type": "array", "items": { "type": "object", "properties": { "sourceKind": { "const": "tts_asset" } }, "required": ["sourceKind"] } } }, "required": ["cues"] }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "nativeTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceKind", "sourceAssetUid", "sourceAssetVersionUid", "sourceMediaSha256",
+        "sourceMimeType", "durationMs", "h3SourceSha256"
+      ],
+      "properties": {
+        "sourceKind": { "const": "h3_native" },
+        "sourceAssetUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+        "sourceAssetVersionUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+        "sourceMediaSha256": { "$ref": "#/$defs/sha256" },
+        "sourceMimeType": { "const": "video/mp4" },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "h3SourceSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal", "dialogueDeliveryUid", "dialogueEntryId", "characterUid",
+        "startMs", "endMs", "durationMs", "sourceKind", "sourceAssetUid",
+        "sourceAssetVersionUid", "sourceMediaSha256", "sourceMimeType"
+      ],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "dialogueDeliveryUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+        "dialogueEntryId": { "$ref": "dialogue-delivery.schema.json#/$defs/sourceId" },
+        "characterUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+        "startMs": { "type": "integer", "minimum": 0, "maximum": 3600000 },
+        "endMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "sourceKind": { "type": "string", "enum": ["tts_asset", "h3_native"] },
+        "sourceAssetUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+        "sourceAssetVersionUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
+        "sourceMediaSha256": { "$ref": "#/$defs/sha256" },
+        "sourceMimeType": {
+          "type": "string",
+          "enum": ["audio/aac", "audio/flac", "audio/mpeg", "audio/wav", "audio/x-wav", "video/mp4"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "sourceKind": { "const": "h3_native" } }, "required": ["sourceKind"] },
+          "then": { "properties": { "sourceMimeType": { "const": "video/mp4" } } }
+        },
+        {
+          "if": { "properties": { "sourceKind": { "const": "tts_asset" } }, "required": ["sourceKind"] },
+          "then": { "properties": { "sourceMimeType": { "enum": ["audio/aac", "audio/flac", "audio/mpeg", "audio/wav", "audio/x-wav"] } } }
+        }
+      ]
+    }
+  },
+  "$comment": "Runtime rebuilds every segment from a trusted AudioModePlan and AudioExecutionEvidence, uses integer milliseconds only, applies deterministic largest-remainder allocation for H3-native dialogue cues, validates continuity and cue equality, and requires an external immutable envelope keyed by the expected timeline UID before execution trust is granted."
+}
