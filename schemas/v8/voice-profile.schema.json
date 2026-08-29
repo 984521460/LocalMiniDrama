@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.example/schemas/v8/voice-profile.schema.json",
+  "title": "VoiceProfilePublicRecordV8",
+  "$comment": "Public projection only. Credential references stay internal; parent, owner, revision, and active-selection relations are revalidated by runtime and SQLite.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "uid",
+    "dramaUid",
+    "characterUid",
+    "characterVoiceVersionUid",
+    "parentUid",
+    "revision",
+    "provider",
+    "model",
+    "voiceKey",
+    "sourceKind",
+    "status",
+    "defaultEmotion",
+    "emotionMap",
+    "minimumSpeedPermille",
+    "defaultSpeedPermille",
+    "maximumSpeedPermille",
+    "voiceVersion",
+    "credentialConfigured",
+    "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "8.0"},
+    "uid": {"$ref": "#/$defs/uid"},
+    "dramaUid": {"$ref": "#/$defs/uid"},
+    "characterUid": {"$ref": "#/$defs/uid"},
+    "characterVoiceVersionUid": {"$ref": "#/$defs/uid"},
+    "parentUid": {
+      "oneOf": [
+        {"$ref": "#/$defs/uid"},
+        {"type": "null"}
+      ]
+    },
+    "revision": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "provider": {"enum": ["openai-compatible", "minimax"]},
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+      "not": {"pattern": "^(?:bearer\\s|sk-[a-z0-9]{8}|akia[a-z0-9]{12})"}
+    },
+    "voiceKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "not": {"pattern": "^(?:[Bb][Ee][Aa][Rr][Ee][Rr]\\s|[Ss][Kk]-[A-Za-z0-9]{8}|[Aa][Kk][Ii][Aa][A-Za-z0-9]{12})"}
+    },
+    "sourceKind": {"const": "provider-preset"},
+    "status": {"const": "ready"},
+    "defaultEmotion": {"$ref": "#/$defs/emotion"},
+    "emotionMap": {"$ref": "#/$defs/emotionMap"},
+    "minimumSpeedPermille": {"type": "integer", "minimum": 500, "maximum": 2000},
+    "defaultSpeedPermille": {"type": "integer", "minimum": 500, "maximum": 2000},
+    "maximumSpeedPermille": {"type": "integer", "minimum": 500, "maximum": 2000},
+    "voiceVersion": {"$ref": "#/$defs/voiceVersion"},
+    "credentialConfigured": {"const": true},
+    "createdAtEpochMs": {"$ref": "#/$defs/epoch"}
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    },
+    "emotion": {
+      "enum": ["neutral", "happy", "sad", "angry", "fearful", "surprised"]
+    },
+    "emotionValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "not": {"pattern": "^(?:[Bb][Ee][Aa][Rr][Ee][Rr]\\s|[Ss][Kk]-[A-Za-z0-9]{8}|[Aa][Kk][Ii][Aa][A-Za-z0-9]{12})"}
+    },
+    "emotionMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["neutral", "happy", "sad", "angry", "fearful", "surprised"],
+      "properties": {
+        "neutral": {"$ref": "#/$defs/emotionValue"},
+        "happy": {"$ref": "#/$defs/emotionValue"},
+        "sad": {"$ref": "#/$defs/emotionValue"},
+        "angry": {"$ref": "#/$defs/emotionValue"},
+        "fearful": {"$ref": "#/$defs/emotionValue"},
+        "surprised": {"$ref": "#/$defs/emotionValue"}
+      }
+    },
+    "boundedText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?!.*\\s$)[^\\u0000]+$"
+    },
+    "voiceVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid", "identityVersionUid", "parentUid", "name", "language", "style",
+        "createdAtEpochMs"
+      ],
+      "properties": {
+        "uid": {"$ref": "#/$defs/uid"},
+        "identityVersionUid": {"$ref": "#/$defs/uid"},
+        "parentUid": {
+          "oneOf": [
+            {"$ref": "#/$defs/uid"},
+            {"type": "null"}
+          ]
+        },
+        "name": {"allOf": [{"$ref": "#/$defs/boundedText"}, {"type": "string", "maxLength": 120}]},
+        "language": {"type": "string", "maxLength": 16, "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$"},
+        "style": {"allOf": [{"$ref": "#/$defs/boundedText"}, {"type": "string", "maxLength": 1000}]},
+        "createdAtEpochMs": {"$ref": "#/$defs/epoch"}
+      }
+    }
+  }
+}

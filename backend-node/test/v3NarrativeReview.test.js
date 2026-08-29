@@ -194,7 +194,7 @@ test('migration creates append-only narrative result and review tables at versio
       { name: 'narrative_stale_events' },
     ],
   );
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 11);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 12);
 });
 
 test('service records and approves the four-result chain with immutable review evidence', (t) => {

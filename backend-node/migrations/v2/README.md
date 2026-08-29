@@ -161,3 +161,11 @@ bound to the exact request hash and saved-configuration evidence. A returned
 provider task ID can be attached once; a timeout or indeterminate response is
 persisted as append-only `submission_unknown` and cannot be automatically
 retried under the same or a changed request.
+
+Migration `0012_voice_profiles.sql` begins Phase 8 with append-only character
+VoiceProfiles. Each profile binds one immutable Character Voice version, its
+exact evidence, a provider-neutral model and preset voice key, and only an
+opaque canonical CredentialVault reference. Public projections never contain
+that reference. Profile revisions and fixed-voice selections are monotonic,
+owner-scoped event chains; replacement, update, delete, cross-drama links, and
+persisted Character Voice evidence drift fail closed.

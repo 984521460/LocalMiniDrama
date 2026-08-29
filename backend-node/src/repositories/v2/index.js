@@ -22,6 +22,7 @@ const { createRunRepository } = require('./runRepository');
 const { createScenePropVersionRepository } = require('./scenePropVersionRepository');
 const { createShotContinuitySnapshotRepository } = require('./shotContinuitySnapshotRepository');
 const { createSourceRepository } = require('./sourceRepository');
+const { createVoiceProfileRepository } = require('./voiceProfileRepository');
 const { createWorkflowRepository } = require('./workflowRepository');
 
 const promiseThen = Promise.prototype.then;
@@ -121,6 +122,7 @@ function createV2Repositories(database) {
       scenePropVersions,
     }),
     sources,
+    voiceProfiles: createVoiceProfileRepository(database),
     workflows: createWorkflowRepository(database),
   };
   let repositories;
