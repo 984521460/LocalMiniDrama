@@ -9,6 +9,7 @@ const express = require('express');
 const {
   createVoiceProfilePublicRecord,
   createVoiceProfileRecord,
+  parseVoiceProfilePublicRecord,
 } = require('../src/audio/voiceProfile');
 const {
   createV2Repositories,
@@ -117,6 +118,7 @@ test('voice profiles bind immutable character voice evidence without exposing cr
   assert.equal(publicRecord.credentialConfigured, true);
   assert.equal(Object.hasOwn(publicRecord, 'credentialRef'), false);
   assert.doesNotMatch(JSON.stringify(publicRecord), /credential:v1|80001/u);
+  assert.deepEqual(parseVoiceProfilePublicRecord(JSON.parse(JSON.stringify(publicRecord))), publicRecord);
   assert.deepEqual(repository.list(characterUid), [internal]);
   assert.ok(Object.isFrozen(internal));
   assert.ok(Object.isFrozen(internal.voiceVersion));

@@ -9,6 +9,12 @@ const MODEL = /^[a-z0-9][a-z0-9._/-]*$/u;
 const VOICE_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
 const PROVIDERS = Object.freeze(['openai-compatible', 'minimax']);
 const EMOTIONS = Object.freeze(['neutral', 'happy', 'sad', 'angry', 'fearful', 'surprised']);
+const PUBLIC_RECORD_KEYS = Object.freeze([
+  'schemaVersion', 'uid', 'dramaUid', 'characterUid', 'characterVoiceVersionUid',
+  'parentUid', 'revision', 'provider', 'model', 'voiceKey', 'sourceKind', 'status',
+  'defaultEmotion', 'emotionMap', 'minimumSpeedPermille', 'defaultSpeedPermille',
+  'maximumSpeedPermille', 'voiceVersion', 'credentialConfigured', 'createdAtEpochMs',
+]);
 const SECRET_SHAPES = Object.freeze([
   /^bearer\s/u,
   /^sk-[a-z0-9]{8}/u,
@@ -114,7 +120,7 @@ function profileCore(input) {
   const parentUid = canonicalUid(input.parentUid, true);
   if (parentUid === uid) fail();
   if (!PROVIDERS.includes(input.provider)) fail();
-  if (input.sourceKind !== 'provider-preset' || !isCredentialReference(input.credentialRef)) fail();
+  if (input.sourceKind !== 'provider-preset') fail();
   if (input.status !== 'ready' || !EMOTIONS.includes(input.defaultEmotion)) fail();
   const minimumSpeedPermille = boundedInteger(input.minimumSpeedPermille, 500);
   const defaultSpeedPermille = boundedInteger(input.defaultSpeedPermille, 500);
@@ -135,7 +141,6 @@ function profileCore(input) {
     provider: input.provider,
     model: safeProviderValue(input.model, 128, MODEL),
     voiceKey: safeProviderValue(input.voiceKey, 128, VOICE_KEY),
-    credentialRef: input.credentialRef,
     sourceKind: 'provider-preset',
     status: 'ready',
     defaultEmotion: input.defaultEmotion,
@@ -147,6 +152,11 @@ function profileCore(input) {
   };
 }
 
+function internalProfileCore(input) {
+  if (!isCredentialReference(input.credentialRef)) fail();
+  return { ...profileCore(input), credentialRef: input.credentialRef };
+}
+
 function createVoiceProfileDraft(value) {
   const input = ownDataSnapshot(value, [
     'schemaVersion', 'uid', 'dramaUid', 'characterUid', 'characterVoiceVersionUid',
@@ -155,7 +165,7 @@ function createVoiceProfileDraft(value) {
     'defaultSpeedPermille', 'maximumSpeedPermille', 'createdAtEpochMs',
   ]);
   if (input.schemaVersion !== '8.0') fail();
-  return Object.freeze(profileCore(input));
+  return Object.freeze(internalProfileCore(input));
 }
 
 function createVoiceProfileRecord(value) {
@@ -166,7 +176,7 @@ function createVoiceProfileRecord(value) {
     'defaultSpeedPermille', 'maximumSpeedPermille', 'voiceVersion', 'createdAtEpochMs',
   ]);
   if (input.schemaVersion !== '8.0') fail();
-  const core = profileCore(input);
+  const core = internalProfileCore(input);
   return Object.freeze({
     ...core,
     voiceVersion: voiceVersion(input.voiceVersion, core.characterVoiceVersionUid),
@@ -194,8 +204,7 @@ function createVoiceProfileSelectionRecord(value) {
   });
 }
 
-function createVoiceProfilePublicRecord(value) {
-  const record = createVoiceProfileRecord(value);
+function publicVoiceProfileRecord(record) {
   return Object.freeze({
     schemaVersion: record.schemaVersion,
     uid: record.uid,
@@ -218,6 +227,20 @@ function createVoiceProfilePublicRecord(value) {
     credentialConfigured: true,
     createdAtEpochMs: record.createdAtEpochMs,
   });
+}
+
+function createVoiceProfilePublicRecord(value) {
+  return publicVoiceProfileRecord(createVoiceProfileRecord(value));
+}
+
+function parseVoiceProfilePublicRecord(value) {
+  const input = ownDataSnapshot(value, PUBLIC_RECORD_KEYS);
+  if (input.schemaVersion !== '8.0' || input.credentialConfigured !== true) fail();
+  const core = profileCore(input);
+  return publicVoiceProfileRecord(Object.freeze({
+    ...core,
+    voiceVersion: voiceVersion(input.voiceVersion, core.characterVoiceVersionUid),
+  }));
 }
 
 function createVoiceProfileRequest(value) {
@@ -258,4 +281,5 @@ module.exports = {
   createVoiceProfileRecord,
   createVoiceProfileRequest,
   createVoiceProfileSelectionRecord,
+  parseVoiceProfilePublicRecord,
 };

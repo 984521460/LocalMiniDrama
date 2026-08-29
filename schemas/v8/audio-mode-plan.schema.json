@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v8/audio-mode-plan.schema.json",
+  "title": "AudioModePlan v8",
+  "$comment": "Runtime derives TTS requests from validated DialogueDelivery and internal VoiceProfile records, validates H3 generation/video evidence, strips credential references, and recomputes all request/source/plan hashes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "dramaUid", "workflowRunUid", "mode",
+    "dialogueBindings", "ttsRequests", "h3NativeSource", "planSha256",
+    "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "8.0" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "workflowRunUid": { "$ref": "#/$defs/uid" },
+    "mode": { "enum": ["independent_tts", "h3_native", "hybrid"] },
+    "dialogueBindings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/dialogueBinding" }
+    },
+    "ttsRequests": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/ttsRequest" }
+    },
+    "h3NativeSource": {
+      "oneOf": [
+        { "$ref": "#/$defs/h3NativeSource" },
+        { "type": "null" }
+      ]
+    },
+    "planSha256": { "$ref": "#/$defs/sha256" },
+    "createdAtEpochMs": { "$ref": "#/$defs/epoch" }
+  },
+  "allOf": [
+    {
+      "type": "object",
+      "if": { "type": "object", "properties": { "mode": { "const": "independent_tts" } }, "required": ["mode"] },
+      "then": {
+        "type": "object",
+        "properties": {
+          "ttsRequests": { "type": "array", "minItems": 1 },
+          "h3NativeSource": { "type": "null" }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "if": { "type": "object", "properties": { "mode": { "const": "h3_native" } }, "required": ["mode"] },
+      "then": {
+        "type": "object",
+        "properties": {
+          "ttsRequests": { "type": "array", "maxItems": 0 },
+          "h3NativeSource": { "$ref": "#/$defs/h3NativeSource" }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "if": { "type": "object", "properties": { "mode": { "const": "hybrid" } }, "required": ["mode"] },
+      "then": {
+        "type": "object",
+        "properties": {
+          "ttsRequests": { "type": "array", "minItems": 1 },
+          "h3NativeSource": { "$ref": "#/$defs/h3NativeSource" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "epoch": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "dialogueBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialogueDelivery", "dialogueDeliveryUid", "characterUid", "voiceProfileUid", "textSha256",
+        "timingSha256", "estimatedTotalDurationMs"
+      ],
+      "properties": {
+        "dialogueDelivery": { "$ref": "https://local-mini-drama.invalid/schemas/v8/dialogue-delivery.schema.json" },
+        "dialogueDeliveryUid": { "$ref": "#/$defs/uid" },
+        "characterUid": { "$ref": "#/$defs/uid" },
+        "voiceProfileUid": { "$ref": "#/$defs/uid" },
+        "textSha256": { "$ref": "#/$defs/sha256" },
+        "timingSha256": { "$ref": "#/$defs/sha256" },
+        "estimatedTotalDurationMs": { "type": "integer", "minimum": 1, "maximum": 600000 }
+      }
+    },
+    "ttsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialogueDeliveryUid", "voiceProfileUid", "voiceProfile", "provider", "model",
+        "voiceKey", "providerEmotion", "text", "textSha256", "timingSha256",
+        "emotionIntensityPermille", "speedPermille", "requestSha256"
+      ],
+      "properties": {
+        "dialogueDeliveryUid": { "$ref": "#/$defs/uid" },
+        "voiceProfileUid": { "$ref": "#/$defs/uid" },
+        "voiceProfile": { "$ref": "https://local-mini-drama.example/schemas/v8/voice-profile.schema.json" },
+        "provider": { "enum": ["openai-compatible", "minimax"] },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+          "not": { "pattern": "^(?:bearer\\s|sk-[a-z0-9]{8}|akia[a-z0-9]{12})" }
+        },
+        "voiceKey": { "$ref": "#/$defs/providerValue" },
+        "providerEmotion": { "$ref": "#/$defs/providerEmotionValue" },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\u0000-\\u0008\\u000b-\\u001f\\u007f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ud800-\\udfff])(?:(?:\\u{1f3f4}\\ufe0f?[\\u{e0020}-\\u{e007e}]+\\u{e007f})|[^\\u{e0020}-\\u{e007f}])*(?<!\\s)$"
+        },
+        "textSha256": { "$ref": "#/$defs/sha256" },
+        "timingSha256": { "$ref": "#/$defs/sha256" },
+        "emotionIntensityPermille": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "speedPermille": { "type": "integer", "minimum": 500, "maximum": 2000 },
+        "requestSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "providerValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "not": { "pattern": "^(?:[Bb][Ee][Aa][Rr][Ee][Rr]\\s|[Ss][Kk]-[A-Za-z0-9]{8}|[Aa][Kk][Ii][Aa][A-Za-z0-9]{12})" }
+    },
+    "providerEmotionValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "not": { "pattern": "^(?:[Bb][Ee][Aa][Rr][Ee][Rr]\\s|[Ss][Kk]-[A-Za-z0-9]{8}|[Aa][Kk][Ii][Aa][A-Za-z0-9]{12})" }
+    },
+    "h3NativeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generationHistoryUid", "generationSpec", "videoEvidence",
+        "generationSpecSha256", "videoEvidenceSha256", "videoAsset",
+        "videoVersionEvidence", "audioCodec", "audioStreams", "durationMs", "sourceSha256"
+      ],
+      "properties": {
+        "generationHistoryUid": { "$ref": "#/$defs/uid" },
+        "generationSpec": { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-generation-spec.schema.json" },
+        "videoEvidence": { "$ref": "https://local-mini-drama.invalid/schemas/v7/h3-video-evidence.schema.json" },
+        "generationSpecSha256": { "$ref": "#/$defs/sha256" },
+        "videoEvidenceSha256": { "$ref": "#/$defs/sha256" },
+        "videoAsset": { "$ref": "#/$defs/videoAssetEvidence" },
+        "videoVersionEvidence": { "$ref": "#/$defs/videoVersionEvidence" },
+        "audioCodec": { "const": "aac" },
+        "audioStreams": { "const": 1 },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 20000 },
+        "sourceSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "assetEvidenceCore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid", "ownerType", "ownerUid", "assetType", "currentVersionUid",
+        "status", "createdAt", "updatedAt"
+      ],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uid" },
+        "ownerType": { "const": "drama" },
+        "ownerUid": { "$ref": "#/$defs/uid" },
+        "assetType": { "type": "string" },
+        "currentVersionUid": { "$ref": "#/$defs/uid" },
+        "status": { "const": "ready" },
+        "createdAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$", "minLength": 24, "maxLength": 24 },
+        "updatedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$", "minLength": 24, "maxLength": 24 }
+      }
+    },
+    "videoAssetEvidence": {
+      "allOf": [
+        { "$ref": "#/$defs/assetEvidenceCore" },
+        { "type": "object", "properties": { "assetType": { "const": "video" } } }
+      ]
+    },
+    "videoVersionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid", "assetUid", "storageProvider", "logicalUri", "relativePath", "sha256",
+        "mimeType", "width", "height", "durationMs", "parentUid", "status", "createdAt"
+      ],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uid" },
+        "assetUid": { "$ref": "#/$defs/uid" },
+        "storageProvider": { "enum": ["local", "nas", "object"] },
+        "logicalUri": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^asset://[A-Za-z0-9][^\\u0000-\\u0020\\u007f\\\\]*$" },
+        "relativePath": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*:)(?!.*//)(?!.*(?:^|[\\\\/])\\.{1,2}(?:[\\\\/]|$))(?!.*[\\\\/]$)(?!\\s)(?!.*\\s$)[^\\u0000]+$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "mimeType": { "const": "video/mp4" },
+        "width": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+        "height": { "type": "integer", "minimum": 32, "maximum": 1344, "multipleOf": 32 },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 20000 },
+        "parentUid": { "oneOf": [{ "$ref": "#/$defs/uid" }, { "type": "null" }] },
+        "status": { "const": "ready" },
+        "createdAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$", "minLength": 24, "maxLength": 24 }
+      }
+    }
+  }
+}
