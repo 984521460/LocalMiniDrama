@@ -6,14 +6,17 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schemaVersion", "receiptUid", "profileUid", "gpuClass", "captureKind", "mode",
-    "promptId", "capturedAtEpochMs", "manifest", "generationSpec", "output",
-    "receiptSha256"
+    "schemaVersion", "receiptUid", "profileUid", "profileRevision", "profileSha256",
+    "environmentSha256", "gpuClass", "captureKind", "mode", "promptId",
+    "capturedAtEpochMs", "manifest", "generationSpec", "output", "receiptSha256"
   ],
   "properties": {
     "schemaVersion": { "const": "h3-real-validation-receipt.v1" },
     "receiptUid": { "$ref": "#/$defs/uid" },
     "profileUid": { "const": "70d4f190-d54d-4d27-9a45-c97807ea1b9d" },
+    "profileRevision": { "const": 2 },
+    "profileSha256": { "const": "78fb9d7f8c75c324f73d2bb0297a8dfce021e48f3de4239506ba6c22583ffc35" },
+    "environmentSha256": { "const": "541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8" },
     "gpuClass": { "enum": ["rtx4090-24gb", "rtx-pro-6000-blackwell-96gb"] },
     "captureKind": { "const": "local-comfyui" },
     "mode": { "enum": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"] },

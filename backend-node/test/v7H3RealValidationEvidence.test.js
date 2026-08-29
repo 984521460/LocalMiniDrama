@@ -10,12 +10,15 @@ const test = require('node:test');
 const Ajv2020 = require('ajv/dist/2020');
 
 const {
+  H3_PHASE_7_ENVIRONMENT_SHA256,
+  H3_PROFILE,
   createH3LocalVideoInspector,
   createH3RealValidationCollector,
   createH3TextToVideoWorkflowBundle,
   evaluateH3Phase7Evidence,
   normalizeH3GenerationSpec,
   validateH3RealValidationReceipt,
+  validateH3RealGpuEnvironment,
   validateH3VideoOutput,
 } = require('../src/h3');
 const { sha256Canonical } = require('../src/h3/contract');
@@ -29,6 +32,26 @@ const PROMPT_ID = '00000000-0000-4000-8000-000000000075';
 
 function readSchema(relativePath) {
   return JSON.parse(fs.readFileSync(path.resolve(__dirname, '../..', relativePath), 'utf8'));
+}
+
+function phase7Receipts() {
+  return ['t2v', 'fl2va-first', 'fl2va-first-last', 'ref2va'].map((mode) => (
+    JSON.parse(fs.readFileSync(
+      path.resolve(__dirname, `../../evidence/h3/phase7/receipt-${mode}.json`),
+      'utf8',
+    ))
+  ));
+}
+
+function phase7Environment() {
+  return JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, '../../evidence/h3/phase7/environment.json'),
+    'utf8',
+  ));
+}
+
+function evaluatePhase7(receipts) {
+  return evaluateH3Phase7Evidence({ environment: phase7Environment(), receipts });
 }
 
 function generationSpec(overrides = {}) {
@@ -79,6 +102,9 @@ function receiptFixture(overrides = {}) {
     schemaVersion: 'h3-real-validation-receipt.v1',
     receiptUid: RECEIPT_UID,
     profileUid: PROFILE_UID,
+    profileRevision: H3_PROFILE.revision,
+    profileSha256: sha256Canonical(H3_PROFILE),
+    environmentSha256: H3_PHASE_7_ENVIRONMENT_SHA256,
     gpuClass: 'rtx4090-24gb',
     captureKind: 'local-comfyui',
     mode: spec.mode,
@@ -113,6 +139,9 @@ test('real-validation receipt binds the exact Manifest, input, prompt id, output
     (value) => { value.manifest.workflowSha256 = 'c'.repeat(64); },
     (value) => { value.generationSpec.seed += 1; },
     (value) => { value.output.evidence.sha256 = 'd'.repeat(64); },
+    (value) => { value.profileRevision -= 1; },
+    (value) => { value.profileSha256 = 'd'.repeat(64); },
+    (value) => { value.environmentSha256 = 'd'.repeat(64); },
     (value) => { value.receiptSha256 = 'e'.repeat(64); },
     (value) => { value.unexpected = true; },
   ];
@@ -123,6 +152,29 @@ test('real-validation receipt binds the exact Manifest, input, prompt id, output
   }
 });
 
+test('Phase 7 environment binds the reviewed runtime and complete seven-model set', () => {
+  const environment = phase7Environment();
+  assert.equal(validateH3RealGpuEnvironment(environment).models.length, 7);
+  assert.equal(sha256Canonical(environment), H3_PHASE_7_ENVIRONMENT_SHA256);
+  for (const mutate of [
+    (value) => { value.models = []; },
+    (value) => { value.models[1].sha256 = '0'.repeat(64); },
+    (value) => { value.models[6].bytes += 1; },
+    (value) => { value.gpu.vramMiB = 1; },
+  ]) {
+    const drifted = structuredClone(environment);
+    mutate(drifted);
+    assertH3Error(
+      () => validateH3RealGpuEnvironment(drifted),
+      'H3_REAL_VALIDATION_INVALID',
+    );
+    assertH3Error(
+      () => evaluateH3Phase7Evidence({ environment: drifted, receipts: phase7Receipts() }),
+      'H3_REAL_VALIDATION_INVALID',
+    );
+  }
+});
+
 test('receipt and gate Schemas accept only the exact public projections', () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   for (const schemaPath of [
@@ -130,6 +182,7 @@ test('receipt and gate Schemas accept only the exact public projections', () => 
     'schemas/v7/h3-generation-spec.schema.json',
     'schemas/v7/h3-video-evidence.schema.json',
     'schemas/v7/h3-real-validation-receipt.schema.json',
+    'schemas/v7/h3-real-gpu-environment.schema.json',
     'schemas/v7/h3-phase7-evidence-gate.schema.json',
   ]) ajv.addSchema(readSchema(schemaPath));
   const receiptValidate = ajv.getSchema(
@@ -138,11 +191,22 @@ test('receipt and gate Schemas accept only the exact public projections', () => 
   const gateValidate = ajv.getSchema(
     'https://local-mini-drama.invalid/schemas/v7/h3-phase7-evidence-gate.schema.json',
   );
+  const environmentValidate = ajv.getSchema(
+    'https://local-mini-drama.invalid/schemas/v7/h3-real-gpu-environment.schema.json',
+  );
+  const publicEnvironment = phase7Environment();
+  assert.equal(environmentValidate(publicEnvironment), true, JSON.stringify(environmentValidate.errors));
+  const driftedEnvironment = structuredClone(publicEnvironment);
+  driftedEnvironment.models[1].sha256 = '0'.repeat(64);
+  assert.equal(environmentValidate(driftedEnvironment), false);
   const receipt = receiptFixture();
   const publicReceipt = JSON.parse(JSON.stringify(receipt));
   assert.equal(receiptValidate(publicReceipt), true, JSON.stringify(receiptValidate.errors));
   for (const mutate of [
     (value) => { value.profileUid = '00000000-0000-4000-8000-000000000099'; },
+    (value) => { value.profileRevision = 1; },
+    (value) => { value.profileSha256 = '0'.repeat(64); },
+    (value) => { value.environmentSha256 = '0'.repeat(64); },
     (value) => { value.manifest.modelFamily = 'synthetic-family'; },
     (value) => { value.generationSpec.profileUid = '00000000-0000-4000-8000-000000000099'; },
     (value) => { value.output.evidence.profileUid = '00000000-0000-4000-8000-000000000099'; },
@@ -179,7 +243,7 @@ test('receipt and gate Schemas accept only the exact public projections', () => 
       'H3_REAL_VALIDATION_INVALID',
     );
   }
-  const gate = evaluateH3Phase7Evidence([receipt]);
+  const gate = evaluatePhase7([receipt]);
   const publicGate = JSON.parse(JSON.stringify(gate));
   assert.equal(gateValidate(publicGate), true, JSON.stringify(gateValidate.errors));
   const forgedComplete = {
@@ -191,26 +255,35 @@ test('receipt and gate Schemas accept only the exact public projections', () => 
     receiptCount: 4,
   };
   assert.equal(gateValidate(forgedComplete), false);
-  const emptyGate = JSON.parse(JSON.stringify(evaluateH3Phase7Evidence([])));
+  for (const field of ['profileSha256', 'environmentSha256']) {
+    const driftedGate = { ...publicGate, [field]: '0'.repeat(64) };
+    assert.equal(gateValidate(driftedGate), false);
+  }
+  const completeGate = JSON.parse(JSON.stringify(evaluatePhase7(phase7Receipts())));
+  assert.equal(gateValidate(completeGate), true, JSON.stringify(gateValidate.errors));
+  completeGate.receiptsSha256 = '0'.repeat(64);
+  assert.equal(gateValidate(completeGate), false);
+  const emptyGate = JSON.parse(JSON.stringify(evaluatePhase7([])));
   assert.equal(gateValidate(emptyGate), true, JSON.stringify(gateValidate.errors));
   emptyGate.receiptsSha256 = '0'.repeat(64);
   assert.equal(gateValidate(emptyGate), false);
 });
 
 test('Phase 7 gate stays incomplete until every mode has independent trusted evidence', () => {
-  const empty = evaluateH3Phase7Evidence([]);
+  const empty = evaluatePhase7([]);
   assert.deepEqual(empty.acceptedReceiptModes, []);
   assert.deepEqual(empty.missingModes, ['t2v', 'fl2va-first', 'fl2va-first-last', 'ref2va']);
-  assert.deepEqual(empty.workflowUnavailableModes, ['fl2va-first', 'fl2va-first-last', 'ref2va']);
+  assert.deepEqual(empty.workflowUnavailableModes, []);
   assert.equal(empty.evidenceComplete, false);
 
   const t2v = receiptFixture();
-  const partial = evaluateH3Phase7Evidence([t2v]);
+  const partial = evaluatePhase7([t2v]);
   assert.deepEqual(partial.acceptedReceiptModes, ['t2v']);
   assert.deepEqual(partial.missingModes, ['fl2va-first', 'fl2va-first-last', 'ref2va']);
+  assert.deepEqual(partial.workflowUnavailableModes, []);
   assert.equal(partial.evidenceComplete, false);
   assertH3Error(
-    () => evaluateH3Phase7Evidence([t2v, structuredClone(t2v)]),
+    () => evaluatePhase7([t2v, structuredClone(t2v)]),
     'H3_REAL_VALIDATION_INVALID',
   );
 
@@ -219,7 +292,7 @@ test('Phase 7 gate stays incomplete until every mode has independent trusted evi
   const payload = { ...wrongGpu };
   delete payload.receiptSha256;
   wrongGpu.receiptSha256 = sha256Canonical(payload);
-  assertH3Error(() => evaluateH3Phase7Evidence([wrongGpu]), 'H3_REAL_VALIDATION_INVALID');
+  assertH3Error(() => evaluatePhase7([wrongGpu]), 'H3_REAL_VALIDATION_INVALID');
 
   const withAudioSpec = generationSpec({
     referenceAudio: {
@@ -232,12 +305,21 @@ test('Phase 7 gate stays incomplete until every mode has independent trusted evi
   });
   const withAudio = receiptFixture({ generationSpec: withAudioSpec });
   assertH3Error(
-    () => evaluateH3Phase7Evidence([withAudio]),
+    () => evaluatePhase7([withAudio]),
     'H3_REAL_VALIDATION_INVALID',
   );
+
+  const complete = evaluatePhase7(phase7Receipts());
+  assert.equal(complete.evidenceComplete, true);
+  assert.deepEqual(complete.acceptedReceiptModes, [
+    't2v', 'fl2va-first', 'fl2va-first-last', 'ref2va',
+  ]);
+  assert.deepEqual(complete.missingModes, []);
+  assert.deepEqual(complete.workflowUnavailableModes, []);
+  assert.equal(complete.receiptCount, 4);
 });
 
-test('collector re-inspects a local output and refuses modes without a trusted workflow', async (t) => {
+test('collector re-inspects a local output and refuses a specification/Manifest mismatch', async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'h3-real-validation-'));
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
   const bytes = Buffer.from('synthetic-local-video-evidence', 'utf8');
@@ -268,7 +350,10 @@ test('collector re-inspects a local output and refuses modes without a trusted w
       return { exitCode: 0, stdout: '', stderr: '' };
     },
   });
-  const collector = createH3RealValidationCollector({ inspector });
+  const collector = createH3RealValidationCollector({
+    inspector,
+    environment: phase7Environment(),
+  });
   const spec = generationSpec();
   const receipt = await collector.collect({
     receiptUid: RECEIPT_UID,

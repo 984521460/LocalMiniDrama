@@ -12,7 +12,7 @@
     "schemaVersion": { "const": "h3-profile.v1" },
     "uid": { "$ref": "#/$defs/uid" },
     "profileId": { "const": "minimax-h3-local-four-step-768p" },
-    "revision": { "const": 1 },
+    "revision": { "const": 2 },
     "engine": { "const": "comfyui" },
     "modelFamily": { "const": "minimax-h3" },
     "sourceRevision": { "$ref": "#/$defs/sha1" },
@@ -116,7 +116,7 @@
       "properties": {
         "referenceImageRoles": { "const": ["first"] },
         "minimumReferenceImages": { "const": 1 }, "maximumReferenceImages": { "const": 1 },
-        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "unverified" }
+        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "validated-rtx4090" }
       }
     },
     "firstLastMode": {
@@ -125,7 +125,7 @@
       "properties": {
         "referenceImageRoles": { "const": ["first", "last"] },
         "minimumReferenceImages": { "const": 2 }, "maximumReferenceImages": { "const": 2 },
-        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "unverified" }
+        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "validated-rtx4090" }
       }
     },
     "referenceMode": {
@@ -134,7 +134,7 @@
       "properties": {
         "referenceImageRoles": { "const": ["reference"] },
         "minimumReferenceImages": { "const": 1 }, "maximumReferenceImages": { "const": 4 },
-        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "unverified" }
+        "nativeAudioOutput": { "const": true }, "realValidation": { "const": "validated-rtx4090" }
       }
     }
   }

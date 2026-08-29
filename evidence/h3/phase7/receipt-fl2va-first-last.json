@@ -1,0 +1,242 @@
+{
+  "schemaVersion": "h3-real-validation-receipt.v1",
+  "receiptUid": "88ab2d2e-30f5-407e-93f2-f5a9aac4e105",
+  "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+  "gpuClass": "rtx4090-24gb",
+  "captureKind": "local-comfyui",
+  "mode": "fl2va-first-last",
+  "promptId": "77229671-ea43-49c3-b872-74bb9419c94f",
+  "capturedAtEpochMs": 1787961547522,
+  "manifest": {
+    "schemaVersion": "comfy-workflow-manifest.v1",
+    "uid": "7f100000-0000-4000-8000-000000000002",
+    "manifestId": "minimax-h3-fl2va-first-last-local-v1",
+    "version": "1.0.0",
+    "engine": "comfyui",
+    "workflowFile": "workflows/v7/minimax-h3-fl2va-first-last-local-v1-api.json",
+    "workflowSha256": "d76960f5893819a392ec905f6d1096e689032bde033959a5e777674764afb174",
+    "modelFamily": "minimax-h3",
+    "requirements": [
+      {
+        "kind": "node",
+        "nodeType": "BasicGuider"
+      },
+      {
+        "kind": "node",
+        "nodeType": "BasicScheduler"
+      },
+      {
+        "kind": "node",
+        "nodeType": "CLIPLoader"
+      },
+      {
+        "kind": "node",
+        "nodeType": "CreateVideo"
+      },
+      {
+        "kind": "node",
+        "nodeType": "KSamplerSelect"
+      },
+      {
+        "kind": "node",
+        "nodeType": "LoadImage"
+      },
+      {
+        "kind": "node",
+        "nodeType": "LoraLoaderModelOnly"
+      },
+      {
+        "kind": "node",
+        "nodeType": "MiniMaxH3ImageToVideo"
+      },
+      {
+        "kind": "node",
+        "nodeType": "RandomNoise"
+      },
+      {
+        "kind": "node",
+        "nodeType": "SamplerCustomAdvanced"
+      },
+      {
+        "kind": "node",
+        "nodeType": "SaveVideo"
+      },
+      {
+        "kind": "node",
+        "nodeType": "UNETLoader"
+      },
+      {
+        "kind": "node",
+        "nodeType": "VAEDecode"
+      },
+      {
+        "kind": "node",
+        "nodeType": "VAEDecodeAudio"
+      },
+      {
+        "kind": "node",
+        "nodeType": "VAELoader"
+      },
+      {
+        "kind": "model",
+        "nodeType": "UNETLoader",
+        "inputName": "unet_name",
+        "fileName": "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "CLIPLoader",
+        "inputName": "clip_name",
+        "fileName": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "VAELoader",
+        "inputName": "vae_name",
+        "fileName": "minimax_h3_video_vae_fp16.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "VAELoader",
+        "inputName": "vae_name",
+        "fileName": "minimax_h3_audio_vae_fp32.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "LoraLoaderModelOnly",
+        "inputName": "lora_name",
+        "fileName": "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
+      }
+    ],
+    "inputs": {
+      "prompt": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "prompt",
+        "valueType": "string",
+        "required": true
+      },
+      "width": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "width",
+        "valueType": "integer",
+        "required": true
+      },
+      "height": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "height",
+        "valueType": "integer",
+        "required": true
+      },
+      "frames": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "length",
+        "valueType": "integer",
+        "required": true
+      },
+      "seed": {
+        "marker": "APP_H3_SEED",
+        "inputName": "noise_seed",
+        "valueType": "integer",
+        "required": true
+      },
+      "filenamePrefix": {
+        "marker": "APP_H3_OUTPUT_VIDEO",
+        "inputName": "filename_prefix",
+        "valueType": "string",
+        "required": true
+      },
+      "referenceImage1": {
+        "marker": "APP_H3_REFERENCE_IMAGE_1",
+        "inputName": "image",
+        "valueType": "string",
+        "required": true
+      },
+      "referenceImage2": {
+        "marker": "APP_H3_REFERENCE_IMAGE_2",
+        "inputName": "image",
+        "valueType": "string",
+        "required": true
+      }
+    },
+    "outputs": {
+      "video": {
+        "marker": "APP_H3_OUTPUT_VIDEO"
+      }
+    },
+    "validation": {
+      "schemaVersion": "comfy-workflow-manifest.v1",
+      "workflowFormat": "api",
+      "markersValidated": true
+    },
+    "status": "validated"
+  },
+  "generationSpec": {
+    "schemaVersion": "h3-generation-spec.v1",
+    "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+    "mode": "fl2va-first-last",
+    "prompt": {
+      "schemaVersion": "h3-shot-prompt.v1",
+      "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+      "dramaUid": "e2428027-0d9f-43c7-829e-a3b826e8ed48",
+      "shotId": "shot-phase7-real-fight-validation",
+      "continuitySnapshotUid": "1a1466c3-aa79-46c9-9ea4-e1601ab8752d",
+      "semanticSha256": "37972bcdc1cf24a8bb853e8aec24b994d014fd2e7d72dd32aa9137997824cb9f",
+      "promptSha256": "c9c8cfae08389a22d0c037145eae418b657fb16e58f8a316dcf327708f416f3a",
+      "text": "Two martial artists exchange choreographed blows in a cinematic courtyard. Use a wide establishing view, a medium action view, a low angle impact view, and a final wide separation view. Keep movement readable, physical spacing safe, lighting coherent, and identities consistent."
+    },
+    "width": 608,
+    "height": 352,
+    "durationSeconds": 1.625,
+    "fps": 24,
+    "frames": 39,
+    "seed": 424242,
+    "referenceImages": [
+      {
+        "ordinal": 1,
+        "role": "first",
+        "dramaUid": "e2428027-0d9f-43c7-829e-a3b826e8ed48",
+        "assetVersionUid": "38fa0a64-ea27-4733-9316-e72f2d0fea01",
+        "sha256": "1124c79f22f3e44863791cc1d9cc45cb7e8714d6fac04b84c2182128bb6c8e53",
+        "mimeType": "image/png",
+        "width": 608,
+        "height": 352
+      },
+      {
+        "ordinal": 2,
+        "role": "last",
+        "dramaUid": "e2428027-0d9f-43c7-829e-a3b826e8ed48",
+        "assetVersionUid": "48fe6bad-5a7b-4e2b-8de5-f79919a548df",
+        "sha256": "4dbf8d90a95618d713350736f356a0037623b7e1d319e77115526745f87adb08",
+        "mimeType": "image/png",
+        "width": 608,
+        "height": 352
+      }
+    ],
+    "referenceAudio": null
+  },
+  "output": {
+    "assetVersionUid": "1477d1ee-2da0-44a4-a9a0-858a411cc1ff",
+    "evidence": {
+      "schemaVersion": "h3-video-evidence.v1",
+      "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+      "generationSpecSha256": "1f123e0574e73e3734d83e8e6e14f133d411e8ed318b837222cc006931f95e87",
+      "sha256": "d65c380d207d5a35ef484af2135b0fbbac0df95230f00f4cad53efd4272537ae",
+      "bytes": 280776,
+      "mimeType": "video/mp4",
+      "width": 608,
+      "height": 352,
+      "durationMs": 1625,
+      "frames": 39,
+      "fps": 24,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "audioStreams": 1,
+      "blackFrameRatio": 0,
+      "frozenFrameRatio": 0
+    }
+  },
+  "profileRevision": 2,
+  "profileSha256": "78fb9d7f8c75c324f73d2bb0297a8dfce021e48f3de4239506ba6c22583ffc35",
+  "environmentSha256": "541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8",
+  "receiptSha256": "099152a59d1df40a75b2623a1814b569aa2501e33f567812d516cc0962cd3f35"
+}

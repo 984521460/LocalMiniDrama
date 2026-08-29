@@ -15,6 +15,10 @@ const { createH3ExecutionIntentService } = require('./executionIntentService');
 const { createH3LocalVideoInspector } = require('./localVideoInspector');
 const { H3_REAL_VALIDATION_MATRIX } = require('./realValidationMatrix');
 const {
+  H3_PHASE_7_ENVIRONMENT_SHA256,
+  validateH3RealGpuEnvironment,
+} = require('./realValidationEnvironment');
+const {
   H3_PHASE_7_REQUIRED_MODES,
   createH3RealValidationCollector,
   evaluateH3Phase7Evidence,
@@ -40,6 +44,7 @@ const {
 module.exports = Object.freeze({
   H3_PROFILE,
   H3_OFFICIAL_WORKFLOW_SOURCES,
+  H3_PHASE_7_ENVIRONMENT_SHA256,
   H3_PHASE_7_REQUIRED_MODES,
   H3_PHASE_7_VALIDATION_MODES,
   H3_REAL_VALIDATION_MATRIX,
@@ -63,6 +68,7 @@ module.exports = Object.freeze({
   normalizeH3GenerationSpec,
   evaluateH3Phase7Evidence,
   validateH3RealValidationReceipt,
+  validateH3RealGpuEnvironment,
   validateH3GenerationSpec,
   validateH3Phase7ValidationPlan,
   validateH3VideoEvidence,

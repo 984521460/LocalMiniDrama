@@ -124,11 +124,18 @@ function schema(relativePath) {
   return JSON.parse(fs.readFileSync(path.resolve(__dirname, '../..', relativePath), 'utf8'));
 }
 
+function phase7Environment() {
+  return JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, '../../evidence/h3/phase7/environment.json'),
+    'utf8',
+  ));
+}
+
 function assertH3Error(callback, code) {
   assert.throws(callback, (error) => error?.code === code && !JSON.stringify(error).includes('a'.repeat(64)));
 }
 
-test('Phase 7 validation plan deterministically packages all four modes without promoting candidates', () => {
+test('Phase 7 validation plan packages the four trusted GPU variants without expanding production', () => {
   const first = createH3Phase7ValidationPlan(planInput());
   const second = createH3Phase7ValidationPlan(planInput());
   assert.equal(sha256Canonical(first), sha256Canonical(second));
@@ -139,9 +146,9 @@ test('Phase 7 validation plan deterministically packages all four modes without 
   ]);
   assert.deepEqual(first.cases.map(({ supportStatus }) => supportStatus), [
     'trusted-workflow',
-    'implementation-candidate-unverified',
-    'implementation-candidate-unverified',
-    'implementation-candidate-unverified',
+    'trusted-workflow',
+    'trusted-workflow',
+    'trusted-workflow',
   ]);
   assert.equal(first.cases[3].generationSpec.referenceImages.length, 4);
   assert.notEqual(first.cases[3].generationSpec.referenceAudio, null);
@@ -222,7 +229,7 @@ test('Phase 7 validation plan fails closed for incomplete coverage, drift, and h
   assert.equal(trapReads, 0);
 });
 
-test('collector can seal an exact pinned candidate receipt while the trust gate remains closed', async (t) => {
+test('collector can seal an exact trusted receipt while the four-mode gate remains partial', async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'h3-candidate-receipt-'));
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
   const bytes = Buffer.from('synthetic-local-candidate-video', 'utf8');
@@ -253,7 +260,10 @@ test('collector can seal an exact pinned candidate receipt while the trust gate 
       return { exitCode: 0, stdout: '', stderr: '' };
     },
   });
-  const collector = createH3RealValidationCollector({ inspector });
+  const collector = createH3RealValidationCollector({
+    inspector,
+    environment: phase7Environment(),
+  });
   const candidate = createH3Phase7ValidationPlan(planInput()).cases[1];
   const receipt = await collector.collect({
     receiptUid: uid(741),
@@ -268,7 +278,14 @@ test('collector can seal an exact pinned candidate receipt while the trust gate 
   });
   assert.equal(processCalls, 2);
   assert.equal(validateH3RealValidationReceipt(receipt).mode, 'fl2va-first');
-  assertH3Error(() => evaluateH3Phase7Evidence([receipt]), 'H3_REAL_VALIDATION_INVALID');
+  const gate = evaluateH3Phase7Evidence({
+    environment: phase7Environment(),
+    receipts: [receipt],
+  });
+  assert.equal(gate.evidenceComplete, false);
+  assert.deepEqual(gate.acceptedReceiptModes, ['fl2va-first']);
+  assert.deepEqual(gate.missingModes, ['t2v', 'fl2va-first-last', 'ref2va']);
+  assert.deepEqual(gate.workflowUnavailableModes, []);
 });
 
 test('strict JSON boundary and CLI prepare create one immutable validation artifact', (t) => {

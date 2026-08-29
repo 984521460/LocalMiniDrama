@@ -14,9 +14,10 @@ const { fail } = require('./errors');
 const { validateH3GenerationSpec } = require('./generationSpec');
 const { H3_PROFILE } = require('./profile');
 const { H3_OFFICIAL_WORKFLOW_SOURCES, H3_REF2VA_MODEL_FILES } = require('./workflowSources');
+const { isH3Phase7WorkflowVariantTrusted } = require('./workflowTrust');
 
 const CODE = 'H3_GENERATION_INPUT_INVALID';
-const SUPPORT_STATUS = 'implementation-candidate-unverified';
+const UNVERIFIED_SUPPORT_STATUS = 'implementation-candidate-unverified';
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/u;
 const BUNDLES = new Map();
 const PUBLIC_BUNDLES = new Map();
@@ -148,7 +149,9 @@ function buildBundle(value) {
     status: 'validated',
   }, workflowBytes);
   return Object.freeze({
-    supportStatus: SUPPORT_STATUS,
+    supportStatus: isH3Phase7WorkflowVariantTrusted(value)
+      ? 'trusted-workflow'
+      : UNVERIFIED_SUPPORT_STATUS,
     workflowJson,
     manifest,
     source: value.mode === 'ref2va'
@@ -255,7 +258,7 @@ function compileH3WorkflowCandidate(input) {
     return fail(CODE);
   }
   return snapshot({
-    supportStatus: SUPPORT_STATUS,
+    supportStatus: bundle.supportStatus,
     manifestUid: bundle.manifest.uid,
     workflowSha256: bundle.manifest.workflowSha256,
     prompt: compiled.prompt,

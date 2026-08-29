@@ -23,7 +23,7 @@ function profileFixture() {
     schemaVersion: 'h3-profile.v1',
     uid: PROFILE_UID,
     profileId: 'minimax-h3-local-four-step-768p',
-    revision: 1,
+    revision: 2,
     engine: 'comfyui',
     modelFamily: 'minimax-h3',
     sourceRevision: '4cc1d817b6184899b41293954329f576cb5ae86b',
@@ -45,7 +45,7 @@ function profileFixture() {
     models: {
       diffusion: model('UNETLoader', 'unet_name', 'diffusion.safetensors', 'a'.repeat(64), 10),
       textEncoder: model('CLIPLoader', 'clip_name', 'text.safetensors', 'b'.repeat(64), 11),
-      videoVae: model('VAELoader', 'vae_name', 'video.safetensors', null, 12, 'historical-evidence-malformed'),
+      videoVae: model('VAELoader', 'vae_name', 'video.safetensors', 'e'.repeat(64), 12),
       audioVae: model('VAELoader', 'vae_name', 'audio.safetensors', 'c'.repeat(64), 13),
       turboLora: model('LoraLoaderModelOnly', 'lora_name', 'lora.safetensors', 'd'.repeat(64), 14),
     },
@@ -56,15 +56,15 @@ function profileFixture() {
       },
       'fl2va-first': {
         referenceImageRoles: ['first'], minimumReferenceImages: 1, maximumReferenceImages: 1,
-        nativeAudioOutput: true, realValidation: 'unverified',
+        nativeAudioOutput: true, realValidation: 'validated-rtx4090',
       },
       'fl2va-first-last': {
         referenceImageRoles: ['first', 'last'], minimumReferenceImages: 2, maximumReferenceImages: 2,
-        nativeAudioOutput: true, realValidation: 'unverified',
+        nativeAudioOutput: true, realValidation: 'validated-rtx4090',
       },
       ref2va: {
         referenceImageRoles: ['reference'], minimumReferenceImages: 1, maximumReferenceImages: 4,
-        nativeAudioOutput: true, realValidation: 'unverified',
+        nativeAudioOutput: true, realValidation: 'validated-rtx4090',
       },
     },
   }
@@ -72,6 +72,11 @@ function profileFixture() {
 
 function matrixFixture() {
   const unverified = () => ({ status: 'unverified', measuredCases: [] })
+  const phase7 = (caseId, outputSha256) => ({
+    caseId, requestedSeconds: 1.625, width: 608, height: 352,
+    fps: 24, frames: 39, videoCodec: 'h264', audioCodec: 'aac',
+    outputSha256, evidenceRef: `phase-7:${caseId}`,
+  })
   return {
     schemaVersion: 'h3-real-validation-matrix.v1',
     profileUid: PROFILE_UID,
@@ -95,11 +100,33 @@ function matrixFixture() {
                 outputSha256: '4fc449c09f34efbe7955e056f4108ae36c469097f70e93480996f0a8fadd8ecf',
                 evidenceRef: 'phase-1:h3-fight-15s',
               },
+              phase7(
+                'h3-real-t2v',
+                '49aa825a1f8c20e5c3a71038ec795aa28ec2fab3e07a14eb316ee632f462f525',
+              ),
             ],
           },
-          'fl2va-first': unverified(),
-          'fl2va-first-last': unverified(),
-          ref2va: unverified(),
+          'fl2va-first': {
+            status: 'verified',
+            measuredCases: [phase7(
+              'h3-real-fl2va-first',
+              '63cb57efe4cb466c3ce8b479a1239aff510baa63891959cabf1bdcf4b94e8f9a',
+            )],
+          },
+          'fl2va-first-last': {
+            status: 'verified',
+            measuredCases: [phase7(
+              'h3-real-fl2va-first-last',
+              'd65c380d207d5a35ef484af2135b0fbbac0df95230f00f4cad53efd4272537ae',
+            )],
+          },
+          ref2va: {
+            status: 'verified',
+            measuredCases: [phase7(
+              'h3-real-ref2va',
+              '7fa3e5f46c95a06c6f144afd4663425c1a1af2c2a5f28974f4fb7baab86d3033',
+            )],
+          },
         },
       },
       {
@@ -120,8 +147,9 @@ test('H3 frontend views preserve the exact local profile and validation evidence
   const profile = h3ProfileView(json(profileFixture()))
   const matrix = h3RealValidationMatrixView(json(matrixFixture()), profile.uid)
   assert.equal(profile.modes.t2v.realValidation, 'validated-rtx4090')
-  assert.equal(profile.models.videoVae.sha256, null)
-  assert.equal(matrix.gpus[0].modes.t2v.measuredCases[1].frames, 362)
+  assert.equal(profile.models.videoVae.sha256, 'e'.repeat(64))
+  assert.equal(matrix.gpus[0].modes.t2v.measuredCases[2].frames, 39)
+  assert.equal(matrix.gpus[0].modes.ref2va.status, 'verified')
   assert(Object.isFrozen(profile))
   assert(Object.isFrozen(matrix.gpus))
 })
@@ -129,7 +157,7 @@ test('H3 frontend views preserve the exact local profile and validation evidence
 test('H3 frontend views reject drift, forged verification, and extra fields', () => {
   assert.throws(() => h3ProfileView(json({ ...profileFixture(), apiKey: 'must-not-pass' })))
   const wrongDigest = profileFixture()
-  wrongDigest.models.videoVae = { ...wrongDigest.models.videoVae, digestStatus: 'verified' }
+  wrongDigest.models.videoVae = { ...wrongDigest.models.videoVae, sha256: null }
   assert.throws(() => h3ProfileView(json(wrongDigest)))
 
   const forged = matrixFixture()

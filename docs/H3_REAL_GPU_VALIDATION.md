@@ -32,7 +32,7 @@ cd backend-node
 npm run h3:validation -- prepare --input D:\h3-validation\input.json --output D:\h3-validation\plan.json
 ```
 
-以上示例在 Windows 本地协调端运行；在 Featurize Linux 实例上使用相同子命令，并把输入、输出和 `localRoot` 改为实例内的绝对 Linux 路径（例如 `/home/featurize/work/h3-validation/...`）。
+以上示例在 Windows 本地协调端运行；在 Linux 算力实例上使用相同子命令，并把输入、输出和 `localRoot` 改为实例内的绝对 Linux 路径（例如 `/workspace/h3-validation/...`）。
 
 命令拒绝重复 JSON 键、畸形 UTF-8、符号链接输入、超限 JSON 和已存在的输出文件。生成的 `plan.json` 包含完整 Manifest、归一化生成规格、媒体绑定、可提交的 Comfy prompt、输出节点、预期媒体参数及整体 SHA-256。
 
@@ -65,6 +65,7 @@ npm run h3:validation -- check --input D:\h3-validation\plan.json --output D:\h3
   "ffprobePath": "ffprobe",
   "ffmpegPath": "ffmpeg",
   "timeoutMs": 60000,
+  "environment": {},
   "receipt": {
     "receiptUid": "00000000-0000-4000-8000-000000000000",
     "gpuClass": "rtx4090-24gb",
@@ -79,7 +80,7 @@ npm run h3:validation -- check --input D:\h3-validation\plan.json --output D:\h3
 }
 ```
 
-其中 `manifest` 和 `generationSpec` 必须原样取自对应 plan case；示例零 UUID、空对象和占位值不可用于真实收据。
+其中 `environment` 必须是完整的脱敏环境证据，并精确包含已核验的 GPU、运行时与全部七个模型摘要；`manifest` 和 `generationSpec` 必须原样取自对应 plan case。示例零 UUID、空对象和占位值不可用于真实收据。
 
 运行：
 
@@ -91,7 +92,7 @@ npm run h3:validation -- receipt --input D:\h3-validation\receipt-input.json --o
 
 ## 5. 汇总门禁
 
-把四个收据组成 JSON 数组后运行：
+把脱敏环境对象和四个收据组成 `{ "environment": {...}, "receipts": [...] }` 后运行：
 
 ```powershell
 npm run h3:validation -- gate --input D:\h3-validation\receipts.json --output D:\h3-validation\gate.json
@@ -104,4 +105,12 @@ npm run h3:validation -- gate --input D:\h3-validation\receipts.json --output D:
 3. 将通过审核的精确 Manifest 与收据作为一次独立代码变更纳入可信清单；
 4. 重新执行门禁。只有 `evidenceComplete=true` 才能封账 Phase 7 并进入 Phase 8。
 
-未完成上述审核时，`implementation-candidate-unverified`、`prepared-unverified` 和门禁中的 `workflowUnavailableModes` 都必须保留。
+当前版本中，`prepared-unverified` 仍表示尚未执行的计划；未经过本轮实测的其他 Ref2VA 组合继续保留 `implementation-candidate-unverified`。本轮精确四个变体完成审核后，门禁的 `workflowUnavailableModes` 为空。
+
+## 6. 2026-08-29 RTX 4090 封账证据
+
+本轮在标准 RTX 4090 24 GiB 实例上完成四个模式的独立生成。四份收据位于 `evidence/h3/phase7/receipt-*.json`，脱敏运行环境位于 `evidence/h3/phase7/environment.json`，聚合输入与机械门禁分别位于 `evidence/h3/phase7/receipts.json` 和 `evidence/h3/phase7/gate.json`。
+
+四个输出均为 `608×352`、24 FPS、39 帧、1625 ms、H.264 视频与单路 AAC 音频；黑帧率与冻结帧率均为 0。每个模式使用独立的 prompt ID、AssetVersion UID 与输出 SHA-256。抽帧检查确认人物运动、镜头连续性和参考主体一致性，未发现黑屏或冻结；本轮没有人工听审音画同步，因此只记录 AAC 音轨技术存在，不把音画同步列为已人工验收。
+
+机械门禁结果为 `evidenceComplete=true`，`profileRevision=2`，`profileSha256=78fb9d7f8c75c324f73d2bb0297a8dfce021e48f3de4239506ba6c22583ffc35`，`environmentSha256=541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8`，`receiptsSha256=2c7dc35728c7fcff7a46fba972bd8a12c8a94333b22e87806d83e6f64460d839`。受信范围严格限定为：T2V、1 张首帧 FL2VA、首尾各 1 张 FL2VA、4 张参考图加参考音频 Ref2VA。其他 Ref2VA 组合和 RTX PRO 6000 Blackwell 实测仍未完成；生产编译入口也不会因本次证据更新而自动扩展，留待 Phase 8 单独接线与验收。

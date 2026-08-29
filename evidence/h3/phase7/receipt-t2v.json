@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "h3-real-validation-receipt.v1",
+  "receiptUid": "a5e25e16-5949-4df3-93cd-03f8d7183896",
+  "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+  "gpuClass": "rtx4090-24gb",
+  "captureKind": "local-comfyui",
+  "mode": "t2v",
+  "promptId": "2ce1aa15-e783-4c97-acf2-36290019a6e8",
+  "capturedAtEpochMs": 1787961545165,
+  "manifest": {
+    "schemaVersion": "comfy-workflow-manifest.v1",
+    "uid": "77adf73c-acf1-4b6b-9a88-b76b175d2d2c",
+    "manifestId": "minimax-h3-t2v-local-v1",
+    "version": "1.0.0",
+    "engine": "comfyui",
+    "workflowFile": "workflows/v7/minimax-h3-t2v-api.json",
+    "workflowSha256": "f047630d9b7e9009f3cce269e8ca90ee303f86845e285dd9701fddd0b17864b0",
+    "modelFamily": "minimax-h3",
+    "requirements": [
+      {
+        "kind": "node",
+        "nodeType": "BasicGuider"
+      },
+      {
+        "kind": "node",
+        "nodeType": "BasicScheduler"
+      },
+      {
+        "kind": "node",
+        "nodeType": "CLIPLoader"
+      },
+      {
+        "kind": "node",
+        "nodeType": "CreateVideo"
+      },
+      {
+        "kind": "node",
+        "nodeType": "KSamplerSelect"
+      },
+      {
+        "kind": "node",
+        "nodeType": "LoraLoaderModelOnly"
+      },
+      {
+        "kind": "node",
+        "nodeType": "MiniMaxH3ImageToVideo"
+      },
+      {
+        "kind": "node",
+        "nodeType": "RandomNoise"
+      },
+      {
+        "kind": "node",
+        "nodeType": "SamplerCustomAdvanced"
+      },
+      {
+        "kind": "node",
+        "nodeType": "SaveVideo"
+      },
+      {
+        "kind": "node",
+        "nodeType": "UNETLoader"
+      },
+      {
+        "kind": "node",
+        "nodeType": "VAEDecode"
+      },
+      {
+        "kind": "node",
+        "nodeType": "VAEDecodeAudio"
+      },
+      {
+        "kind": "node",
+        "nodeType": "VAELoader"
+      },
+      {
+        "kind": "model",
+        "nodeType": "UNETLoader",
+        "inputName": "unet_name",
+        "fileName": "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "CLIPLoader",
+        "inputName": "clip_name",
+        "fileName": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "VAELoader",
+        "inputName": "vae_name",
+        "fileName": "minimax_h3_video_vae_fp16.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "VAELoader",
+        "inputName": "vae_name",
+        "fileName": "minimax_h3_audio_vae_fp32.safetensors"
+      },
+      {
+        "kind": "model",
+        "nodeType": "LoraLoaderModelOnly",
+        "inputName": "lora_name",
+        "fileName": "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
+      }
+    ],
+    "inputs": {
+      "prompt": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "prompt",
+        "valueType": "string",
+        "required": true
+      },
+      "width": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "width",
+        "valueType": "integer",
+        "required": true
+      },
+      "height": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "height",
+        "valueType": "integer",
+        "required": true
+      },
+      "frames": {
+        "marker": "APP_H3_GENERATION",
+        "inputName": "length",
+        "valueType": "integer",
+        "required": true
+      },
+      "seed": {
+        "marker": "APP_H3_SEED",
+        "inputName": "noise_seed",
+        "valueType": "integer",
+        "required": true
+      },
+      "filenamePrefix": {
+        "marker": "APP_H3_OUTPUT_VIDEO",
+        "inputName": "filename_prefix",
+        "valueType": "string",
+        "required": true
+      }
+    },
+    "outputs": {
+      "video": {
+        "marker": "APP_H3_OUTPUT_VIDEO"
+      }
+    },
+    "validation": {
+      "schemaVersion": "comfy-workflow-manifest.v1",
+      "workflowFormat": "api",
+      "markersValidated": true
+    },
+    "status": "validated"
+  },
+  "generationSpec": {
+    "schemaVersion": "h3-generation-spec.v1",
+    "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+    "mode": "t2v",
+    "prompt": {
+      "schemaVersion": "h3-shot-prompt.v1",
+      "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+      "dramaUid": "e2428027-0d9f-43c7-829e-a3b826e8ed48",
+      "shotId": "shot-phase7-real-fight-validation",
+      "continuitySnapshotUid": "1a1466c3-aa79-46c9-9ea4-e1601ab8752d",
+      "semanticSha256": "37972bcdc1cf24a8bb853e8aec24b994d014fd2e7d72dd32aa9137997824cb9f",
+      "promptSha256": "c9c8cfae08389a22d0c037145eae418b657fb16e58f8a316dcf327708f416f3a",
+      "text": "Two martial artists exchange choreographed blows in a cinematic courtyard. Use a wide establishing view, a medium action view, a low angle impact view, and a final wide separation view. Keep movement readable, physical spacing safe, lighting coherent, and identities consistent."
+    },
+    "width": 608,
+    "height": 352,
+    "durationSeconds": 1.625,
+    "fps": 24,
+    "frames": 39,
+    "seed": 424242,
+    "referenceImages": [],
+    "referenceAudio": null
+  },
+  "output": {
+    "assetVersionUid": "188a6606-e5ae-41b9-b429-1d65f7140ced",
+    "evidence": {
+      "schemaVersion": "h3-video-evidence.v1",
+      "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+      "generationSpecSha256": "ba2d370de616d45e900726d0165caa3738b0ba68c08cab36597b8861a7b52b9b",
+      "sha256": "49aa825a1f8c20e5c3a71038ec795aa28ec2fab3e07a14eb316ee632f462f525",
+      "bytes": 222128,
+      "mimeType": "video/mp4",
+      "width": 608,
+      "height": 352,
+      "durationMs": 1625,
+      "frames": 39,
+      "fps": 24,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "audioStreams": 1,
+      "blackFrameRatio": 0,
+      "frozenFrameRatio": 0
+    }
+  },
+  "profileRevision": 2,
+  "profileSha256": "78fb9d7f8c75c324f73d2bb0297a8dfce021e48f3de4239506ba6c22583ffc35",
+  "environmentSha256": "541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8",
+  "receiptSha256": "767d28cc77a87ad0f2f3bfa852e42555284dc10de8fbd288429ab3aa71a10657"
+}

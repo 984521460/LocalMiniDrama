@@ -104,18 +104,21 @@ function expectCode(code) {
   return (error) => error instanceof H3ContractError && error.code === code;
 }
 
-test('H3 profile is immutable, schema-valid, and distinguishes measured from unverified modes', () => {
+test('H3 profile is immutable, schema-valid, and records all measured RTX 4090 modes', () => {
   const validate = new Ajv2020({ allErrors: true, strict: true }).compile(profileSchema);
   assert.equal(validate(H3_PROFILE), true, JSON.stringify(validate.errors));
   assert.equal(H3_PROFILE.schemaVersion, 'h3-profile.v1');
   assert.equal(H3_PROFILE.fps, 24);
   assert.deepEqual(H3_PROFILE.frameGrid, { offset: 5, stride: 17, minimum: 5 });
   assert.equal(H3_PROFILE.modes.t2v.realValidation, 'validated-rtx4090');
-  assert.equal(H3_PROFILE.modes['fl2va-first'].realValidation, 'unverified');
-  assert.equal(H3_PROFILE.modes['fl2va-first-last'].realValidation, 'unverified');
-  assert.equal(H3_PROFILE.modes.ref2va.realValidation, 'unverified');
-  assert.equal(H3_PROFILE.models.videoVae.sha256, null);
-  assert.equal(H3_PROFILE.models.videoVae.digestStatus, 'historical-evidence-malformed');
+  assert.equal(H3_PROFILE.modes['fl2va-first'].realValidation, 'validated-rtx4090');
+  assert.equal(H3_PROFILE.modes['fl2va-first-last'].realValidation, 'validated-rtx4090');
+  assert.equal(H3_PROFILE.modes.ref2va.realValidation, 'validated-rtx4090');
+  assert.equal(
+    H3_PROFILE.models.videoVae.sha256,
+    '7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522',
+  );
+  assert.equal(H3_PROFILE.models.videoVae.digestStatus, 'verified');
   assert.equal(Object.isFrozen(H3_PROFILE), true);
   assert.equal(Object.isFrozen(H3_PROFILE.models), true);
   assert.equal(Object.isFrozen(H3_PROFILE.modes), true);
@@ -129,7 +132,7 @@ test('H3 profile is immutable, schema-valid, and distinguishes measured from unv
   });
 
   const forgedDigest = structuredClone(H3_PROFILE);
-  forgedDigest.models.videoVae.digestStatus = 'verified';
+  forgedDigest.models.videoVae.sha256 = null;
   assert.equal(validate(forgedDigest), false);
   const missingDigest = structuredClone(H3_PROFILE);
   missingDigest.models.diffusion.sha256 = null;

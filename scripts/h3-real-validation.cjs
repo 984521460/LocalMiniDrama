@@ -83,7 +83,7 @@ async function execute({ command, input, output }) {
     result = evaluateH3Phase7Evidence(parsed);
   } else {
     const configured = exactObject(parsed, [
-      'localRoot', 'ffprobePath', 'ffmpegPath', 'timeoutMs', 'receipt',
+      'localRoot', 'ffprobePath', 'ffmpegPath', 'timeoutMs', 'environment', 'receipt',
     ]);
     const inspector = createH3LocalVideoInspector({
       localRoot: configured.localRoot,
@@ -91,7 +91,10 @@ async function execute({ command, input, output }) {
       ffmpegPath: configured.ffmpegPath,
       timeoutMs: configured.timeoutMs,
     });
-    result = await createH3RealValidationCollector({ inspector }).collect(configured.receipt);
+    result = await createH3RealValidationCollector({
+      inspector,
+      environment: configured.environment,
+    }).collect(configured.receipt);
   }
   writeJsonExclusive(output, result);
 }

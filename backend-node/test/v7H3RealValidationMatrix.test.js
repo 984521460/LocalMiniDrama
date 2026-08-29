@@ -27,10 +27,13 @@ test('H3 real-validation matrix preserves measured 4090 evidence and explicit GP
   )), [
     { width: 608, height: 352, frames: 5 },
     { width: 608, height: 352, frames: 362 },
+    { width: 608, height: 352, frames: 39 },
   ]);
   for (const mode of ['fl2va-first', 'fl2va-first-last', 'ref2va']) {
-    assert.equal(rtx4090.modes[mode].status, 'unverified');
-    assert.deepEqual(rtx4090.modes[mode].measuredCases, []);
+    assert.equal(rtx4090.modes[mode].status, 'verified');
+    assert.equal(rtx4090.modes[mode].measuredCases.length, 1);
+    assert.equal(rtx4090.modes[mode].measuredCases[0].frames, 39);
+    assert.match(rtx4090.modes[mode].measuredCases[0].evidenceRef, /^phase-7:/u);
   }
   for (const value of Object.values(pro6000.modes)) {
     assert.equal(value.status, 'unverified');
@@ -49,7 +52,7 @@ test('H3 real-validation matrix preserves measured 4090 evidence and explicit GP
     measuredCases.slice(1),
     [...measuredCases, structuredClone(measuredCases[0])],
     measuredCases.map((value, index) => (index === 0 ? { ...value, caseId: 'fabricated-case' } : value)),
-    measuredCases.map((value, index) => (index === 1 ? { ...value, outputSha256: '0'.repeat(64) } : value)),
+    measuredCases.map((value, index) => (index === 2 ? { ...value, outputSha256: '0'.repeat(64) } : value)),
     [...measuredCases].reverse(),
   ];
   for (const replacement of invalidMeasuredCases) {

@@ -15,7 +15,7 @@ const H3_OFFICIAL_WORKFLOW_SOURCES = deepFreeze({
     templatePath: 'templates/video_minimax_h3_i2v.json',
     templateSha256: '4dc94e9ea308c1d60409e7f55dba5e2788dab4659c2dbb90f1e9481498767540',
     templateBytes: 71_242,
-    realValidation: 'unverified',
+    realValidation: 'validated-rtx4090',
   },
   ref2v: {
     repository: 'Comfy-Org/workflow_templates',
@@ -23,7 +23,7 @@ const H3_OFFICIAL_WORKFLOW_SOURCES = deepFreeze({
     templatePath: 'templates/video_minimax_h3_r2v.json',
     templateSha256: '14b30659a057547e02bdd4bbbdda3f8670aa6d7d81d1d8d99c4f9ad1e2eabc44',
     templateBytes: 45_121,
-    realValidation: 'unverified',
+    realValidation: 'validated-rtx4090',
   },
 });
 

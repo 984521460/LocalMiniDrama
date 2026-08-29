@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "h3-phase7-evidence-gate.v1",
+  "profileUid": "70d4f190-d54d-4d27-9a45-c97807ea1b9d",
+  "profileRevision": 2,
+  "profileSha256": "78fb9d7f8c75c324f73d2bb0297a8dfce021e48f3de4239506ba6c22583ffc35",
+  "environmentSha256": "541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8",
+  "gpuClass": "rtx4090-24gb",
+  "evidenceComplete": true,
+  "acceptedReceiptModes": [
+    "t2v",
+    "fl2va-first",
+    "fl2va-first-last",
+    "ref2va"
+  ],
+  "missingModes": [],
+  "workflowUnavailableModes": [],
+  "receiptCount": 4,
+  "receiptsSha256": "2c7dc35728c7fcff7a46fba972bd8a12c8a94333b22e87806d83e6f64460d839"
+}

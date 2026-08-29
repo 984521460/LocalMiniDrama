@@ -62,7 +62,7 @@ test('H3 localhost routes expose only fixed profile, real-validation status and 
   assert.equal(profileResponse.status, 200);
   const profile = (await profileResponse.json()).data;
   assert.equal(profile.uid, H3_PROFILE.uid);
-  assert.equal(profile.modes['fl2va-first'].realValidation, 'unverified');
+  assert.equal(profile.modes['fl2va-first'].realValidation, 'validated-rtx4090');
 
   const workflowResponse = await fetch(`${base}/v2/h3/t2v-workflow`);
   assert.equal(workflowResponse.status, 200);

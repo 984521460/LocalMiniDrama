@@ -19,6 +19,21 @@ function unverified() {
   return { status: 'unverified', measuredCases: [] };
 }
 
+function phase7Case(caseId, outputSha256) {
+  return {
+    caseId,
+    requestedSeconds: 1.625,
+    width: 608,
+    height: 352,
+    fps: 24,
+    frames: 39,
+    videoCodec: 'h264',
+    audioCodec: 'aac',
+    outputSha256,
+    evidenceRef: `phase-7:${caseId}`,
+  };
+}
+
 const H3_REAL_VALIDATION_MATRIX = deepFreeze({
   schemaVersion: 'h3-real-validation-matrix.v1',
   profileUid: '70d4f190-d54d-4d27-9a45-c97807ea1b9d',
@@ -54,11 +69,33 @@ const H3_REAL_VALIDATION_MATRIX = deepFreeze({
               outputSha256: '4fc449c09f34efbe7955e056f4108ae36c469097f70e93480996f0a8fadd8ecf',
               evidenceRef: 'phase-1:h3-fight-15s',
             },
+            phase7Case(
+              'h3-real-t2v',
+              '49aa825a1f8c20e5c3a71038ec795aa28ec2fab3e07a14eb316ee632f462f525',
+            ),
           ],
         },
-        'fl2va-first': unverified(),
-        'fl2va-first-last': unverified(),
-        ref2va: unverified(),
+        'fl2va-first': {
+          status: 'verified',
+          measuredCases: [phase7Case(
+            'h3-real-fl2va-first',
+            '63cb57efe4cb466c3ce8b479a1239aff510baa63891959cabf1bdcf4b94e8f9a',
+          )],
+        },
+        'fl2va-first-last': {
+          status: 'verified',
+          measuredCases: [phase7Case(
+            'h3-real-fl2va-first-last',
+            'd65c380d207d5a35ef484af2135b0fbbac0df95230f00f4cad53efd4272537ae',
+          )],
+        },
+        ref2va: {
+          status: 'verified',
+          measuredCases: [phase7Case(
+            'h3-real-ref2va',
+            '7fa3e5f46c95a06c6f144afd4663425c1a1af2c2a5f28974f4fb7baab86d3033',
+          )],
+        },
       },
     },
     {

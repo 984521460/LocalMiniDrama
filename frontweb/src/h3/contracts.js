@@ -3,7 +3,7 @@ const SHA256 = /^[0-9a-f]{64}$/u
 const TOKEN = /^[0-9A-Za-z][0-9A-Za-z.+:_-]{0,127}$/u
 const FILE_NAME = /^[0-9A-Za-z][0-9A-Za-z._-]{0,254}$/u
 const CASE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
-const EVIDENCE_REF = /^phase-1:[a-z0-9]+(?:-[a-z0-9]+)*$/u
+const EVIDENCE_REF = /^phase-(?:1|7):[a-z0-9]+(?:-[a-z0-9]+)*$/u
 
 function fail() {
   throw new TypeError('H3 status data is invalid')
@@ -98,9 +98,9 @@ function modelView(value) {
 
 const MODE_SPECS = Object.freeze({
   t2v: Object.freeze({ roles: [], minimum: 0, maximum: 0, realValidation: 'validated-rtx4090' }),
-  'fl2va-first': Object.freeze({ roles: ['first'], minimum: 1, maximum: 1, realValidation: 'unverified' }),
-  'fl2va-first-last': Object.freeze({ roles: ['first', 'last'], minimum: 2, maximum: 2, realValidation: 'unverified' }),
-  ref2va: Object.freeze({ roles: ['reference'], minimum: 1, maximum: 4, realValidation: 'unverified' }),
+  'fl2va-first': Object.freeze({ roles: ['first'], minimum: 1, maximum: 1, realValidation: 'validated-rtx4090' }),
+  'fl2va-first-last': Object.freeze({ roles: ['first', 'last'], minimum: 2, maximum: 2, realValidation: 'validated-rtx4090' }),
+  ref2va: Object.freeze({ roles: ['reference'], minimum: 1, maximum: 4, realValidation: 'validated-rtx4090' }),
 })
 
 const RTX4090_T2V_MEASURED_CASES = Object.freeze([
@@ -128,7 +128,40 @@ const RTX4090_T2V_MEASURED_CASES = Object.freeze([
     outputSha256: '4fc449c09f34efbe7955e056f4108ae36c469097f70e93480996f0a8fadd8ecf',
     evidenceRef: 'phase-1:h3-fight-15s',
   }),
+  Object.freeze({
+    caseId: 'h3-real-t2v',
+    requestedSeconds: 1.625,
+    width: 608,
+    height: 352,
+    fps: 24,
+    frames: 39,
+    videoCodec: 'h264',
+    audioCodec: 'aac',
+    outputSha256: '49aa825a1f8c20e5c3a71038ec795aa28ec2fab3e07a14eb316ee632f462f525',
+    evidenceRef: 'phase-7:h3-real-t2v',
+  }),
 ])
+
+const RTX4090_FL2VA_FIRST_MEASURED_CASES = Object.freeze([Object.freeze({
+  caseId: 'h3-real-fl2va-first', requestedSeconds: 1.625, width: 608, height: 352,
+  fps: 24, frames: 39, videoCodec: 'h264', audioCodec: 'aac',
+  outputSha256: '63cb57efe4cb466c3ce8b479a1239aff510baa63891959cabf1bdcf4b94e8f9a',
+  evidenceRef: 'phase-7:h3-real-fl2va-first',
+})])
+
+const RTX4090_FL2VA_FIRST_LAST_MEASURED_CASES = Object.freeze([Object.freeze({
+  caseId: 'h3-real-fl2va-first-last', requestedSeconds: 1.625, width: 608, height: 352,
+  fps: 24, frames: 39, videoCodec: 'h264', audioCodec: 'aac',
+  outputSha256: 'd65c380d207d5a35ef484af2135b0fbbac0df95230f00f4cad53efd4272537ae',
+  evidenceRef: 'phase-7:h3-real-fl2va-first-last',
+})])
+
+const RTX4090_REF2VA_MEASURED_CASES = Object.freeze([Object.freeze({
+  caseId: 'h3-real-ref2va', requestedSeconds: 1.625, width: 608, height: 352,
+  fps: 24, frames: 39, videoCodec: 'h264', audioCodec: 'aac',
+  outputSha256: '7fa3e5f46c95a06c6f144afd4663425c1a1af2c2a5f28974f4fb7baab86d3033',
+  evidenceRef: 'phase-7:h3-real-ref2va',
+})])
 
 function modeView(value, mode) {
   const input = exactObject(value, [
@@ -159,7 +192,7 @@ export function h3ProfileView(value) {
   ])
   if (input.schemaVersion !== 'h3-profile.v1'
     || input.profileId !== 'minimax-h3-local-four-step-768p'
-    || input.revision !== 1 || input.engine !== 'comfyui'
+    || input.revision !== 2 || input.engine !== 'comfyui'
     || input.modelFamily !== 'minimax-h3' || input.fps !== 24) fail()
   const frameGrid = exactObject(input.frameGrid, ['offset', 'stride', 'minimum'])
   if (frameGrid.offset !== 5 || frameGrid.stride !== 17 || frameGrid.minimum !== 5) fail()
@@ -240,7 +273,7 @@ function validationModeView(value, expectedStatus, expectedCases = []) {
   return { status: input.status, measuredCases }
 }
 
-function gpuView(value, expectedClass, expectedVram, verifiedT2v) {
+function gpuView(value, expectedClass, expectedVram, verifiedRtx4090) {
   const input = exactObject(value, ['gpuClass', 'vramGiB', 'modes'])
   if (input.gpuClass !== expectedClass || input.vramGiB !== expectedVram) fail()
   const modes = exactObject(input.modes, Object.keys(MODE_SPECS))
@@ -250,12 +283,24 @@ function gpuView(value, expectedClass, expectedVram, verifiedT2v) {
     modes: {
       t2v: validationModeView(
         modes.t2v,
-        verifiedT2v ? 'verified' : 'unverified',
-        verifiedT2v ? RTX4090_T2V_MEASURED_CASES : [],
+        verifiedRtx4090 ? 'verified' : 'unverified',
+        verifiedRtx4090 ? RTX4090_T2V_MEASURED_CASES : [],
       ),
-      'fl2va-first': validationModeView(modes['fl2va-first'], 'unverified'),
-      'fl2va-first-last': validationModeView(modes['fl2va-first-last'], 'unverified'),
-      ref2va: validationModeView(modes.ref2va, 'unverified'),
+      'fl2va-first': validationModeView(
+        modes['fl2va-first'],
+        verifiedRtx4090 ? 'verified' : 'unverified',
+        verifiedRtx4090 ? RTX4090_FL2VA_FIRST_MEASURED_CASES : [],
+      ),
+      'fl2va-first-last': validationModeView(
+        modes['fl2va-first-last'],
+        verifiedRtx4090 ? 'verified' : 'unverified',
+        verifiedRtx4090 ? RTX4090_FL2VA_FIRST_LAST_MEASURED_CASES : [],
+      ),
+      ref2va: validationModeView(
+        modes.ref2va,
+        verifiedRtx4090 ? 'verified' : 'unverified',
+        verifiedRtx4090 ? RTX4090_REF2VA_MEASURED_CASES : [],
+      ),
     },
   }
 }

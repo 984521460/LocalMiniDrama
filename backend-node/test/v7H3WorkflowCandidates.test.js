@@ -113,14 +113,14 @@ function compileCandidate(generationSpec, referenceImages, referenceAudio = null
   });
 }
 
-test('H3 candidate catalog pins the official I2V and Ref2V templates without claiming real validation', () => {
+test('H3 workflow catalog pins the GPU-validated official I2V and Ref2V templates', () => {
   assert.deepEqual(H3_OFFICIAL_WORKFLOW_SOURCES.i2v, {
     repository: 'Comfy-Org/workflow_templates',
     commit: '0b1ef3ec90846bf82eba195ddcc30a1f5b2b6b38',
     templatePath: 'templates/video_minimax_h3_i2v.json',
     templateSha256: '4dc94e9ea308c1d60409e7f55dba5e2788dab4659c2dbb90f1e9481498767540',
     templateBytes: 71242,
-    realValidation: 'unverified',
+    realValidation: 'validated-rtx4090',
   });
   assert.deepEqual(H3_OFFICIAL_WORKFLOW_SOURCES.ref2v, {
     repository: 'Comfy-Org/workflow_templates',
@@ -128,7 +128,7 @@ test('H3 candidate catalog pins the official I2V and Ref2V templates without cla
     templatePath: 'templates/video_minimax_h3_r2v.json',
     templateSha256: '14b30659a057547e02bdd4bbbdda3f8670aa6d7d81d1d8d99c4f9ad1e2eabc44',
     templateBytes: 45121,
-    realValidation: 'unverified',
+    realValidation: 'validated-rtx4090',
   });
   assert.equal(Object.isFrozen(H3_OFFICIAL_WORKFLOW_SOURCES), true);
   assert.equal(Object.isFrozen(H3_OFFICIAL_WORKFLOW_SOURCES.i2v), true);
@@ -142,7 +142,7 @@ test('H3 first-frame and first-last candidate bundles are deterministic closed m
     const first = createH3WorkflowCandidateBundle(entry);
     const second = createH3WorkflowCandidateBundle(entry);
     assert.equal(first, second);
-    assert.equal(first.supportStatus, 'implementation-candidate-unverified');
+    assert.equal(first.supportStatus, 'trusted-workflow');
     assert.equal(first.source, H3_OFFICIAL_WORKFLOW_SOURCES.i2v);
     assert.equal(isComfyWorkflowManifest(first.manifest), true);
     assert.equal(
@@ -159,7 +159,7 @@ test('H3 FL2VA candidate compiler binds one or two ordered images and native vid
     spec('fl2va-first', [firstReference]),
     [firstReference],
   );
-  assert.equal(firstCompiled.supportStatus, 'implementation-candidate-unverified');
+  assert.equal(firstCompiled.supportStatus, 'trusted-workflow');
   assert.equal(firstCompiled.prompt[201].class_type, 'LoadImage');
   assert.equal(firstCompiled.prompt[201].inputs.image, 'h3-input/shot-candidate-reference-1.png');
   assert.deepEqual(firstCompiled.prompt[131].inputs.first_frame, ['201', 0]);
@@ -207,6 +207,15 @@ test('H3 Ref2VA candidates bind one through four ordered images and optional ref
   assert.deepEqual(Object.keys(compiled.outputNodeIds), ['video']);
   assert.equal(compiled.outputNodeIds.video, '92');
   assert.equal(compiled.nativeAudioOutput, true);
+  assert.equal(compiled.supportStatus, 'implementation-candidate-unverified');
+
+  const fourReferences = [1, 2, 3, 4].map((ordinal) => image(ordinal, 'reference'));
+  const trusted = compileCandidate(
+    spec('ref2va', fourReferences, referenceAudio),
+    fourReferences,
+    referenceAudio,
+  );
+  assert.equal(trusted.supportStatus, 'trusted-workflow');
   assert.deepEqual(
     createH3WorkflowCandidateBundle({
       mode: 'ref2va', referenceImageCount: 2, referenceAudio: true,
@@ -276,7 +285,7 @@ test('H3 candidate compiler rejects mismatched evidence, unsafe names, and unsup
   );
 });
 
-test('candidate compilation does not silently enable unverified modes in the production compiler', () => {
+test('GPU trust promotion does not silently expand the production compiler contract', () => {
   const firstReference = image(1, 'first');
   const generationSpec = spec('fl2va-first', [firstReference]);
   assert.doesNotThrow(() => compileCandidate(generationSpec, [firstReference]));

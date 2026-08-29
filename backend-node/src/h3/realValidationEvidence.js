@@ -19,19 +19,25 @@ const { validateH3GenerationSpec } = require('./generationSpec');
 const { isH3LocalVideoInspector } = require('./localVideoInspector');
 const { validateH3VideoEvidence, validateH3VideoOutput } = require('./outputValidation');
 const { H3_PROFILE } = require('./profile');
+const {
+  H3_PHASE_7_ENVIRONMENT_SHA256,
+  validateH3RealGpuEnvironment,
+} = require('./realValidationEnvironment');
 const { createH3TextToVideoWorkflowBundle } = require('./workflowBundle');
 const { createH3WorkflowCandidateBundle } = require('./workflowCandidates');
 const { assertH3WorkflowVerified } = require('./workflowSupport');
+const { isH3Phase7WorkflowVariantTrusted } = require('./workflowTrust');
 
 const CODE = 'H3_REAL_VALIDATION_INVALID';
 const PHASE_7_GPU_CLASS = RTX_4090_GPU_CLASS;
+const H3_PROFILE_SHA256 = sha256Canonical(H3_PROFILE);
 const H3_PHASE_7_REQUIRED_MODES = Object.freeze([
   't2v', 'fl2va-first', 'fl2va-first-last', 'ref2va',
 ]);
 const RECEIPT_FIELDS = Object.freeze([
-  'schemaVersion', 'receiptUid', 'profileUid', 'gpuClass', 'captureKind', 'mode',
-  'promptId', 'capturedAtEpochMs', 'manifest', 'generationSpec', 'output',
-  'receiptSha256',
+  'schemaVersion', 'receiptUid', 'profileUid', 'profileRevision', 'profileSha256',
+  'environmentSha256', 'gpuClass', 'captureKind', 'mode', 'promptId',
+  'capturedAtEpochMs', 'manifest', 'generationSpec', 'output', 'receiptSha256',
 ]);
 const COLLECT_FIELDS = Object.freeze([
   'receiptUid', 'gpuClass', 'promptId', 'manifest', 'generationSpec',
@@ -47,6 +53,15 @@ const RECEIPT_LIMITS = Object.freeze({
 
 const TRUSTED_MANIFESTS = new Map([
   ['t2v', createH3TextToVideoWorkflowBundle().manifest],
+  ['fl2va-first', createH3WorkflowCandidateBundle({
+    mode: 'fl2va-first', referenceImageCount: 1, referenceAudio: false,
+  }).manifest],
+  ['fl2va-first-last', createH3WorkflowCandidateBundle({
+    mode: 'fl2va-first-last', referenceImageCount: 2, referenceAudio: false,
+  }).manifest],
+  ['ref2va', createH3WorkflowCandidateBundle({
+    mode: 'ref2va', referenceImageCount: 4, referenceAudio: true,
+  }).manifest],
 ]);
 
 function invalid() {
@@ -91,12 +106,19 @@ function trustedManifestMatches(mode, manifest) {
 
 function trustedWorkflowMatches(mode, manifest, spec) {
   if (!trustedManifestMatches(mode, manifest)) return false;
-  try {
-    assertH3WorkflowVerified(spec);
-    return true;
-  } catch {
-    return false;
+  if (mode === 't2v') {
+    try {
+      assertH3WorkflowVerified(spec);
+      return true;
+    } catch {
+      return false;
+    }
   }
+  return isH3Phase7WorkflowVariantTrusted({
+    mode: spec.mode,
+    referenceImageCount: spec.referenceImages.length,
+    referenceAudio: spec.referenceAudio !== null,
+  });
 }
 
 function candidateWorkflowMatches(manifest, spec) {
@@ -130,6 +152,9 @@ function validateH3RealValidationReceipt(value) {
   exactKeys(receipt, RECEIPT_FIELDS, CODE);
   if (receipt.schemaVersion !== 'h3-real-validation-receipt.v1'
     || receipt.profileUid !== H3_PROFILE.uid
+    || receipt.profileRevision !== H3_PROFILE.revision
+    || receipt.profileSha256 !== H3_PROFILE_SHA256
+    || receipt.environmentSha256 !== H3_PHASE_7_ENVIRONMENT_SHA256
     || !H3_REAL_VALIDATION_GPU_CLASSES.has(receipt.gpuClass)
     || receipt.captureKind !== 'local-comfyui'
     || !H3_PHASE_7_REQUIRED_MODES.includes(receipt.mode)
@@ -167,11 +192,14 @@ function ensureIndependentReceipts(receipts) {
 }
 
 function evaluateH3Phase7Evidence(value) {
-  const input = snapshot(value, CODE, {
+  const gateInput = snapshot(value, CODE, {
     ...RECEIPT_LIMITS,
     maxEntries: 65_536,
     maxTotalBytes: 4 * 1024 * 1024,
   });
+  exactKeys(gateInput, ['environment', 'receipts'], CODE);
+  const environment = validateH3RealGpuEnvironment(gateInput.environment);
+  const input = gateInput.receipts;
   if (!Array.isArray(input) || input.length > H3_PHASE_7_REQUIRED_MODES.length) invalid();
   const receipts = input.map(validateH3RealValidationReceipt);
   if (receipts.some((receipt) => receipt.gpuClass !== PHASE_7_GPU_CLASS)) invalid();
@@ -196,6 +224,9 @@ function evaluateH3Phase7Evidence(value) {
   return snapshot({
     schemaVersion: 'h3-phase7-evidence-gate.v1',
     profileUid: H3_PROFILE.uid,
+    profileRevision: H3_PROFILE.revision,
+    profileSha256: H3_PROFILE_SHA256,
+    environmentSha256: sha256Canonical(environment),
     gpuClass: PHASE_7_GPU_CLASS,
     evidenceComplete: missingModes.length === 0 && workflowUnavailableModes.length === 0,
     acceptedReceiptModes,
@@ -211,11 +242,17 @@ function collectorConfiguration(value) {
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) invalid();
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  if (Reflect.ownKeys(descriptors).length !== 1
+  if (Reflect.ownKeys(descriptors).length !== 2
     || !descriptors.inspector?.enumerable
     || !Object.hasOwn(descriptors.inspector, 'value')
+    || !descriptors.environment?.enumerable
+    || !Object.hasOwn(descriptors.environment, 'value')
     || !isH3LocalVideoInspector(descriptors.inspector.value)) invalid();
-  return Object.freeze({ inspector: descriptors.inspector.value });
+  const environment = validateH3RealGpuEnvironment(descriptors.environment.value);
+  return Object.freeze({
+    inspector: descriptors.inspector.value,
+    environmentSha256: sha256Canonical(environment),
+  });
 }
 
 function collectInput(value) {
@@ -254,6 +291,9 @@ async function inspectAndSeal(configured, validated) {
       schemaVersion: 'h3-real-validation-receipt.v1',
       receiptUid: input.receiptUid,
       profileUid: H3_PROFILE.uid,
+      profileRevision: H3_PROFILE.revision,
+      profileSha256: H3_PROFILE_SHA256,
+      environmentSha256: configured.environmentSha256,
       gpuClass: input.gpuClass,
       captureKind: 'local-comfyui',
       mode: spec.mode,

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://local-mini-drama.invalid/schemas/v7/h3-real-validation-plan.schema.json",
   "title": "Prepared MiniMax H3 Phase 7 real-GPU validation plan",
-  "$comment": "This plan packages exact prompts and evidence identities for execution. prepared-unverified is not proof that a GPU run occurred, and candidate workflows remain excluded from the trusted evidence gate until separately reviewed and promoted. Runtime rebuilds every compiled prompt and dynamically rechecks hashes, canvas area, frame grid, unique prefixes and the complete four-case closure.",
+  "$comment": "This plan packages exact prompts and evidence identities for execution. prepared-unverified describes the plan before execution and is not proof that a GPU run occurred. The four exact RTX 4090 variants are now trusted by the separate evidence gate, while other Ref2VA shapes remain unverified. Runtime rebuilds every compiled prompt and dynamically rechecks hashes, canvas area, frame grid, unique prefixes and the complete four-case closure.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -80,7 +80,7 @@
         "templatePath": { "const": "templates/video_minimax_h3_i2v.json" },
         "templateSha256": { "const": "4dc94e9ea308c1d60409e7f55dba5e2788dab4659c2dbb90f1e9481498767540" },
         "templateBytes": { "const": 71242 },
-        "realValidation": { "const": "unverified" }
+        "realValidation": { "const": "validated-rtx4090" }
       }
     },
     "ref2vSource": {
@@ -95,7 +95,7 @@
         "templatePath": { "const": "templates/video_minimax_h3_r2v.json" },
         "templateSha256": { "const": "14b30659a057547e02bdd4bbbdda3f8670aa6d7d81d1d8d99c4f9ad1e2eabc44" },
         "templateBytes": { "const": 45121 },
-        "realValidation": { "const": "unverified" }
+        "realValidation": { "const": "validated-rtx4090" }
       }
     },
     "expectedOutput": {
@@ -120,9 +120,7 @@
       ],
       "properties": {
         "mode": { "enum": ["t2v", "fl2va-first", "fl2va-first-last", "ref2va"] },
-        "supportStatus": {
-          "enum": ["trusted-workflow", "implementation-candidate-unverified"]
-        },
+        "supportStatus": { "const": "trusted-workflow" },
         "source": {
           "oneOf": [
             { "type": "null" },
@@ -195,7 +193,7 @@
           "type": "object",
           "properties": {
             "mode": { "const": "fl2va-first" },
-            "supportStatus": { "const": "implementation-candidate-unverified" },
+            "supportStatus": { "const": "trusted-workflow" },
             "source": { "$ref": "#/$defs/i2vSource" },
             "generationSpec": {
               "allOf": [
@@ -226,7 +224,7 @@
           "type": "object",
           "properties": {
             "mode": { "const": "fl2va-first-last" },
-            "supportStatus": { "const": "implementation-candidate-unverified" },
+            "supportStatus": { "const": "trusted-workflow" },
             "source": { "$ref": "#/$defs/i2vSource" },
             "generationSpec": {
               "allOf": [
@@ -257,7 +255,7 @@
           "type": "object",
           "properties": {
             "mode": { "const": "ref2va" },
-            "supportStatus": { "const": "implementation-candidate-unverified" },
+            "supportStatus": { "const": "trusted-workflow" },
             "source": { "$ref": "#/$defs/ref2vSource" },
             "generationSpec": {
               "allOf": [
