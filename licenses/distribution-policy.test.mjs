@@ -31,7 +31,8 @@ test('current packaging configs and generated inputs exclude unreviewed distribu
 
 test('packaging config accepts only the reviewed frontend resource', () => {
   const valid = {
-    files: ['main.js', 'distribution-assets.js', 'windows-release-contract.js'],
+    files: ['main.js', 'bounded-log-file.js', 'distribution-assets.js', 'windows-release-contract.js'],
+    asarUnpack: ['backend-app/migrations/**', 'backend-app/native/build/**'],
     extraResources: [
       { from: 'frontweb-dist', to: 'frontweb/dist', filter: ['**/*'] },
       { from: '../LICENSE', to: 'licenses/LICENSE' },

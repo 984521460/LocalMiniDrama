@@ -14,6 +14,10 @@ const MODEL_WEIGHT_EXTENSIONS = Object.freeze(new Set([
   '.tflite',
 ]));
 const MAX_SCANNED_FILES = 100_000;
+const REQUIRED_ASAR_UNPACK = Object.freeze([
+  'backend-app/migrations/**',
+  'backend-app/native/build/**',
+]);
 const EXPECTED_EXTRA_RESOURCES = Object.freeze([
   Object.freeze({ from: 'frontweb-dist', to: 'frontweb/dist', filter: Object.freeze(['**/*']) }),
   Object.freeze({ from: '../LICENSE', to: 'licenses/LICENSE' }),
@@ -65,9 +69,11 @@ function assertDistributionBuildConfig(packageOrBuild) {
   const build = packageOrBuild.build ?? packageOrBuild;
   if (!build || typeof build !== 'object' || Array.isArray(build)) invalid();
   if (!Array.isArray(build.files)) invalid();
-  for (const required of ['main.js', 'distribution-assets.js', 'windows-release-contract.js']) {
+  for (const required of ['main.js', 'bounded-log-file.js', 'distribution-assets.js', 'windows-release-contract.js']) {
     if (!build.files.includes(required)) invalid();
   }
+  if (!Array.isArray(build.asarUnpack)
+      || REQUIRED_ASAR_UNPACK.some((required) => !build.asarUnpack.includes(required))) invalid();
   const resources = build.extraResources;
   if (!Array.isArray(resources) || resources.length !== EXPECTED_EXTRA_RESOURCES.length) invalid();
   for (let index = 0; index < EXPECTED_EXTRA_RESOURCES.length; index += 1) {

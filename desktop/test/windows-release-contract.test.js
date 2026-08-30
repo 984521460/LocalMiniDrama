@@ -96,11 +96,15 @@ test('PE and packaged asar contracts fail closed on missing production payload',
 
   const required = [
     '/main.js',
+    '/bounded-log-file.js',
     '/distribution-assets.js',
     '/product-identity.js',
     '/user-data-path.js',
     '/windows-release-contract.js',
     '/backend-app/src/app.js',
+    '/backend-app/src/utils/boundedLogFile.js',
+    '/backend-app/src/utils/logDirectoryLease.js',
+    '/backend-app/native/build/electron-win32-x64/log-directory-lease.node',
     '/backend-app/src/services/projectZipService.js',
     '/node_modules/@local-mini-drama/storage/package.json',
     '/node_modules/@local-mini-drama/storage/dist/index.js',
@@ -154,12 +158,13 @@ test('PE and packaged asar contracts fail closed on missing production payload',
     'resources\\app.asar.unpacked\\node_modules\\@img\\sharp-win32-x64\\lib\\sharp-win32-x64.node',
     'resources\\app.asar.unpacked\\node_modules\\better-sqlite3\\build\\Release\\better_sqlite3.node',
     'resources\\app.asar.unpacked\\backend-app\\migrations\\v2\\0001_add_core_uids.sql',
+    'resources\\app.asar.unpacked\\backend-app\\native\\build\\electron-win32-x64\\log-directory-lease.node',
     'resources\\frontweb\\dist\\index.html',
     'resources\\licenses\\LICENSE',
     'resources\\licenses\\THIRD_PARTY_NOTICES.md',
   ];
   const { assertArchiveEntries } = require('../windows-release-contract');
-  assert.equal(assertArchiveEntries(archiveEntries).length, 7);
+  assert.equal(assertArchiveEntries(archiveEntries).length, 8);
   for (const forbidden of [
     'resources\\example_drama\\synthetic.zip',
     'resources\\ffmpeg\\ffmpeg.exe',
@@ -195,10 +200,11 @@ test('backend packaging copies the built local runtime modules used by productio
   ));
   assert.equal(backendPackageJson.dependencies.ajv, '8.20.0');
   assert.equal(packageJson.scripts['prepare-backend'],
-    'npm --prefix .. run build:packages && node scripts/copy-backend.js');
+    'npm --prefix .. run build:log-directory-lease && npm --prefix .. run build:packages && node scripts/copy-backend.js');
   assert.ok(packageJson.build.files.includes('schemas/**/*'));
   const copySource = fs.readFileSync(path.join(desktopRoot, 'scripts', 'copy-backend.js'), 'utf8');
   assert.match(copySource, /copyTreeSync\(schemaSource, schemaDestination\)/);
+  assert.match(copySource, /copyFileSync\(nativeSource, nativeDestination\)/);
 });
 
 test('packaging smoke app-data override only accepts a real task-owned directory', (t) => {

@@ -18,7 +18,7 @@
     "dist:cn": "node scripts/dist-cn.js",
     "dist:mac": "bash dist-mac.sh",
     "postinstall": "node scripts/copy-backend.js && npm run prepare:packaging && electron-builder install-app-deps",
-    "prepare-backend": "npm --prefix .. run build:packages && node scripts/copy-backend.js"
+    "prepare-backend": "npm --prefix .. run build:log-directory-lease && npm --prefix .. run build:packages && node scripts/copy-backend.js"
   },
   "dependencies": {
     "@local-mini-drama/credential-vault": "file:../packages/credential-vault",
@@ -51,6 +51,7 @@
     },
     "files": [
       "main.js",
+      "bounded-log-file.js",
       "distribution-assets.js",
       "product-identity.js",
       "startup-error.js",
@@ -62,6 +63,7 @@
       "schemas/**/*"
     ],
     "asarUnpack": [
+      "backend-app/native/build/**",
       "backend-app/migrations/**",
       "node_modules/better-sqlite3/**",
       "node_modules/sharp/**"

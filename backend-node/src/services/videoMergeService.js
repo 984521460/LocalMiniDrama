@@ -1,7 +1,14 @@
 const path = require('path');
 const fs = require('fs');
-const { getFfmpegPath, getFfprobePath, hasLocalFfmpeg } = require('../utils/ffmpegPath');
+const { getFfmpegPath, hasLocalFfmpeg } = require('../utils/ffmpegPath');
 const storageLayout = require('./storageLayout');
+const { publishWorkspaceFiles } = require('../utils/atomicOutputPublisher');
+const { commitWorkspaceTransaction, withTempWorkspace } = require('../utils/tempWorkspace');
+const { downloadResponseBodyToFile } = require('../utils/boundedResponseDownload');
+
+const MAX_MERGE_SCENES = 100;
+const MAX_REMOTE_VIDEO_BYTES = 512 * 1024 * 1024;
+const MAX_REMOTE_DOWNLOAD_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 
 function list(db, query) {
   let sql = 'FROM video_merges WHERE deleted_at IS NULL';
@@ -81,7 +88,15 @@ function getStorageRoot() {
 }
 
 /** 将 video_url 解析为本地文件路径，或下载到 temp 返回路径 */
-async function resolveVideoToLocalPath(videoUrl, baseUrl, storageRoot, tempDir, index, log) {
+async function resolveVideoToLocalPath(
+  videoUrl,
+  baseUrl,
+  storageRoot,
+  workspace,
+  downloadBudget,
+  index,
+  log,
+) {
   if (!videoUrl || typeof videoUrl !== 'string') return null;
   const u = videoUrl.trim();
   // 1) URL 以 baseUrl 开头（如 http://localhost:5679/static）-> 对应 storageRoot 下相对路径
@@ -111,13 +126,15 @@ async function resolveVideoToLocalPath(videoUrl, baseUrl, storageRoot, tempDir, 
   }
   // 4) 远程 URL：下载到 temp
   const ext = u.includes('.mp4') ? '.mp4' : u.includes('.webm') ? '.webm' : '.mp4';
-  const destPath = path.join(tempDir, `dl_${Date.now()}_${index}${ext}`);
+  const destPath = workspace.resolveFile(`download-${index}${ext}`);
   try {
-    const res = await fetch(u, { method: 'GET' });
+    const res = await fetch(u, { method: 'GET', signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    fs.writeFileSync(destPath, buf);
-    log.info('Video merge: downloaded to temp', { index, dest: destPath });
+    const allowance = Math.min(MAX_REMOTE_VIDEO_BYTES, downloadBudget.remainingBytes);
+    if (allowance <= 0) throw new Error('download budget exhausted');
+    const result = await downloadResponseBodyToFile(res, destPath, { maxBytes: allowance });
+    downloadBudget.remainingBytes -= result.bytes;
+    log.info('Video merge: downloaded to temp', { index, bytes: result.bytes });
     return destPath;
   } catch (e) {
     log.warn('Video merge: download failed', { index, url: u, error: e.message });
@@ -126,10 +143,9 @@ async function resolveVideoToLocalPath(videoUrl, baseUrl, storageRoot, tempDir, 
 }
 
 /** 使用 ffmpeg concat 合并多个视频文件 */
-function runFfmpegConcat(localPaths, outputPath, log) {
+function runFfmpegConcat(localPaths, outputPath, workspace, log) {
   const ffmpegBin = getFfmpegPath();
-  const isWin = process.platform === 'win32';
-  const listFile = path.join(path.dirname(outputPath), `concat_list_${Date.now()}.txt`);
+  const listFile = workspace.resolveFile('concat-list.txt');
   try {
     const lines = localPaths.map((p) => {
       const normalized = p.replace(/\\/g, '/');
@@ -192,99 +208,106 @@ async function processVideoMerge(db, log, mergeId, baseUrl) {
 
   const totalDuration = scenes.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
   const storageRoot = getStorageRoot();
-  const tempDir = path.join(require('os').tmpdir(), 'drama-video-merge');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-  const localPaths = [];
-  const toCleanup = [];
-  for (let i = 0; i < scenes.length; i++) {
-    const p = await resolveVideoToLocalPath(
-      scenes[i].video_url,
-      baseUrl,
-      storageRoot,
-      tempDir,
-      i,
-      log
-    );
-    if (p) {
-      localPaths.push(p);
-      if (p.startsWith(tempDir)) toCleanup.push(p);
-    }
-  }
-
-  const ffmpegAvailable = hasLocalFfmpeg();
-  log.info('Video merge: ffmpeg check', {
-    merge_id: mergeId,
-    has_ffmpeg: ffmpegAvailable,
-    ffmpeg_path: getFfmpegPath(),
-    local_video_count: localPaths.length,
-    cwd: process.cwd(),
-  });
-
-  let mergedRelativePath = null;
-  if (localPaths.length > 0 && ffmpegAvailable && localPaths.length <= 100) {
-    const projectSubdir = storageLayout.getProjectStorageSubdir(db, r.drama_id);
-    const sub = projectSubdir && String(projectSubdir).trim();
-    const mergedDir = sub
-      ? path.join(storageRoot, sub, 'videos', 'merged')
-      : path.join(storageRoot, 'videos', 'merged');
-    if (!fs.existsSync(mergedDir)) fs.mkdirSync(mergedDir, { recursive: true });
-    const outputFileName = `merged_${Date.now()}.mp4`;
-    const outputPath = path.join(mergedDir, outputFileName);
-    const ok = runFfmpegConcat(localPaths, outputPath, log);
-    if (ok && fs.existsSync(outputPath)) {
-      mergedRelativePath = sub
-        ? path.join(sub, 'videos', 'merged', outputFileName).replace(/\\/g, '/')
-        : path.join('videos', 'merged', outputFileName).replace(/\\/g, '/');
-      log.info('Video merge completed (ffmpeg)', { merge_id: mergeId, episode_id: episodeId, output: mergedRelativePath });
-    }
-  }
-
-  let mergeOpts = {};
-  try {
-    mergeOpts = JSON.parse(r.merge_options || '{}');
-  } catch (_) {
-    mergeOpts = {};
-  }
-  const postNeed =
-    !!mergeOpts.burn_narration_subtitles
-    || !!mergeOpts.burn_dialogue_audio
-    || !!(mergeOpts.watermark_text && String(mergeOpts.watermark_text).trim());
-  if (mergedRelativePath && ffmpegAvailable && postNeed) {
-    const mergedAbsPath = path.join(storageRoot, mergedRelativePath.replace(/\//g, path.sep));
-    if (fs.existsSync(mergedAbsPath)) {
-      const mergedPP = require('./mergedEpisodePostProcess');
-      const post = await mergedPP.runMergedEpisodePostProcess(db, log, {
-        mergedAbsPath,
-        storageRoot,
-        scenes,
-        episodeId,
-        mergeOpts,
-      });
-      if (post.ok && post.relativePath) {
-        mergedRelativePath = post.relativePath;
-        log.info('Video merge: merged episode post-process', { merge_id: mergeId, out: mergedRelativePath });
-      } else if (post.error && post.error !== 'NO_POST_OPTS') {
-        log.warn('Video merge: post-process skipped', { merge_id: mergeId, err: post.error });
+  return withTempWorkspace('video-merge', log, async (workspace) => {
+    const localPaths = [];
+    const ffmpegAvailable = hasLocalFfmpeg();
+    if (ffmpegAvailable && scenes.length <= MAX_MERGE_SCENES) {
+      const downloadBudget = { remainingBytes: MAX_REMOTE_DOWNLOAD_TOTAL_BYTES };
+      for (let i = 0; i < scenes.length; i++) {
+        const p = await resolveVideoToLocalPath(
+          scenes[i].video_url,
+          baseUrl,
+          storageRoot,
+          workspace,
+          downloadBudget,
+          i,
+          log
+        );
+        if (p) localPaths.push(p);
       }
     }
-  }
 
-  for (const p of toCleanup) {
-    try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {}
-  }
+    log.info('Video merge: ffmpeg check', {
+      merge_id: mergeId,
+      has_ffmpeg: ffmpegAvailable,
+      local_video_count: localPaths.length,
+    });
 
-  const finalMergedUrl = mergedRelativePath || mergedUrlFallback;
-  db.prepare(
-    'UPDATE video_merges SET status = ?, merged_url = ?, duration = ?, completed_at = ?, error_msg = ? WHERE id = ?'
-  ).run('completed', finalMergedUrl, Math.round(totalDuration) || null, now, null, mergeId);
-  db.prepare('UPDATE episodes SET video_url = ?, status = ?, updated_at = ? WHERE id = ?').run(finalMergedUrl, 'completed', now, episodeId);
-  if (taskId) {
-    taskService.updateTaskResult(db, taskId, { merge_id: mergeId, video_url: finalMergedUrl, duration: Math.round(totalDuration) });
-  }
-  if (!mergedRelativePath) {
-    log.info('Video merge completed (first-clip fallback)', { merge_id: mergeId, episode_id: episodeId });
-  }
+    let mergedRelativePath = null;
+    if (localPaths.length > 0 && ffmpegAvailable && localPaths.length <= MAX_MERGE_SCENES) {
+      const projectSubdir = storageLayout.getProjectStorageSubdir(db, r.drama_id);
+      const sub = projectSubdir && String(projectSubdir).trim();
+      const mergedDir = sub
+        ? path.join(storageRoot, sub, 'videos', 'merged')
+        : path.join(storageRoot, 'videos', 'merged');
+      if (!fs.existsSync(mergedDir)) fs.mkdirSync(mergedDir, { recursive: true });
+      const outputFileName = `merged_${Date.now()}.mp4`;
+      const outputPath = path.join(mergedDir, outputFileName);
+      const candidateOutputPath = workspace.resolveFile('merged-output.mp4');
+      const ok = runFfmpegConcat(localPaths, candidateOutputPath, workspace, log);
+      if (ok && fs.existsSync(candidateOutputPath)) {
+        publishWorkspaceFiles(workspace, [
+          { sourcePath: candidateOutputPath, targetPath: outputPath },
+        ]);
+        mergedRelativePath = sub
+          ? path.join(sub, 'videos', 'merged', outputFileName).replace(/\\/g, '/')
+          : path.join('videos', 'merged', outputFileName).replace(/\\/g, '/');
+        log.info('Video merge completed (ffmpeg)', {
+          merge_id: mergeId,
+          episode_id: episodeId,
+          output: mergedRelativePath,
+        });
+      }
+    }
+
+    let mergeOpts = {};
+    try {
+      mergeOpts = JSON.parse(r.merge_options || '{}');
+    } catch (_) {
+      mergeOpts = {};
+    }
+    const postNeed =
+      !!mergeOpts.burn_narration_subtitles
+      || !!mergeOpts.burn_dialogue_audio
+      || !!(mergeOpts.watermark_text && String(mergeOpts.watermark_text).trim());
+    if (mergedRelativePath && ffmpegAvailable && postNeed) {
+      const mergedAbsPath = path.join(storageRoot, mergedRelativePath.replace(/\//g, path.sep));
+      if (fs.existsSync(mergedAbsPath)) {
+        const mergedPP = require('./mergedEpisodePostProcess');
+        const post = await mergedPP.runMergedEpisodePostProcess(db, log, {
+          mergedAbsPath,
+          storageRoot,
+          scenes,
+          episodeId,
+          mergeOpts,
+          workspace,
+        });
+        if (post.ok && post.relativePath) {
+          mergedRelativePath = post.relativePath;
+          log.info('Video merge: merged episode post-process', {
+            merge_id: mergeId,
+            out: mergedRelativePath,
+          });
+        } else if (post.error && post.error !== 'NO_POST_OPTS') {
+          log.warn('Video merge: post-process skipped', { merge_id: mergeId, err: post.error });
+        }
+      }
+    }
+
+    const finalMergedUrl = mergedRelativePath || mergedUrlFallback;
+    commitWorkspaceTransaction(db, workspace, () => {
+      db.prepare(
+        'UPDATE video_merges SET status = ?, merged_url = ?, duration = ?, completed_at = ?, error_msg = ? WHERE id = ?'
+      ).run('completed', finalMergedUrl, Math.round(totalDuration) || null, now, null, mergeId);
+      db.prepare('UPDATE episodes SET video_url = ?, status = ?, updated_at = ? WHERE id = ?').run(finalMergedUrl, 'completed', now, episodeId);
+      if (taskId) {
+        taskService.updateTaskResult(db, taskId, { merge_id: mergeId, video_url: finalMergedUrl, duration: Math.round(totalDuration) });
+      }
+    });
+    if (!mergedRelativePath) {
+      log.info('Video merge completed (first-clip fallback)', { merge_id: mergeId, episode_id: episodeId });
+    }
+  });
 }
 
 module.exports = {

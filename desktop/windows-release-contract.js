@@ -12,11 +12,15 @@ const {
 const WINDOWS_RELEASE_ERROR = 'WINDOWS_RELEASE_CONTRACT_INVALID';
 const REQUIRED_ASAR_ENTRIES = Object.freeze([
   '/main.js',
+  '/bounded-log-file.js',
   '/distribution-assets.js',
   '/product-identity.js',
   '/user-data-path.js',
   '/windows-release-contract.js',
   '/backend-app/src/app.js',
+  '/backend-app/src/utils/boundedLogFile.js',
+  '/backend-app/src/utils/logDirectoryLease.js',
+  '/backend-app/native/build/electron-win32-x64/log-directory-lease.node',
   '/backend-app/src/services/projectZipService.js',
   '/node_modules/@local-mini-drama/storage/package.json',
   '/node_modules/@local-mini-drama/storage/dist/index.js',
@@ -50,6 +54,7 @@ const REQUIRED_ARCHIVE_ENTRIES = Object.freeze([
   'resources/app.asar.unpacked/node_modules/@img/sharp-win32-x64/lib/sharp-win32-x64.node',
   'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
   'resources/app.asar.unpacked/backend-app/migrations/v2/0001_add_core_uids.sql',
+  'resources/app.asar.unpacked/backend-app/native/build/electron-win32-x64/log-directory-lease.node',
   'resources/frontweb/dist/index.html',
   'resources/licenses/LICENSE',
   'resources/licenses/THIRD_PARTY_NOTICES.md',
@@ -211,9 +216,11 @@ function assertWindowsReleaseConfig(packageJson) {
   if (packageJson.publish !== undefined || build.publish !== undefined) invalid();
   if (!Array.isArray(build.files)) invalid();
   if (!Array.isArray(build.asarUnpack)
-    || !build.asarUnpack.includes('backend-app/migrations/**')) invalid();
+    || !build.asarUnpack.includes('backend-app/migrations/**')
+    || !build.asarUnpack.includes('backend-app/native/build/**')) invalid();
   for (const required of [
     'main.js',
+    'bounded-log-file.js',
     'distribution-assets.js',
     'product-identity.js',
     'user-data-path.js',
@@ -312,6 +319,7 @@ function assertUnpackedPayload({ desktopRoot, packageJson, asarEntries, fsImpl =
     ['resources', 'licenses', 'THIRD_PARTY_NOTICES.md'],
     ['resources', 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'],
     ['resources', 'app.asar.unpacked', 'backend-app', 'migrations', 'v2', '0001_add_core_uids.sql'],
+    ['resources', 'app.asar.unpacked', 'backend-app', 'native', 'build', 'electron-win32-x64', 'log-directory-lease.node'],
     ['resources', 'app.asar.unpacked', 'node_modules', '@img', 'sharp-win32-x64', 'lib', 'sharp-win32-x64.node'],
   ]) {
     try {

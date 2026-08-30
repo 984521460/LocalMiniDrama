@@ -6,6 +6,7 @@
   },
   "files": [
     "main.js",
+    "bounded-log-file.js",
     "distribution-assets.js",
     "product-identity.js",
     "startup-error.js",
@@ -16,6 +17,8 @@
     "node_modules/**/*"
   ],
   "asarUnpack": [
+    "backend-app/native/build/**",
+    "backend-app/migrations/**",
     "node_modules/better-sqlite3/**",
     "node_modules/sharp/**",
     "backend-app/tools/**"

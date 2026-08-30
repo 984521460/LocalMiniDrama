@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { getFfmpegPath, getFfprobePath } = require('../utils/ffmpegPath');
+const { publishWorkspaceFiles } = require('../utils/atomicOutputPublisher');
+const { withTempWorkspace } = require('../utils/tempWorkspace');
 
 function ffprobeDurationSec(filePath) {
   const probe = getFfprobePath();
@@ -118,7 +120,7 @@ function fitAudioToSlot(inputPath, slotSec, outPath, log) {
 }
 
 function concatMp3List(segmentPaths, outPath, log) {
-  const listFile = path.join(path.dirname(outPath), `narr_concat_${Date.now()}.txt`);
+  const listFile = path.join(path.dirname(outPath), 'narration-concat-list.txt');
   try {
     const lines = segmentPaths.map((p) => {
       const normalized = path.resolve(p).replace(/\\/g, '/');
@@ -224,12 +226,11 @@ async function runNarrationSubtitlePostProcess(db, log, opts) {
   let tMs = 0;
   const srtLines = [];
   let srtIdx = 1;
-  const segmentFiles = [];
-  const tempRoot = path.join(require('os').tmpdir(), 'drama-narr-post', String(episodeId || 0), String(Date.now()));
-  fs.mkdirSync(tempRoot, { recursive: true });
   const ttsService = require('./ttsService');
 
   try {
+    const result = await withTempWorkspace('narration-post', log, async (workspace) => {
+      const segmentFiles = [];
     for (let i = 0; i < scenes.length; i++) {
       const sc = scenes[i];
       const sbId = Number(sc.scene_id);
@@ -245,14 +246,14 @@ async function runNarrationSubtitlePostProcess(db, log, opts) {
       }
       tMs += Math.round(slotSec * 1000);
 
-      const segFit = path.join(tempRoot, `seg_${i}_fit.mp3`);
+      const segFit = workspace.resolveFile(`segment-${i}-fit.mp3`);
 
       if (!text) {
         if (!writeSilenceMp3(slotSec, segFit, log)) {
           return { ok: false, error: `生成静音片段失败 #${i}` };
         }
       } else {
-        const segRaw = path.join(tempRoot, `seg_${i}_raw.mp3`);
+        const segRaw = workspace.resolveFile(`segment-${i}-raw.mp3`);
         let synth;
         try {
           synth = await ttsService.synthesize(db, log, {
@@ -285,55 +286,54 @@ async function runNarrationSubtitlePostProcess(db, log, opts) {
       return { ok: false, error: 'NO_NARRATION' };
     }
 
-    const narrConcat = path.join(tempRoot, 'narr_concat.mp3');
+    const narrConcat = workspace.resolveFile('narration-concat.mp3');
     if (!concatMp3List(segmentFiles, narrConcat, log)) {
       return { ok: false, error: '旁白拼接失败' };
     }
 
-    const narrAligned = path.join(tempRoot, 'narr_aligned.mp3');
+    const narrAligned = workspace.resolveFile('narration-aligned.mp3');
     if (!alignNarrationToVideoDuration(narrConcat, videoDur, narrAligned, log)) {
       return { ok: false, error: '旁白与视频总时长对齐失败' };
     }
 
     const baseName = path.basename(mergedAbsPath, path.extname(mergedAbsPath));
-    const srtPath = path.join(path.dirname(mergedAbsPath), `${baseName}_narration.srt`);
-    fs.writeFileSync(srtPath, `\uFEFF${srtLines.join('\n')}\n`, 'utf8');
+    const finalSrtPath = path.join(path.dirname(mergedAbsPath), `${baseName}_narration.srt`);
+    const candidateSrtPath = workspace.resolveFile('narration-subtitles.srt');
+    fs.writeFileSync(candidateSrtPath, `\uFEFF${srtLines.join('\n')}\n`, 'utf8');
 
-    const outAbs = path.join(path.dirname(mergedAbsPath), `${baseName}_subs.mp4`);
-    if (!burnSubtitlesAndMux(mergedAbsPath, narrAligned, srtPath, outAbs, log)) {
+    const finalOutPath = path.join(path.dirname(mergedAbsPath), `${baseName}_subs.mp4`);
+    const candidateOutPath = workspace.resolveFile('narration-output.mp4');
+    if (!burnSubtitlesAndMux(mergedAbsPath, narrAligned, candidateSrtPath, candidateOutPath, log)) {
       return { ok: false, error: '烧录字幕或混音失败（请确认已安装 ffmpeg 且支持 libx264）' };
     }
 
-    if (!fs.existsSync(outAbs)) {
+    if (!fs.existsSync(candidateOutPath)) {
       return { ok: false, error: '输出文件未生成' };
     }
 
-    const relFromRoot = path.relative(storageRoot, outAbs).replace(/\\/g, '/');
-    const subRel = path.relative(storageRoot, srtPath).replace(/\\/g, '/');
+    publishWorkspaceFiles(workspace, [
+      { sourcePath: candidateOutPath, targetPath: finalOutPath },
+      { sourcePath: candidateSrtPath, targetPath: finalSrtPath },
+    ]);
 
-    try {
-      if (fs.existsSync(mergedAbsPath) && outAbs !== mergedAbsPath) {
-        fs.unlinkSync(mergedAbsPath);
-      }
-    } catch (e) {
-      log.warn('narration post: could not remove intermediate merge', { error: e.message });
-    }
+    const relFromRoot = path.relative(storageRoot, finalOutPath).replace(/\\/g, '/');
+    const subRel = path.relative(storageRoot, finalSrtPath).replace(/\\/g, '/');
 
     log.info('narration post: done', { episode_id: episodeId, video: relFromRoot, srt: subRel });
 
-    return { ok: true, relativePath: relFromRoot, srtRelativePath: subRel };
+      return { ok: true, relativePath: relFromRoot, srtRelativePath: subRel };
+    });
+    if (result.ok) {
+      try {
+        if (fs.existsSync(mergedAbsPath)) fs.unlinkSync(mergedAbsPath);
+      } catch (e) {
+        log.warn('narration post: could not remove intermediate merge', { error: e.message });
+      }
+    }
+    return result;
   } catch (e) {
     log.warn('narration post: exception', { error: e.message });
     return { ok: false, error: e.message || String(e) };
-  } finally {
-    try {
-      for (const p of fs.readdirSync(tempRoot)) {
-        try {
-          fs.unlinkSync(path.join(tempRoot, p));
-        } catch (_) {}
-      }
-      fs.rmdirSync(tempRoot);
-    } catch (_) {}
   }
 }
 

@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { getFfmpegPath, getFfprobePath } = require('../utils/ffmpegPath');
+const { publishWorkspaceFiles } = require('../utils/atomicOutputPublisher');
+const { withTempWorkspace } = require('../utils/tempWorkspace');
 
 function ffprobeDurationSec(filePath) {
   const probe = getFfprobePath();
@@ -108,7 +110,7 @@ function fitAudioToSlot(inputPath, slotSec, outPath, log) {
 }
 
 function concatMp3List(segmentPaths, outPath, log) {
-  const listFile = path.join(path.dirname(outPath), `mix_concat_${Date.now()}.txt`);
+  const listFile = path.join(path.dirname(outPath), 'mix-concat-list.txt');
   try {
     const lines = segmentPaths.map((p) => {
       const normalized = path.resolve(p).replace(/\\/g, '/');
@@ -202,7 +204,14 @@ function getDrawtextFontOption() {
  * @param {object} mergeOpts — burn_dialogue_audio, burn_narration_subtitles, watermark_text
  */
 async function runMergedEpisodePostProcess(db, log, opts) {
-  const { mergedAbsPath, storageRoot, scenes, episodeId, mergeOpts = {} } = opts;
+  const {
+    mergedAbsPath,
+    storageRoot,
+    scenes,
+    episodeId,
+    mergeOpts = {},
+    workspace: sharedWorkspace = null,
+  } = opts;
   const wantDial = !!mergeOpts.burn_dialogue_audio;
   const wantNarr = !!mergeOpts.burn_narration_subtitles;
   const watermarkText = (mergeOpts.watermark_text && String(mergeOpts.watermark_text).trim())
@@ -223,13 +232,14 @@ async function runMergedEpisodePostProcess(db, log, opts) {
     return { ok: false, error: '无法读取合成视频时长' };
   }
 
-  const tempRoot = path.join(require('os').tmpdir(), 'drama-merged-post', String(episodeId || 0), String(Date.now()));
-  fs.mkdirSync(tempRoot, { recursive: true });
   const ttsService = require('./ttsService');
 
   try {
+    const execute = async (workspace) => {
+      const tempRoot = workspace.root;
     let alignedAudioPath = null;
     let srtPath = null;
+    let finalSrtPath = null;
     let srtLines = [];
 
     if (needAudio) {
@@ -334,13 +344,15 @@ async function runMergedEpisodePostProcess(db, log, opts) {
 
       if (wantNarr && srtLines.length > 0) {
         const baseName = path.basename(mergedAbsPath, path.extname(mergedAbsPath));
-        srtPath = path.join(path.dirname(mergedAbsPath), `${baseName}_narration.srt`);
+        finalSrtPath = path.join(path.dirname(mergedAbsPath), `${baseName}_narration.srt`);
+        srtPath = workspace.resolveFile('narration-subtitles.srt');
         fs.writeFileSync(srtPath, `\uFEFF${srtLines.join('\n')}\n`, 'utf8');
       }
     }
 
     const baseName = path.basename(mergedAbsPath, path.extname(mergedAbsPath));
-    const outAbs = path.join(path.dirname(mergedAbsPath), `${baseName}_post.mp4`);
+    const finalOutPath = path.join(path.dirname(mergedAbsPath), `${baseName}_post.mp4`);
+    const outAbs = workspace.resolveFile('post-process-output.mp4');
 
     const hasSubs = !!(srtPath && fs.existsSync(srtPath));
     const hasWm = !!watermarkText;
@@ -403,30 +415,31 @@ async function runMergedEpisodePostProcess(db, log, opts) {
       return { ok: false, error: '输出文件未生成' };
     }
 
-    const relFromRoot = path.relative(storageRoot, outAbs).replace(/\\/g, '/');
-
-    try {
-      if (fs.existsSync(mergedAbsPath) && outAbs !== mergedAbsPath) {
-        fs.unlinkSync(mergedAbsPath);
-      }
-    } catch (e) {
-      log.warn('merged post: could not remove intermediate', { error: e.message });
+    const publications = [{ sourcePath: outAbs, targetPath: finalOutPath }];
+    if (srtPath && finalSrtPath) {
+      publications.push({ sourcePath: srtPath, targetPath: finalSrtPath });
     }
+    publishWorkspaceFiles(workspace, publications);
+
+    const relFromRoot = path.relative(storageRoot, finalOutPath).replace(/\\/g, '/');
 
     log.info('merged post: done', { episode_id: episodeId, video: relFromRoot });
-    return { ok: true, relativePath: relFromRoot };
+      return { ok: true, relativePath: relFromRoot };
+    };
+    const result = sharedWorkspace
+      ? await execute(sharedWorkspace)
+      : await withTempWorkspace('merged-post', log, execute);
+    if (result.ok) {
+      try {
+        if (fs.existsSync(mergedAbsPath)) fs.unlinkSync(mergedAbsPath);
+      } catch (e) {
+        log.warn('merged post: could not remove intermediate', { error: e.message });
+      }
+    }
+    return result;
   } catch (e) {
     log.warn('merged post: exception', { error: e.message });
     return { ok: false, error: e.message || String(e) };
-  } finally {
-    try {
-      for (const p of fs.readdirSync(tempRoot)) {
-        try {
-          fs.unlinkSync(path.join(tempRoot, p));
-        } catch (_) {}
-      }
-      fs.rmdirSync(tempRoot);
-    } catch (_) {}
   }
 }
 

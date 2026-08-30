@@ -27,3 +27,4 @@ build_edu
 node_modules
 .codex/
 packages/*/dist/
+backend-node/native/build/

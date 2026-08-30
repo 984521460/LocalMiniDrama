@@ -1,9 +1,26 @@
 'use strict';
 
+const { types } = require('node:util');
+
 const REDACTED = '[redacted]';
 const CIRCULAR = '[circular]';
+const TRUNCATED = '[truncated]';
+const UNSERIALIZABLE = '[unserializable]';
 const MAX_REGISTERED_SECRETS = 512;
+const MAX_LOG_TEXT_CODE_UNITS = 8 * 1024;
+const MAX_LOG_VALUE_STRING_CODE_UNITS = 2 * 1024;
+const MAX_LOG_VALUE_ENTRIES = 64;
+const MAX_LOG_VALUE_DEPTH = 6;
 const registeredSecrets = new Set();
+const GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const GET_OWN_PROPERTY_DESCRIPTOR = Object.getOwnPropertyDescriptor;
+const HAS_OWN = Object.hasOwn;
+const REFLECT_APPLY = Reflect.apply;
+const REFLECT_OWN_KEYS = Reflect.ownKeys;
+const JSON_STRINGIFY = JSON.stringify;
+const ARRAY_JOIN = Array.prototype.join;
+const LOCAL_PATH = '[path]';
+const PUBLIC_ROUTE = /^\/(?:api(?:\/|$)|v[0-9]+(?:\/|$))/u;
 
 const SENSITIVE_KEY_MARKERS = Object.freeze([
   'accesstoken',
@@ -63,9 +80,11 @@ function isSensitiveLogKey(key) {
   const normalized = normalizeLogKey(key);
   if (!normalized) return false;
   if (normalized === 'ak' || normalized === 'sk') return true;
-  return SENSITIVE_KEY_MARKERS.some((marker) => (
-    normalized === marker || normalized.endsWith(marker)
-  ));
+  for (let index = 0; index < SENSITIVE_KEY_MARKERS.length; index += 1) {
+    const marker = SENSITIVE_KEY_MARKERS[index];
+    if (normalized === marker || normalized.endsWith(marker)) return true;
+  }
+  return false;
 }
 
 function escapeRegExp(value) {
@@ -152,6 +171,146 @@ function redactSecretText(value) {
   return output;
 }
 
+function redactPrivatePathText(value) {
+  const source = String(value ?? '');
+  const trimmed = source.trim();
+  const isWebUrl = /^https?:\/\//iu.test(trimmed);
+  const isPrivateWindowsPath = /^(?:[A-Za-z]:[\\/]|\\\\)/u.test(trimmed);
+  const isPrivatePosixPath = trimmed.startsWith('/') && !PUBLIC_ROUTE.test(trimmed);
+  if (!isWebUrl && (isPrivateWindowsPath || isPrivatePosixPath)) {
+    return LOCAL_PATH;
+  }
+  return source
+    .replace(/(^|[^A-Za-z0-9])([A-Za-z]:[\\/][^\s"'`,;}\])]+)/gu,
+      (_match, prefix) => `${prefix}${LOCAL_PATH}`)
+    .replace(/\\\\[^\\/\s]+[\\/][^\s"'`,;}\])]+/gu, LOCAL_PATH)
+    .replace(/(^|\s)(\/(?!\/)[^\s"'`,;}\])]+)/gu,
+      (_match, prefix, candidate) => (
+        PUBLIC_ROUTE.test(candidate) ? `${prefix}${candidate}` : `${prefix}${LOCAL_PATH}`
+      ));
+}
+
+function boundedPrimitiveText(value, maxCodeUnits = MAX_LOG_TEXT_CODE_UNITS) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object' || typeof value === 'function') return UNSERIALIZABLE;
+  let source;
+  try {
+    source = String(value);
+  } catch (_) {
+    return UNSERIALIZABLE;
+  }
+  const truncated = source.length > maxCodeUnits;
+  const bounded = truncated ? source.slice(0, maxCodeUnits) : source;
+  const redacted = redactSecretText(redactPrivatePathText(bounded));
+  return truncated ? `${redacted}${TRUNCATED}` : redacted;
+}
+
+function quoted(value) {
+  return REFLECT_APPLY(JSON_STRINGIFY, JSON, [String(value)]);
+}
+
+function boundedRedactedStringify(value) {
+  const ancestors = new WeakSet();
+  const budget = { entries: MAX_LOG_VALUE_ENTRIES };
+
+  function serialize(current, depth) {
+    if (typeof current === 'string') {
+      return quoted(boundedPrimitiveText(current, MAX_LOG_VALUE_STRING_CODE_UNITS));
+    }
+    if (typeof current === 'bigint' || typeof current === 'symbol' || typeof current === 'function') {
+      return quoted(boundedPrimitiveText(current, MAX_LOG_VALUE_STRING_CODE_UNITS));
+    }
+    if (current === null) return 'null';
+    if (current === undefined) return quoted('undefined');
+    if (typeof current === 'number') return Number.isFinite(current) ? String(current) : quoted(String(current));
+    if (typeof current === 'boolean') return current ? 'true' : 'false';
+    if (typeof current !== 'object' || types.isProxy(current)) return quoted(UNSERIALIZABLE);
+    if (depth >= MAX_LOG_VALUE_DEPTH || budget.entries <= 0) return quoted(TRUNCATED);
+    if (ancestors.has(current)) return quoted(CIRCULAR);
+    if (Buffer.isBuffer(current)) return quoted('[buffer]');
+    if (types.isDate(current)) return quoted('[date]');
+    if (types.isMap(current)) return quoted('[map]');
+    if (types.isSet(current)) return quoted('[set]');
+
+    if (Array.isArray(current)) {
+      let lengthDescriptor;
+      try {
+        lengthDescriptor = REFLECT_APPLY(GET_OWN_PROPERTY_DESCRIPTOR, Object, [current, 'length']);
+      } catch (_) {
+        return quoted(UNSERIALIZABLE);
+      }
+      const length = lengthDescriptor
+        && REFLECT_APPLY(HAS_OWN, Object, [lengthDescriptor, 'value'])
+        && Number.isSafeInteger(lengthDescriptor.value)
+        && lengthDescriptor.value >= 0
+        ? lengthDescriptor.value
+        : 0;
+      ancestors.add(current);
+      try {
+        const parts = [];
+        const count = Math.min(length, budget.entries);
+        for (let index = 0; index < count; index += 1) {
+          budget.entries -= 1;
+          let descriptor;
+          try {
+            descriptor = REFLECT_APPLY(GET_OWN_PROPERTY_DESCRIPTOR, Object, [current, String(index)]);
+          } catch (_) {
+            descriptor = null;
+          }
+          parts[parts.length] = descriptor && REFLECT_APPLY(HAS_OWN, Object, [descriptor, 'value'])
+            ? serialize(descriptor.value, depth + 1)
+            : quoted('[accessor-or-hole]');
+        }
+        if (count < length) parts[parts.length] = quoted(TRUNCATED);
+        return `[${REFLECT_APPLY(ARRAY_JOIN, parts, [','])}]`;
+      } catch (_) {
+        return quoted(UNSERIALIZABLE);
+      } finally {
+        ancestors.delete(current);
+      }
+    }
+
+    let descriptors;
+    try {
+      descriptors = REFLECT_APPLY(GET_OWN_PROPERTY_DESCRIPTORS, Object, [current]);
+    } catch (_) {
+      return quoted(UNSERIALIZABLE);
+    }
+
+    ancestors.add(current);
+    try {
+      const parts = [];
+      const keys = REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+      for (let index = 0; index < keys.length && budget.entries > 0; index += 1) {
+        const key = keys[index];
+        if (typeof key !== 'string' || key === 'stack') continue;
+        const descriptor = descriptors[key];
+        budget.entries -= 1;
+        const child = isSensitiveLogKey(key)
+          ? quoted(REDACTED)
+          : descriptor && REFLECT_APPLY(HAS_OWN, Object, [descriptor, 'value'])
+            ? serialize(descriptor.value, depth + 1)
+            : quoted('[accessor]');
+        parts[parts.length] = `${quoted(boundedPrimitiveText(key, 128))}:${child}`;
+      }
+      if (keys.length > parts.length && budget.entries <= 0) {
+        parts[parts.length] = `${quoted('$truncated')}:true`;
+      }
+      return `{${REFLECT_APPLY(ARRAY_JOIN, parts, [','])}}`;
+    } catch (_) {
+      return quoted(UNSERIALIZABLE);
+    } finally {
+      ancestors.delete(current);
+    }
+  }
+
+  try {
+    return serialize(value, 0);
+  } catch (_) {
+    return quoted(UNSERIALIZABLE);
+  }
+}
+
 function redactLogValue(value, ancestors = new WeakSet()) {
   if (typeof value === 'string') return redactSecretText(value);
   if (typeof value === 'bigint' || typeof value === 'symbol' || typeof value === 'function') return String(value);
@@ -204,11 +363,15 @@ function safeRedactedStringify(value) {
 }
 
 module.exports = {
+  MAX_LOG_TEXT_CODE_UNITS,
   REDACTED,
+  boundedPrimitiveText,
+  boundedRedactedStringify,
   isSensitiveLogKey,
   registerKnownLogSecrets,
   registerLogSecrets,
   redactLogValue,
+  redactPrivatePathText,
   redactSecretText,
   safeRedactedStringify,
 };

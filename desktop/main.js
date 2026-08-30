@@ -5,6 +5,7 @@ const { PRODUCT_NAME } = require('./product-identity');
 const { formatStartupError } = require('./startup-error');
 const { resolveUserDataPath } = require('./user-data-path');
 const { resolvePackagingSmokeAppData } = require('./windows-release-contract');
+const { createBoundedLogWriter } = require('./bounded-log-file');
 
 // 显式固定 userData 目录，使开发模式与打包 exe 路径完全一致，防止 productName 变更导致路径漂移
 // 迁移必须早于日志目录创建，否则空的新目录会掩盖旧版数据。
@@ -17,28 +18,32 @@ const USERDATA_DIR = userDataResolution.path;
 app.setPath('userData', USERDATA_DIR);
 
 const MAIN_STARTUP_LOG = path.join(USERDATA_DIR, 'main-startup.log');
+const mainLogWriter = createBoundedLogWriter({
+  filePath: MAIN_STARTUP_LOG,
+  maxLineBytes: 16 * 1024,
+  maxFileBytes: 1024 * 1024,
+  maxBackups: 2,
+});
 function writeMainLog(msg) {
-  const line = `${new Date().toISOString()} ${msg}\n`;
+  const text = typeof msg === 'string' ? msg.slice(0, 8 * 1024) : 'invalid startup log event';
   try {
-    if (!fs.existsSync(USERDATA_DIR)) fs.mkdirSync(USERDATA_DIR, { recursive: true });
-    fs.appendFileSync(MAIN_STARTUP_LOG, line);
+    mainLogWriter.write(`${new Date().toISOString()} ${text}`);
   } catch (_) {}
 }
 
 process.on('uncaughtException', (err) => {
-  writeMainLog(`uncaughtException: ${err && err.stack ? err.stack : err}`);
+  writeMainLog(`uncaughtException: ${formatStartupError(err).text}`);
 });
 process.on('unhandledRejection', (reason) => {
-  const text = reason instanceof Error ? reason.stack : String(reason);
-  writeMainLog(`unhandledRejection: ${text}`);
+  writeMainLog(`unhandledRejection: ${formatStartupError(reason).text}`);
 });
 
-writeMainLog(`main.js loaded packaged=${app.isPackaged} exec=${process.execPath}`);
+writeMainLog(`main.js loaded packaged=${app.isPackaged}`);
 if (userDataResolution.migratedFrom) {
   writeMainLog('legacy user data migrated to the stable application directory');
 }
 if (userDataResolution.migrationError) {
-  writeMainLog(`legacy user data migration deferred: ${userDataResolution.migrationError.message}`);
+  writeMainLog(`legacy user data migration deferred: ${formatStartupError(userDataResolution.migrationError).text}`);
 }
 
 const BACKEND_APP_PATH = path.join(__dirname, 'backend-app');
@@ -168,8 +173,8 @@ function createWindow(port) {
       writeMainLog('window shown (fallback timeout, check page load)');
     }
   }, 8000);
-  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
-    writeMainLog(`did-fail-load code=${code} desc=${desc} url=${url}`);
+  win.webContents.on('did-fail-load', (_e, code) => {
+    writeMainLog(`did-fail-load code=${Number.isInteger(code) ? code : 'unknown'}`);
   });
   writeMainLog(`createWindow loadURL http://127.0.0.1:${port}`);
   win.loadURL(`http://127.0.0.1:${port}`);

@@ -31,9 +31,11 @@ test('desktop package metadata uses the approved product identity', () => {
   assert.equal(packageJson.build.nsis.runAfterFinish, false);
   assert.equal(packageJson.build.publish, undefined);
   assert.ok(packageJson.build.files.includes('product-identity.js'));
+  assert.ok(packageJson.build.files.includes('bounded-log-file.js'));
   assert.ok(packageJson.build.files.includes('startup-error.js'));
   assert.ok(packageJson.build.files.includes('user-data-path.js'));
   assert.ok(packageJson.build.files.includes('windows-release-contract.js'));
+  assert.ok(packageJson.build.asarUnpack.includes('backend-app/native/build/**'));
   assert.equal(packageJson.scripts['verify:windows-release'], 'node scripts/verify-windows-release.js');
 });
 
@@ -47,9 +49,11 @@ test('alternate builder configs keep the same product name and app id', () => {
     assert.equal(config.productName, identity.PRODUCT_NAME, fileName);
     assert.equal(config.appId, identity.APP_ID, fileName);
     assert.ok(config.files.includes('product-identity.js'), fileName);
+    assert.ok(config.files.includes('bounded-log-file.js'), fileName);
     assert.ok(config.files.includes('startup-error.js'), fileName);
     assert.ok(config.files.includes('user-data-path.js'), fileName);
     assert.ok(config.files.includes('windows-release-contract.js'), fileName);
+    assert.ok(config.asarUnpack.includes('backend-app/native/build/**'), fileName);
   }
 });
 

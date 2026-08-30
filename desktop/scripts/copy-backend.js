@@ -7,6 +7,20 @@ const src = path.join(repoRoot, 'backend-node');
 const dest = path.join(__dirname, '..', 'backend-app');
 const schemaSource = path.join(repoRoot, 'schemas');
 const schemaDestination = path.join(__dirname, '..', 'schemas');
+const nativeSource = path.join(
+  src,
+  'native',
+  'build',
+  `electron-${process.platform}-${process.arch}`,
+  'log-directory-lease.node',
+);
+const nativeDestination = path.join(
+  dest,
+  'native',
+  'build',
+  `electron-${process.platform}-${process.arch}`,
+  'log-directory-lease.node',
+);
 
 const dirsToCopy = ['src', 'configs', 'scripts', 'migrations'];
 
@@ -25,6 +39,13 @@ for (const dir of dirsToCopy) {
     copyTreeSync(from, to);
   }
 }
+
+if (!fs.existsSync(nativeSource)) {
+  console.error('native log directory lease not found at', nativeSource);
+  process.exit(1);
+}
+fs.mkdirSync(path.dirname(nativeDestination), { recursive: true });
+fs.copyFileSync(nativeSource, nativeDestination);
 
 if (!fs.existsSync(schemaSource)) {
   console.error('schemas not found at', schemaSource);
