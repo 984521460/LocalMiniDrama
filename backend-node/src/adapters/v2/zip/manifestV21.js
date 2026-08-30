@@ -249,6 +249,14 @@ function normalizedKey(value) {
   return output;
 }
 
+function isPortableMarker(value) {
+  if (value === null || typeof value !== 'object'
+    || apply(ARRAY_IS_ARRAY, Array, [value])) return false;
+  const keys = apply(REFLECT_OWN_KEYS, Reflect, [value]);
+  return keys.length === 1 && keys[0] === 'bindingState'
+    && value.bindingState === PORTABLE_BINDING_MARKER.bindingState;
+}
+
 function stripPortableMarkers(value) {
   if (value === null || typeof value !== 'object') return value;
   if (apply(ARRAY_IS_ARRAY, Array, [value])) {
@@ -262,7 +270,7 @@ function stripPortableMarkers(value) {
   const keys = sortStrings(apply(REFLECT_OWN_KEYS, Reflect, [value]));
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index];
-    if (normalizedKey(key) === 'credentialref' && value[key] === PORTABLE_BINDING_MARKER) continue;
+    if (normalizedKey(key) === 'credentialref' && isPortableMarker(value[key])) continue;
     output[key] = stripPortableMarkers(value[key]);
   }
   return output;

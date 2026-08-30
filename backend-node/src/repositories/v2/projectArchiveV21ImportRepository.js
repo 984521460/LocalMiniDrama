@@ -180,7 +180,8 @@ function serializeRow(spec, row, extra = null) {
     const column = spec.columns[index];
     if (column === 'credential_binding_state') continue;
     const value = row[column];
-    output[column] = spec.json?.[column] && value !== null ? canonicalJson(value) : value;
+    output[column] = spec.json?.[column] && value !== null && typeof value !== 'string'
+      ? canonicalJson(value) : value;
   }
   if (extra) Object.assign(output, extra);
   return output;

@@ -93,6 +93,21 @@ test('projects every catalogued direct or nested credential field without retain
       .portable_value.nodes.map((node) => node.config.credentialRef),
     [MARKER, MARKER],
   );
+  const projectedGraph = projection(
+    'workflow_runs',
+    'graph_snapshot_json',
+    nestedValues['workflow_runs.graph_snapshot_json'],
+  );
+  assert.notEqual(
+    projectedGraph.portable_value.nodes[0].config.credentialRef,
+    projectedGraph.portable_value.nodes[1].config.credentialRef,
+  );
+  assert.deepEqual(
+    projection('canvas_nodes', 'config_json', {
+      credentialRef: structuredClone(MARKER),
+    }).portable_value.credentialRef,
+    MARKER,
+  );
   assert.throws(() => normalizeWorkflowNodeConfig(
     'audio.tts', projection('canvas_nodes', 'config_json', audio).portable_value,
   ));

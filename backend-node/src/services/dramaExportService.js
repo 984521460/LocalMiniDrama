@@ -447,4 +447,4 @@ function exportDrama(db, cfg, log, dramaId) {
   return { buffer: zip.toBuffer(), title: drama.title };
 }
 
-module.exports = { exportDrama };
+module.exports = { EXPORT_VERSION, exportDrama };

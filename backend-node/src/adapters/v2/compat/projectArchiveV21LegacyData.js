@@ -92,9 +92,9 @@ const LEGACY_RECORD_SPECS = freezeObject({
   ], {
     integers: [
       'id', 'episode_id', 'scene_id', 'storyboard_number', 'main_panel_idx',
-      'emotion_intensity', 'segment_index', 'first_frame_image_id', 'last_frame_image_id',
+      'segment_index', 'first_frame_image_id', 'last_frame_image_id',
     ],
-    numbers: ['duration'],
+    numbers: ['duration', 'emotion_intensity'],
     json: { continuity_snapshot: 'object' },
     paths: ['local_path', 'audio_local_path', 'narration_audio_local_path', 'last_frame_local_path'],
     urls: ['image_url', 'video_url', 'composed_image', 'last_frame_image_url'],
@@ -188,7 +188,7 @@ const LEGACY_RECORD_SPECS = freezeObject({
   framePrompts: spec('frame_prompts', [
     'id', 'storyboard_id', 'frame_type', 'prompt', 'description', 'layout',
     'created_at', 'updated_at',
-  ], { integers: ['id', 'storyboard_id'], json: { layout: 'object' }, order: ['storyboard_id', 'id'] }),
+  ], { integers: ['id', 'storyboard_id'], order: ['storyboard_id', 'id'] }),
   imageGenerations: spec('image_generations', [
     'id', 'storyboard_id', 'drama_id', 'episode_id', 'scene_id', 'character_id',
     'provider', 'prompt', 'negative_prompt', 'model', 'frame_type', 'reference_images',
@@ -651,7 +651,8 @@ function validateRow(name, row) {
       continue;
     }
     if (numberSet[column] === true) {
-      if (value !== null && (typeof value !== 'number' || !NUMBER_IS_FINITE(value) || value < 0)) invalidManifest();
+      if (value !== null && (typeof value !== 'number' || !NUMBER_IS_FINITE(value)
+        || (column === 'emotion_intensity' ? value < -1 || value > 3 : value < 0))) invalidManifest();
       continue;
     }
     if (pathSet[column] === true) {

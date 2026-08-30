@@ -871,7 +871,7 @@ test('generation history survives project ZIP export, clean import, and re-expor
     changedAtEpochMs: source.completedAtEpochMs + 1,
   });
   const log = Object.freeze({ info() {}, error() {} });
-  const exported = projectZipService.exportDrama(
+  const exported = projectZipService.exportDramaV20(
     source.database,
     { storage: { local_path: storageRoot(t, 'generation-source') } },
     log,
@@ -906,7 +906,7 @@ test('generation history survives project ZIP export, clean import, and re-expor
     importedRepositories.generationHistory.getSelectionState(source.assetUid).selectedVersionUid,
     source.outputVersionUid,
   );
-  const reexported = projectZipService.exportDrama(
+  const reexported = projectZipService.exportDramaV20(
     destination,
     { storage: { local_path: storageRoot(t, 'generation-reexport') } },
     log,

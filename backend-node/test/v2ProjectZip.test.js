@@ -436,7 +436,7 @@ test('v2 project ZIP preserves portable project data through export and clean-da
   const sourceDrama = source.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(importedV1.drama_id);
   addProjectScopedV2Data(source, sourceDrama.uid);
 
-  const exported = projectZipService.exportDrama(source, { storage: { local_path: sourceStorage } }, log, sourceDrama.id);
+  const exported = projectZipService.exportDramaV20(source, { storage: { local_path: sourceStorage } }, log, sourceDrama.id);
   const firstManifest = readV2Manifest(exported.buffer);
   const validate = new Ajv({ allErrors: true, strict: true }).compile(manifestSchema);
   assert.equal(validate(firstManifest), true, JSON.stringify(validate.errors));
@@ -453,7 +453,7 @@ test('v2 project ZIP preserves portable project data through export and clean-da
     log,
     exported.buffer,
   );
-  const reexported = projectZipService.exportDrama(
+  const reexported = projectZipService.exportDramaV20(
     destination,
     { storage: { local_path: destinationStorage } },
     log,
@@ -484,7 +484,7 @@ test('v2 project ZIP replays every legal workflow and node run state without wea
   );
   const drama = source.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(imported.drama_id);
   addProjectScopedV2Data(source, drama.uid);
-  const exported = projectZipService.exportDrama(
+  const exported = projectZipService.exportDramaV20(
     source,
     { storage: { local_path: sourceStorage } },
     log,
@@ -514,7 +514,7 @@ test('v2 project ZIP replays every legal workflow and node run state without wea
     log,
     archive,
   );
-  const restoredManifest = readV2Manifest(projectZipService.exportDrama(
+  const restoredManifest = readV2Manifest(projectZipService.exportDramaV20(
     destination,
     { storage: { local_path: destinationStorage } },
     log,
@@ -593,7 +593,7 @@ test('v2 import rejects incomplete or drifted source evidence before any databas
   const imported = projectZipService.importDrama(source, { storage: { local_path: sourceStorage } }, log, createV1Zip());
   const drama = source.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(imported.drama_id);
   addProjectScopedV2Data(source, drama.uid);
-  const exported = projectZipService.exportDrama(source, { storage: { local_path: sourceStorage } }, log, drama.id);
+  const exported = projectZipService.exportDramaV20(source, { storage: { local_path: sourceStorage } }, log, drama.id);
   const originalManifest = readV2Manifest(exported.buffer);
 
   const mutations = [
@@ -653,7 +653,7 @@ test('v2 export rejects persisted source block count drift instead of laundering
     .run(UUIDS.document);
 
   assert.throws(
-    () => projectZipService.exportDrama(database, { storage: { local_path: storage } }, log, drama.id),
+    () => projectZipService.exportDramaV20(database, { storage: { local_path: storage } }, log, drama.id),
     (error) => error.code === 'PROJECT_ARCHIVE_INVALID'
       && !error.message.includes(UUIDS.document),
   );
@@ -688,7 +688,7 @@ test('v2 import rejects UID conflicts atomically and archive errors do not discl
   const imported = projectZipService.importDrama(source, { storage: { local_path: storage } }, log, createV1Zip());
   const drama = source.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(imported.drama_id);
   addProjectScopedV2Data(source, drama.uid);
-  const exported = projectZipService.exportDrama(source, { storage: { local_path: storage } }, log, drama.id);
+  const exported = projectZipService.exportDramaV20(source, { storage: { local_path: storage } }, log, drama.id);
 
   const destination = createDatabase(t);
   const destinationStorage = createStorage(t);
@@ -714,7 +714,7 @@ test('v2 export fails closed when project JSON fields contain credential-shaped 
     .run(JSON.stringify({ apiKey: marker }), UUIDS.nodeA);
 
   assert.throws(
-    () => projectZipService.exportDrama(database, { storage: { local_path: storage } }, log, drama.id),
+    () => projectZipService.exportDramaV20(database, { storage: { local_path: storage } }, log, drama.id),
     (error) => error.code === 'PROJECT_ARCHIVE_SECRET_DETECTED'
       && !error.message.includes(marker),
   );
@@ -725,7 +725,7 @@ test('v2 export fails closed when project JSON fields contain credential-shaped 
   database.prepare('UPDATE dramas SET metadata = ? WHERE id = ?')
     .run(JSON.stringify({ api_token: marker }), drama.id);
   assert.throws(
-    () => projectZipService.exportDrama(database, { storage: { local_path: storage } }, log, drama.id),
+    () => projectZipService.exportDramaV20(database, { storage: { local_path: storage } }, log, drama.id),
     (error) => error.code === 'PROJECT_ARCHIVE_SECRET_DETECTED'
       && !error.message.includes(marker),
   );
@@ -739,7 +739,7 @@ test('manifest schema and runtime both reject incomplete, extra, and unclosed re
   const imported = projectZipService.importDrama(database, { storage: { local_path: storage } }, log, createV1Zip());
   const drama = database.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(imported.drama_id);
   addProjectScopedV2Data(database, drama.uid);
-  const exported = projectZipService.exportDrama(database, { storage: { local_path: storage } }, log, drama.id);
+  const exported = projectZipService.exportDramaV20(database, { storage: { local_path: storage } }, log, drama.id);
   const validate = new Ajv({ allErrors: true, strict: true }).compile(manifestSchema);
 
   const extra = structuredClone(readV2Manifest(exported.buffer));
@@ -795,7 +795,7 @@ test('typed ownership prevents cross-project export when different entity types 
     status: 'draft',
   });
 
-  const manifest = readV2Manifest(projectZipService.exportDrama(
+  const manifest = readV2Manifest(projectZipService.exportDramaV20(
     database,
     { storage: { local_path: storage } },
     log,
@@ -811,7 +811,7 @@ test('v2 import checks global-only UID tables inside the import boundary and lea
   const imported = projectZipService.importDrama(source, { storage: { local_path: sourceStorage } }, log, createV1Zip());
   const drama = source.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(imported.drama_id);
   addProjectScopedV2Data(source, drama.uid);
-  const exported = projectZipService.exportDrama(source, { storage: { local_path: sourceStorage } }, log, drama.id);
+  const exported = projectZipService.exportDramaV20(source, { storage: { local_path: sourceStorage } }, log, drama.id);
   const manifest = readV2Manifest(exported.buffer);
 
   const conflictDb = createDatabase(t);
@@ -888,14 +888,14 @@ test('nested JSON strings cannot carry credential keys or machine-local paths', 
   database.prepare('UPDATE canvas_nodes SET config_json = ? WHERE uid = ?')
     .run(JSON.stringify({ nested: JSON.stringify({ apiKey: marker }) }), UUIDS.nodeA);
   assert.throws(
-    () => projectZipService.exportDrama(database, { storage: { local_path: storage } }, log, drama.id),
+    () => projectZipService.exportDramaV20(database, { storage: { local_path: storage } }, log, drama.id),
     (error) => error.code === 'PROJECT_ARCHIVE_SECRET_DETECTED' && !error.message.includes(marker),
   );
 
   database.prepare('UPDATE canvas_nodes SET config_json = ? WHERE uid = ?')
     .run(JSON.stringify({ nested: JSON.stringify({ cacheDir: 'C:\\Users\\fixture\\cache' }) }), UUIDS.nodeA);
   assert.throws(
-    () => projectZipService.exportDrama(database, { storage: { local_path: storage } }, log, drama.id),
+    () => projectZipService.exportDramaV20(database, { storage: { local_path: storage } }, log, drama.id),
     (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
   );
 });
@@ -920,7 +920,7 @@ test('structured workflow config preserves API routes while named filesystem fie
   source.prepare('UPDATE canvas_nodes SET config_json = ? WHERE uid = ?')
     .run(JSON.stringify(portableConfig), UUIDS.nodeA);
 
-  const exported = projectZipService.exportDrama(source, { storage: { local_path: storage } }, log, drama.id);
+  const exported = projectZipService.exportDramaV20(source, { storage: { local_path: storage } }, log, drama.id);
   const destination = createDatabase(t);
   projectZipService.importDrama(
     destination,
@@ -936,7 +936,7 @@ test('structured workflow config preserves API routes while named filesystem fie
   const nestedRouteConfig = { route: JSON.stringify(['/v1/images', '/v1/tasks']) };
   source.prepare('UPDATE canvas_nodes SET config_json = ? WHERE uid = ?')
     .run(JSON.stringify(nestedRouteConfig), UUIDS.nodeA);
-  const nestedExport = projectZipService.exportDrama(source, { storage: { local_path: storage } }, log, drama.id);
+  const nestedExport = projectZipService.exportDramaV20(source, { storage: { local_path: storage } }, log, drama.id);
   const nestedDestination = createDatabase(t);
   projectZipService.importDrama(
     nestedDestination,
@@ -972,7 +972,7 @@ test('structured workflow config preserves API routes while named filesystem fie
     source.prepare('UPDATE canvas_nodes SET config_json = ? WHERE uid = ?')
       .run(JSON.stringify(config), UUIDS.nodeA);
     assert.throws(
-      () => projectZipService.exportDrama(source, { storage: { local_path: storage } }, log, drama.id),
+      () => projectZipService.exportDramaV20(source, { storage: { local_path: storage } }, log, drama.id),
       (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
     );
   }
@@ -1016,7 +1016,7 @@ test('portable fields and legacy local-path columns reject arbitrary absolute pa
   const imported = projectZipService.importDrama(source, { storage: { local_path: storage } }, log, createV1Zip());
   const drama = source.prepare('SELECT id, uid FROM dramas WHERE id = ?').get(imported.drama_id);
   addProjectScopedV2Data(source, drama.uid);
-  const exported = projectZipService.exportDrama(source, { storage: { local_path: storage } }, log, drama.id);
+  const exported = projectZipService.exportDramaV20(source, { storage: { local_path: storage } }, log, drama.id);
   const manifest = readV2Manifest(exported.buffer);
   manifest.records.sourceDocuments[0].original_name = 'C:\\Users\\fixture\\private\\script.txt';
   assert.throws(

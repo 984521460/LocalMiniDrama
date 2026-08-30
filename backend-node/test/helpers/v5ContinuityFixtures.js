@@ -34,9 +34,22 @@ function shaNumber(value) {
   return value.toString(16).padStart(64, '0');
 }
 
-function addImageAsset(repositories, characterUid, assetIndex, logicalUri, relativePath, assetType) {
+function addImageAsset(
+  repositories,
+  characterUid,
+  assetIndex,
+  logicalUri,
+  relativePath,
+  assetType,
+  materializeAssetVersion,
+) {
   const assetUid = uid(assetIndex);
   const assetVersionUid = uid(assetIndex + 1);
+  const materialized = typeof materializeAssetVersion === 'function'
+    ? materializeAssetVersion({ assetIndex, assetVersionUid, relativePath })
+    : null;
+  const storedRelativePath = materialized?.relativePath ?? relativePath;
+  const contentSha256 = materialized?.sha256 ?? shaNumber(assetIndex);
   repositories.assets.create({
     uid: assetUid,
     ownerType: 'character',
@@ -49,8 +62,8 @@ function addImageAsset(repositories, characterUid, assetIndex, logicalUri, relat
     assetUid,
     storageProvider: 'local',
     logicalUri,
-    relativePath,
-    sha256: shaNumber(assetIndex),
+    relativePath: storedRelativePath,
+    sha256: contentSha256,
     mimeType: 'image/png',
     width: 1024,
     height: 1024,
@@ -61,26 +74,34 @@ function addImageAsset(repositories, characterUid, assetIndex, logicalUri, relat
   return assetVersionUid;
 }
 
-function createReferencePackage(repositories, characterUid, offset = 18100) {
+function createReferencePackage(
+  repositories,
+  characterUid,
+  offset = 18100,
+  materializeAssetVersion,
+) {
   const batchUid = uid(offset);
   const candidates = Array.from({ length: 4 }, (_, ordinal) => {
     const logicalUri = `asset://characters/${characterUid}/candidate-batches/${batchUid}/${ordinal}`;
+    const assetVersionUid = addImageAsset(
+      repositories,
+      characterUid,
+      offset + ordinal * 3 + 40,
+      logicalUri,
+      `characters/${characterUid}/candidates/${batchUid}/${ordinal}.png`,
+      'character_candidate',
+      materializeAssetVersion,
+    );
+    const storedVersion = repositories.assets.getVersion(assetVersionUid);
     return {
       uid: uid(offset + ordinal * 3 + 2),
       ordinal,
-      assetVersionUid: addImageAsset(
-        repositories,
-        characterUid,
-        offset + ordinal * 3 + 40,
-        logicalUri,
-        `characters/${characterUid}/candidates/${batchUid}/${ordinal}.png`,
-        'character_candidate',
-      ),
+      assetVersionUid,
       logicalUri,
       mediaType: 'image/png',
       width: 1024,
       height: 1024,
-      contentSha256: shaNumber(offset + ordinal * 3 + 40),
+      contentSha256: storedVersion.sha256,
       presentation: 'single_portrait',
     };
   });
@@ -157,6 +178,7 @@ function createReferencePackage(repositories, characterUid, offset = 18100) {
       `asset://characters/${characterUid}/reference-packages/${packageUid}/${kind}`,
       `characters/${characterUid}/reference-packages/${packageUid}/${kind}.png`,
       'character_reference',
+      materializeAssetVersion,
     ),
   }));
   const packageRecord = repositories.characterReferencePackages.create({
@@ -311,9 +333,9 @@ function createApprovedShot(repositories, dramaUid, offset = 18400) {
   };
 }
 
-function seedContinuityFixture(t, existingDatabase = null) {
+function seedContinuityFixture(t, existingDatabase = null, options = {}) {
   const database = existingDatabase ?? createMigratedV2Database(t);
-  const dramaUid = uid(18000);
+  const dramaUid = options.dramaUid ?? uid(18000);
   insertDrama(database, dramaUid, 'Continuity fixture drama');
   database.prepare("INSERT INTO characters (id, drama_id, name) VALUES (1, 1, 'Hero')").run();
   database.prepare(`
@@ -324,7 +346,12 @@ function seedContinuityFixture(t, existingDatabase = null) {
   const sceneUid = database.prepare('SELECT uid FROM scenes WHERE id = 1').pluck().get();
   const propUid = database.prepare('SELECT uid FROM props WHERE id = 1').pluck().get();
   const repositories = createV2Repositories(database);
-  const character = createReferencePackage(repositories, characterUid);
+  const character = createReferencePackage(
+    repositories,
+    characterUid,
+    18100,
+    options.materializeAssetVersion,
+  );
   const sceneVersion = repositories.scenePropVersions.create({
     schemaVersion: '5.0',
     kind: 'scene',

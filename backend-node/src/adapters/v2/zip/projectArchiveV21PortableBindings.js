@@ -289,10 +289,11 @@ function transformPortableJson(value, mode) {
       let child;
       if (normalized === 'credentialref') {
         if (mode === 'project') {
-          if (!isCredentialReference(descriptor.value)) secretDetected();
+          if (!isCredentialReference(descriptor.value)
+            && !isExactBindingMarker(descriptor.value)) secretDetected();
         } else if (!isExactBindingMarker(descriptor.value)) secretDetected();
         state.markerCount += 1;
-        child = PORTABLE_BINDING_MARKER;
+        child = Object.freeze({ bindingState: 'needs_rebind' });
       } else {
         if (isForbiddenSecretKey(key)) secretDetected();
         child = visit(descriptor.value, depth + 1);

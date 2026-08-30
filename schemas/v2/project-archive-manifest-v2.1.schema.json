@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v2/project-archive-manifest-v2.1.schema.json",
+  "title": "LocalMiniDrama project archive manifest v2.1",
+  "$comment": "Exact row semantics, canonical JSON, cross-record ownership, hashes, portable binding closure, media bytes, and project isolation are additionally enforced by parseProjectManifestV21/validateProjectArchiveV21Bundle.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "archiveKind", "legacyProjectVersion", "exportedAt", "project",
+    "records", "structuredRecords", "legacyRecords", "mediaBindings", "portableBindings"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "2.1.0" },
+    "archiveKind": { "const": "local-mini-drama-project" },
+    "legacyProjectVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "exportedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "project": {
+      "$ref": "https://local-mini-drama.invalid/schemas/v2/project-archive-manifest.schema.json#/$defs/project"
+    },
+    "records": {
+      "$ref": "https://local-mini-drama.invalid/schemas/v2/project-archive-manifest.schema.json#/$defs/records"
+    },
+    "structuredRecords": { "$ref": "#/$defs/structuredRecords" },
+    "legacyRecords": { "$ref": "#/$defs/legacyRecords" },
+    "mediaBindings": {
+      "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/mediaBinding" }
+    },
+    "portableBindings": {
+      "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/portableBinding" }
+    }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "recordRows": {
+      "type": "array", "maxItems": 100000,
+      "items": { "type": "object" }
+    },
+    "structuredRecords": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "narrativeResults", "narrativeReviewEvents", "narrativeStaleEvents",
+        "characterIdentityVersions", "characterAppearanceVersions", "characterCostumeVersions",
+        "characterVoiceVersions", "sceneVersions", "propVersions", "characterCandidateBatches",
+        "characterCandidateResults", "characterIdentityLockEvents", "characterReferencePackages",
+        "characterReferencePackageItems", "shotContinuitySnapshots",
+        "shotContinuityCharacterRefs", "shotContinuityPropRefs", "voiceProfiles",
+        "voiceProfileSelectionEvents", "bgmLicenses", "bgmTracks"
+      ],
+      "properties": {
+        "narrativeResults": { "$ref": "#/$defs/recordRows" },
+        "narrativeReviewEvents": { "$ref": "#/$defs/recordRows" },
+        "narrativeStaleEvents": { "$ref": "#/$defs/recordRows" },
+        "characterIdentityVersions": { "$ref": "#/$defs/recordRows" },
+        "characterAppearanceVersions": { "$ref": "#/$defs/recordRows" },
+        "characterCostumeVersions": { "$ref": "#/$defs/recordRows" },
+        "characterVoiceVersions": { "$ref": "#/$defs/recordRows" },
+        "sceneVersions": { "$ref": "#/$defs/recordRows" },
+        "propVersions": { "$ref": "#/$defs/recordRows" },
+        "characterCandidateBatches": { "$ref": "#/$defs/recordRows" },
+        "characterCandidateResults": { "$ref": "#/$defs/recordRows" },
+        "characterIdentityLockEvents": { "$ref": "#/$defs/recordRows" },
+        "characterReferencePackages": { "$ref": "#/$defs/recordRows" },
+        "characterReferencePackageItems": { "$ref": "#/$defs/recordRows" },
+        "shotContinuitySnapshots": { "$ref": "#/$defs/recordRows" },
+        "shotContinuityCharacterRefs": { "$ref": "#/$defs/recordRows" },
+        "shotContinuityPropRefs": { "$ref": "#/$defs/recordRows" },
+        "voiceProfiles": { "$ref": "#/$defs/recordRows" },
+        "voiceProfileSelectionEvents": { "$ref": "#/$defs/recordRows" },
+        "bgmLicenses": { "$ref": "#/$defs/recordRows" },
+        "bgmTracks": { "$ref": "#/$defs/recordRows" }
+      }
+    },
+    "legacyRecords": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dramas", "episodes", "storyboards", "characters", "scenes", "props",
+        "episodeCharacters", "storyboardCharacters", "storyboardProps",
+        "characterLibraries", "sceneLibraries", "propLibraries", "legacyAssets",
+        "framePrompts", "imageGenerations", "videoGenerations", "videoMerges"
+      ],
+      "properties": {
+        "dramas": { "$ref": "#/$defs/recordRows" },
+        "episodes": { "$ref": "#/$defs/recordRows" },
+        "storyboards": { "$ref": "#/$defs/recordRows" },
+        "characters": { "$ref": "#/$defs/recordRows" },
+        "scenes": { "$ref": "#/$defs/recordRows" },
+        "props": { "$ref": "#/$defs/recordRows" },
+        "episodeCharacters": { "$ref": "#/$defs/recordRows" },
+        "storyboardCharacters": { "$ref": "#/$defs/recordRows" },
+        "storyboardProps": { "$ref": "#/$defs/recordRows" },
+        "characterLibraries": { "$ref": "#/$defs/recordRows" },
+        "sceneLibraries": { "$ref": "#/$defs/recordRows" },
+        "propLibraries": { "$ref": "#/$defs/recordRows" },
+        "legacyAssets": { "$ref": "#/$defs/recordRows" },
+        "framePrompts": { "$ref": "#/$defs/recordRows" },
+        "imageGenerations": { "$ref": "#/$defs/recordRows" },
+        "videoGenerations": { "$ref": "#/$defs/recordRows" },
+        "videoMerges": { "$ref": "#/$defs/recordRows" }
+      }
+    },
+    "mediaBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_version_uid", "binding_state", "archive_path", "byte_length", "sha256"],
+      "properties": {
+        "asset_version_uid": { "$ref": "#/$defs/uid" },
+        "binding_state": { "enum": ["content_addressed", "needs_rebind", "not_required"] },
+        "archive_path": {
+          "oneOf": [
+            { "type": "string", "pattern": "^v2/media/sha256/[0-9a-f]{2}/[0-9a-f]{64}$" },
+            { "type": "null" }
+          ]
+        },
+        "byte_length": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1, "maximum": 268435456 },
+            { "type": "null" }
+          ]
+        },
+        "sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] }
+      }
+    },
+    "portableBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table", "row_uid", "column", "portable_field"],
+      "properties": {
+        "table": { "enum": ["canvas_nodes", "workflow_runs", "node_runs", "voice_profiles"] },
+        "row_uid": { "$ref": "#/$defs/uid" },
+        "column": {
+          "enum": [
+            "config_json", "graph_snapshot_json", "input_snapshot_json", "output_json",
+            "credential_ref"
+          ]
+        },
+        "portable_field": { "$ref": "#/$defs/portableField" }
+      }
+    },
+    "portableField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "binding_state", "marker_count", "portable_value"],
+      "properties": {
+        "schema_version": { "const": "project-archive-portable-field.v1" },
+        "binding_state": { "enum": ["needs_rebind", "not_required"] },
+        "marker_count": { "type": "integer", "minimum": 0, "maximum": 20000 },
+        "portable_value": {
+          "oneOf": [
+            { "type": "object" }, { "type": "array" }, { "type": "string" },
+            { "type": "number" }, { "type": "boolean" }, { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}
