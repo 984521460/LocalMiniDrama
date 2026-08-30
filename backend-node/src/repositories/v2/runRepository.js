@@ -75,6 +75,9 @@ function createRunRepository(database) {
   const listWorkflowRunRows = database.prepare(`
     SELECT * FROM workflow_runs WHERE workflow_uid = ? ORDER BY created_at DESC, uid DESC LIMIT 100
   `);
+  const listRecoverableWorkflowRunRows = database.prepare(`
+    SELECT uid FROM workflow_runs WHERE status = 'running' ORDER BY created_at, uid
+  `);
   const updateGenerationStatus = database.prepare(`
     UPDATE generation_runs
     SET status = @nextStatus,
@@ -256,6 +259,10 @@ function createRunRepository(database) {
 
     listWorkflowRuns(workflowUid) {
       return mapRows(listWorkflowRunRows.all(workflowUid), WORKFLOW_RUN_MAP);
+    },
+
+    listRecoverableWorkflowRunUids() {
+      return Object.freeze(listRecoverableWorkflowRunRows.all().map((row) => row.uid));
     },
 
     transitionExportStatus(input) {

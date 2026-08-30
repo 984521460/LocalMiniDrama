@@ -50,6 +50,11 @@ function createH3ApiSubmissionStore(database) {
     WHERE operation_uid=? AND state='submitting' AND request_sha256=?
       AND config_evidence_sha256=?
   `);
+  const recoverInterrupted = database.prepare(`
+    UPDATE h3_api_submissions
+    SET state='submission_unknown', updated_at_epoch_ms=unixepoch('now') * 1000
+    WHERE state='submitting'
+  `);
 
   function get(operationUid) {
     const row = getRow.get(uid(operationUid, CODE));
@@ -112,6 +117,15 @@ function createH3ApiSubmissionStore(database) {
         fail('H3_API_SUBMISSION_UNKNOWN');
       }
       return get(operationUid);
+    },
+
+    recoverInterrupted() {
+      try {
+        const result = recoverInterrupted.run();
+        return Object.freeze({ recoveredCount: result.changes });
+      } catch {
+        fail('H3_API_UNAVAILABLE');
+      }
     },
 
     getByProviderTaskId(providerTaskId) {

@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
@@ -758,6 +759,129 @@ test('remote task errors are trusted fixed envelopes', () => {
   }
   assert.equal(isRemoteTaskError(captured), true);
   assert.equal(JSON.stringify(captured).includes('../escape'), false);
+});
+
+test('remote recovery paginates a bounded snapshot and returns only aggregate counts', async () => {
+  const createdAt = '2026-08-28T08:00:00.000Z';
+  const tasks = Array.from({ length: 101 }, (_, index) => Object.freeze({
+    uid: uid(9900 + index),
+    createdAt,
+    stage: 'prepared',
+    status: 'queued',
+    stateVersion: 0,
+    promptId: null,
+    submissionLeaseExpiresAtEpochMs: null,
+  }));
+  const tasksByUid = new Map(tasks.map((task) => [task.uid, task]));
+  const pages = [];
+  const repository = {
+    createFormalTaskIdempotent() { throw new Error('not used'); },
+    getFormalTask(taskUid) { return tasksByUid.get(taskUid); },
+    transitionFormalTask(request) {
+      const current = tasksByUid.get(request.uid);
+      const next = Object.freeze({
+        ...current,
+        stage: request.nextStage,
+        status: request.nextStatus,
+        stateVersion: current.stateVersion + 1,
+      });
+      tasksByUid.set(request.uid, next);
+      return next;
+    },
+    assignFormalPrompt() { throw new Error('not used'); },
+    heartbeatFormalTask() { throw new Error('not used'); },
+    renewFormalSubmissionLease() { throw new Error('not used'); },
+    listRecoverableFormalTasks(cursor) {
+      pages.push(cursor);
+      const start = cursor.afterUid === null
+        ? 0 : tasks.findIndex((task) => task.uid === cursor.afterUid) + 1;
+      return Object.freeze(tasks.slice(start, start + cursor.limit));
+    },
+  };
+  const service = createRemoteTaskService({
+    repository,
+    manifestRepository: { get() { return Object.freeze({ uid: MANIFEST_UID }); } },
+    client: {
+      async submitPrompt() { throw new Error('not used'); },
+      async getPromptState() { throw new Error('not used'); },
+      async queueSnapshot() { throw new Error('not used'); },
+    },
+    dependencyChecker: { async requireReady() { throw new Error('not used'); } },
+  });
+
+  assert.deepEqual(await service.recoverAll(), { recoveredCount: 101, failedCount: 0 });
+  assert.deepEqual(pages.map((page) => page.limit), [100, 100]);
+  assert.equal(pages[0].afterUid, null);
+  assert.equal(pages[1].afterUid, tasks[99].uid);
+});
+
+test('remote recovery never reads an inherited Array iterator', () => {
+  const script = String.raw`
+    'use strict';
+    const { createRemoteTaskService } = require('./src/remote/remoteTaskService');
+    const task = Object.freeze({
+      uid: '00000000-0000-4000-8000-000000009999',
+      createdAt: '2026-08-28T08:00:00.000Z',
+      stage: 'prepared', status: 'queued', stateVersion: 0,
+      promptId: null, submissionLeaseExpiresAtEpochMs: null,
+    });
+    function serviceFor(page) {
+      const repository = {
+        createFormalTaskIdempotent() { throw new Error('not used'); },
+        getFormalTask() { return task; },
+        transitionFormalTask(request) {
+          return Object.freeze({
+            ...task, stage: request.nextStage, status: request.nextStatus, stateVersion: 1,
+          });
+        },
+        assignFormalPrompt() { throw new Error('not used'); },
+        heartbeatFormalTask() { throw new Error('not used'); },
+        renewFormalSubmissionLease() { throw new Error('not used'); },
+        listRecoverableFormalTasks() { return page; },
+      };
+      return createRemoteTaskService({
+        repository,
+        manifestRepository: { get() { return Object.freeze({ uid: task.uid }); } },
+        client: {
+          async submitPrompt() { throw new Error('not used'); },
+          async getPromptState() { throw new Error('not used'); },
+          async queueSnapshot() { throw new Error('not used'); },
+        },
+        dependencyChecker: { async requireReady() { throw new Error('not used'); } },
+      });
+    }
+    async function probe(page) {
+      const service = serviceFor(page);
+      const original = Object.getOwnPropertyDescriptor(Array.prototype, Symbol.iterator);
+      let reads = 0;
+      Object.defineProperty(Array.prototype, Symbol.iterator, {
+        configurable: true,
+        get() { reads += 1; return original.value; },
+      });
+      try {
+        const result = await service.recoverAll();
+        return { reads, result };
+      }
+      finally { Object.defineProperty(Array.prototype, Symbol.iterator, original); }
+    }
+    (async () => {
+      const empty = await probe(Object.freeze([]));
+      const nonempty = await probe(Object.freeze([task]));
+      process.stdout.write(JSON.stringify({ empty, nonempty }));
+    })().catch((error) => {
+      process.stderr.write(error?.stack || String(error));
+      process.exitCode = 1;
+    });
+  `;
+  const child = spawnSync(process.execPath, ['-e', script], {
+    cwd: path.resolve(__dirname, '..'),
+    encoding: 'utf8',
+  });
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout), {
+    empty: { reads: 0, result: { recoveredCount: 0, failedCount: 0 } },
+    nonempty: { reads: 0, result: { recoveredCount: 1, failedCount: 0 } },
+  });
 });
 
 test('localhost remote task routes preserve fixed public error envelopes', async (t) => {

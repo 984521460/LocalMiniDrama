@@ -141,6 +141,114 @@ test('creates an atomic workflow run bound to an immutable canonical graph snaps
   assert.deepEqual(database.pragma('foreign_key_check'), []);
 });
 
+test('P9-01 atomically closes interrupted workflow runs and is restart-idempotent', (t) => {
+  const { runService, workflow } = createWorkflowFixture(t, uidSequence([
+    uid(7190), uid(7191), uid(7192), uid(7193), uid(7194), uid(7195),
+  ]));
+  const created = runService.createRun({
+    workflowUid: workflow.definition.uid,
+    triggerType: 'full',
+  });
+  runService.transitionWorkflow({
+    runUid: created.run.uid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+  });
+  runService.transitionNode({
+    nodeRunUid: created.nodes[0].uid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+    inputSnapshot: {},
+  });
+  const queued = runService.createRun({
+    workflowUid: workflow.definition.uid,
+    triggerType: 'manual',
+  });
+
+  assert.deepEqual(runService.recoverInterruptedRuns(), { recoveredCount: 1 });
+  const recovered = runService.getRun(created.run.uid);
+  assert.equal(recovered.run.status, 'failed');
+  assert.equal(recovered.run.errorCode, 'ERR_WORKFLOW_RECOVERY_ORPHANED');
+  assert.deepEqual(recovered.nodes.map((node) => [node.status, node.errorCode]), [
+    ['failed', 'ERR_WORKFLOW_RECOVERY_ORPHANED'],
+    ['blocked', 'ERR_WORKFLOW_RECOVERY_ORPHANED'],
+  ]);
+  assert.deepEqual(runService.recoverInterruptedRuns(), { recoveredCount: 0 });
+  assert.equal(runService.getRun(queued.run.uid).run.status, 'queued');
+});
+
+test('P9-01 seals a fully persisted workflow success instead of orphaning it', (t) => {
+  const { runService, workflow } = createWorkflowFixture(t, uidSequence([
+    uid(7180), uid(7181), uid(7182),
+  ]));
+  const created = runService.createRun({
+    workflowUid: workflow.definition.uid,
+    triggerType: 'full',
+  });
+  runService.transitionWorkflow({
+    runUid: created.run.uid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+  });
+  for (const node of created.nodes) {
+    runService.transitionNode({
+      nodeRunUid: node.uid,
+      expectedStatus: 'queued',
+      nextStatus: 'running',
+      inputSnapshot: {},
+    });
+    runService.transitionNode({
+      nodeRunUid: node.uid,
+      expectedStatus: 'running',
+      nextStatus: 'succeeded',
+      output: {},
+    });
+  }
+
+  assert.deepEqual(runService.recoverInterruptedRuns(), { recoveredCount: 1 });
+  const recovered = runService.getRun(created.run.uid);
+  assert.equal(recovered.run.status, 'succeeded');
+  assert.equal(recovered.run.errorCode, null);
+  assert.deepEqual(recovered.nodes.map((node) => node.status), ['succeeded', 'succeeded']);
+});
+
+test('P9-01 workflow recovery rolls back every node when terminal sealing fails', (t) => {
+  const { database, runService, workflow } = createWorkflowFixture(t, uidSequence([
+    uid(7170), uid(7171), uid(7172),
+  ]));
+  const created = runService.createRun({
+    workflowUid: workflow.definition.uid,
+    triggerType: 'full',
+  });
+  runService.transitionWorkflow({
+    runUid: created.run.uid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+  });
+  runService.transitionNode({
+    nodeRunUid: created.nodes[0].uid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+    inputSnapshot: {},
+  });
+  database.exec(`
+    CREATE TRIGGER synthetic_recovery_seal_failure
+    BEFORE UPDATE OF status ON workflow_runs
+    WHEN NEW.error_code='ERR_WORKFLOW_RECOVERY_ORPHANED'
+    BEGIN
+      SELECT RAISE(ABORT,'synthetic recovery seal failure');
+    END
+  `);
+
+  assert.throws(() => runService.recoverInterruptedRuns(), {
+    code: 'WORKFLOW_CONFLICT',
+  });
+  assert.equal(runService.getRun(created.run.uid).run.status, 'running');
+  assert.deepEqual(runService.getRun(created.run.uid).nodes.map((node) => node.status), [
+    'running', 'queued',
+  ]);
+});
+
 test('workflow and node run state machines enforce legal transitions and terminal consistency', (t) => {
   const { runService, workflow } = createWorkflowFixture(t, uidSequence([
     uid(7200), uid(7201), uid(7202),

@@ -15,7 +15,7 @@ function createMediaExportService(value) {
   }
   const repositoryMethods = [
     'complete', 'fail', 'get', 'getBySourceNodeRun', 'getExecutionPlan',
-    'listByDrama', 'prepareFromNode', 'start',
+    'listByDrama', 'prepareFromNode', 'recoverInterrupted', 'start',
   ];
   if (repositoryMethods.some((name) => typeof value.repository[name] !== 'function')) {
     throw new TypeError('Media export service dependencies are invalid');
@@ -77,6 +77,9 @@ function createMediaExportService(value) {
       return run;
     },
     listByDrama(dramaUid) { return value.repository.listByDrama(dramaUid); },
+    recoverInterrupted() {
+      return value.repository.recoverInterrupted(value.nowEpochMs());
+    },
     start,
   });
 }

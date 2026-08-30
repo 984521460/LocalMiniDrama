@@ -121,6 +121,13 @@ function createMediaExportRunRepository(database) {
     WHERE export_run.drama_uid=? ORDER BY export_run.created_at DESC,export_run.uid DESC
     LIMIT 100
   `);
+  const listRecoverableRows = database.prepare(`
+    SELECT export_run.uid
+    FROM export_runs AS export_run
+    JOIN media_export_run_seals AS seal ON seal.uid=export_run.uid
+    WHERE export_run.status='running'
+    ORDER BY export_run.created_at,export_run.uid
+  `);
   const insertRun = database.prepare(`
     INSERT INTO export_runs (
       uid,drama_uid,workflow_run_uid,timeline_snapshot_json,encoding_json,
@@ -321,6 +328,21 @@ function createMediaExportRunRepository(database) {
     });
     return map(uid);
   });
+  const recoverInterruptedTransaction = database.transaction((completedAtEpochMs) => {
+    const rows = listRecoverableRows.all();
+    const completedAt = new Date(completedAtEpochMs).toISOString();
+    for (const row of rows) {
+      const first = failSeal.run(completedAtEpochMs, row.uid);
+      const second = failRun.run(
+        'ERR_MEDIA_EXPORT_FAILED', completedAt, completedAt, row.uid,
+      );
+      if (first.changes !== 1 || second.changes !== 1) {
+        throw new V2RepositoryConflictError(ENTITY, 'recovered');
+      }
+      map(row.uid);
+    }
+    return Object.freeze({ recoveredCount: rows.length });
+  });
 
   return Object.freeze({
     complete(input) {
@@ -366,6 +388,17 @@ function createMediaExportRunRepository(database) {
         }
         throw error;
       }
+    },
+    recoverInterrupted(completedAtEpochMs) {
+      if (!Number.isSafeInteger(completedAtEpochMs)
+        || completedAtEpochMs < 0 || completedAtEpochMs > 253_402_300_799_999) {
+        throw new V2RepositoryDataError(ENTITY, 'recovery time');
+      }
+      return executeWrite(
+        ENTITY,
+        'recovered',
+        () => recoverInterruptedTransaction(completedAtEpochMs),
+      );
     },
     start(uid) {
       return executeWrite(ENTITY, 'started', () => startTransaction(uid));

@@ -76,6 +76,9 @@ function createLazyMediaExportRunRepository(database) {
     prepareFromNode(...args) {
       return getTarget().prepareFromNode(...args);
     },
+    recoverInterrupted(...args) {
+      return getTarget().recoverInterrupted(...args);
+    },
     start(...args) {
       return getTarget().start(...args);
     },

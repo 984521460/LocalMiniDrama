@@ -23,6 +23,7 @@ const PROMPT_ID = /^[A-Za-z0-9._-]{1,128}$/u;
 const ERROR_CODE = /^ERR_[A-Z0-9_]{1,60}$/u;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const SUBMISSION_LEASE_GRACE_MS = 5_000;
+const RECOVERY_PAGE_LIMIT = 100;
 const FAILURE_PHASES = new Set([
   'connection', 'dependency', 'upload', 'submission', 'execution',
   'download', 'verification', 'recovery',
@@ -217,6 +218,71 @@ function currentEpochMs(now) {
     fail('REMOTE_TASK_UNEXPECTED');
   }
   return epochMs;
+}
+
+function recoveryPage(value, afterCreatedAt, afterUid) {
+  if (isProxy(value) || !Array.isArray(value)) fail('REMOTE_TASK_DATA_INVALID');
+  let prototype;
+  let lengthDescriptor;
+  try {
+    prototype = Object.getPrototypeOf(value);
+    lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+  } catch {
+    fail('REMOTE_TASK_DATA_INVALID');
+  }
+  if (prototype !== Array.prototype || !lengthDescriptor
+    || !Object.hasOwn(lengthDescriptor, 'value')
+    || !Number.isSafeInteger(lengthDescriptor.value)
+    || lengthDescriptor.value < 0 || lengthDescriptor.value > RECOVERY_PAGE_LIMIT) {
+    fail('REMOTE_TASK_DATA_INVALID');
+  }
+  let descriptors;
+  try { descriptors = Object.getOwnPropertyDescriptors(value); } catch {
+    fail('REMOTE_TASK_DATA_INVALID');
+  }
+  const keys = Reflect.ownKeys(descriptors);
+  if (keys.some((key) => typeof key !== 'string')
+    || keys.length !== lengthDescriptor.value + 1) fail('REMOTE_TASK_DATA_INVALID');
+  const tasks = [];
+  let previousCreatedAt = afterCreatedAt;
+  let previousUid = afterUid;
+  for (let index = 0; index < lengthDescriptor.value; index += 1) {
+    const itemDescriptor = descriptors[String(index)];
+    if (!itemDescriptor?.enumerable || !Object.hasOwn(itemDescriptor, 'value')) {
+      fail('REMOTE_TASK_DATA_INVALID');
+    }
+    const item = itemDescriptor.value;
+    if (!item || typeof item !== 'object' || Array.isArray(item) || isProxy(item)) {
+      fail('REMOTE_TASK_DATA_INVALID');
+    }
+    let itemPrototype;
+    let uidDescriptor;
+    let createdAtDescriptor;
+    try {
+      itemPrototype = Object.getPrototypeOf(item);
+      uidDescriptor = Object.getOwnPropertyDescriptor(item, 'uid');
+      createdAtDescriptor = Object.getOwnPropertyDescriptor(item, 'createdAt');
+    } catch {
+      fail('REMOTE_TASK_DATA_INVALID');
+    }
+    if ((itemPrototype !== Object.prototype && itemPrototype !== null)
+      || !uidDescriptor?.enumerable || !Object.hasOwn(uidDescriptor, 'value')
+      || !createdAtDescriptor?.enumerable || !Object.hasOwn(createdAtDescriptor, 'value')
+      || typeof uidDescriptor.value !== 'string' || !UUID_V4.test(uidDescriptor.value)
+      || typeof createdAtDescriptor.value !== 'string') fail('REMOTE_TASK_DATA_INVALID');
+    let canonical = false;
+    try {
+      canonical = new Date(createdAtDescriptor.value).toISOString() === createdAtDescriptor.value;
+    } catch { /* invalid */ }
+    const strictlyAfter = previousCreatedAt === null
+      || createdAtDescriptor.value > previousCreatedAt
+      || (createdAtDescriptor.value === previousCreatedAt && uidDescriptor.value > previousUid);
+    if (!canonical || !strictlyAfter) fail('REMOTE_TASK_DATA_INVALID');
+    previousCreatedAt = createdAtDescriptor.value;
+    previousUid = uidDescriptor.value;
+    tasks.push(Object.freeze({ uid: uidDescriptor.value, createdAt: createdAtDescriptor.value }));
+  }
+  return Object.freeze(tasks);
 }
 
 function submissionLeaseExpiry(now, timeoutMs) {
@@ -575,25 +641,35 @@ function createRemoteTaskService(options) {
   }
 
   async function recoverAll() {
-    const pending = callSync(repository, 'listRecoverableFormalTasks', []);
-    const recovered = [];
-    for (const task of pending) {
-      try {
-        recovered.push(Object.freeze({
-          taskUid: task.uid,
-          recovered: true,
-          task: await recover(task.uid),
-        }));
-      } catch (error) {
-        if (!isRemoteTaskError(error)) throw error;
-        recovered.push(Object.freeze({
-          taskUid: task.uid,
-          recovered: false,
-          errorCode: error.code,
-        }));
+    let afterCreatedAt = null;
+    let afterUid = null;
+    let recoveredCount = 0;
+    let failedCount = 0;
+    while (true) {
+      const page = recoveryPage(callSync(repository, 'listRecoverableFormalTasks', [{
+        afterCreatedAt,
+        afterUid,
+        limit: RECOVERY_PAGE_LIMIT,
+      }]), afterCreatedAt, afterUid);
+      for (let index = 0; index < page.length; index += 1) {
+        const task = page[index];
+        try {
+          await recover(task.uid);
+          recoveredCount += 1;
+        } catch (error) {
+          if (!isRemoteTaskError(error)) throw error;
+          failedCount += 1;
+        }
+        if (!Number.isSafeInteger(recoveredCount + failedCount)) {
+          fail('REMOTE_TASK_DATA_INVALID');
+        }
       }
+      if (page.length < RECOVERY_PAGE_LIMIT) break;
+      const last = page[page.length - 1];
+      afterCreatedAt = last.createdAt;
+      afterUid = last.uid;
     }
-    return Object.freeze(recovered);
+    return Object.freeze({ recoveredCount, failedCount });
   }
 
   return Object.freeze({

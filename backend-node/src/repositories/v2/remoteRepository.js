@@ -1,3 +1,5 @@
+const { types: { isProxy } } = require('node:util');
+
 const {
   assertAllowedKeys,
   executeWrite,
@@ -19,6 +21,46 @@ const CONNECTION_MAP = Object.freeze({
   jsonKinds: { environment_report_json: 'object?' },
 });
 const TASK_MAP = Object.freeze({ entity: 'remote task' });
+const RECOVERY_PAGE_LIMIT = 100;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function recoverableTaskPageRequest(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || isProxy(value)) {
+    throw new TypeError('remote task recovery page input is invalid');
+  }
+  let prototype;
+  let descriptors;
+  try {
+    prototype = Object.getPrototypeOf(value);
+    descriptors = Object.getOwnPropertyDescriptors(value);
+  } catch {
+    throw new TypeError('remote task recovery page input is invalid');
+  }
+  const expected = ['afterCreatedAt', 'afterUid', 'limit'];
+  const keys = Reflect.ownKeys(descriptors);
+  if ((prototype !== Object.prototype && prototype !== null)
+    || keys.length !== expected.length
+    || keys.some((key) => typeof key !== 'string' || !expected.includes(key))
+    || expected.some((key) => !descriptors[key]?.enumerable
+      || !Object.hasOwn(descriptors[key], 'value'))) {
+    throw new TypeError('remote task recovery page input is invalid');
+  }
+  const afterCreatedAt = descriptors.afterCreatedAt.value;
+  const afterUid = descriptors.afterUid.value;
+  const limit = descriptors.limit.value;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > RECOVERY_PAGE_LIMIT
+    || ((afterCreatedAt === null) !== (afterUid === null))) {
+    throw new TypeError('remote task recovery page input is invalid');
+  }
+  if (afterCreatedAt !== null) {
+    let canonical = false;
+    try { canonical = new Date(afterCreatedAt).toISOString() === afterCreatedAt; } catch { /* invalid */ }
+    if (!canonical || typeof afterUid !== 'string' || !UUID_V4.test(afterUid)) {
+      throw new TypeError('remote task recovery page input is invalid');
+    }
+  }
+  return Object.freeze({ afterCreatedAt, afterUid, limit });
+}
 
 function createRemoteRepository(database) {
   const connectionColumns = new Set(
@@ -198,7 +240,13 @@ function createRemoteRepository(database) {
   const listRecoverableFormalTaskRows = hasFormalTasks ? database.prepare(`
     SELECT * FROM remote_tasks
     WHERE contract_version = 'remote-task.v1' AND status IN ('queued', 'running')
+      AND (
+        @afterCreatedAt IS NULL
+        OR created_at > @afterCreatedAt
+        OR (created_at = @afterCreatedAt AND uid > @afterUid)
+      )
     ORDER BY created_at, uid
+    LIMIT @limit
   `) : null;
 
   function mapConnection(row) {
@@ -436,9 +484,10 @@ function createRemoteRepository(database) {
       return Object.freeze(listTaskRows.all(connectionUid).map(mapTask));
     },
 
-    listRecoverableFormalTasks() {
+    listRecoverableFormalTasks(value) {
       requireFormalTaskSupport();
-      return Object.freeze(listRecoverableFormalTaskRows.all().map(mapTask));
+      const request = recoverableTaskPageRequest(value);
+      return Object.freeze(listRecoverableFormalTaskRows.all(request).map(mapTask));
     },
 
     markHostFingerprintChanged({ uid, expectedStateVersion, expectedFingerprint }) {

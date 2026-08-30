@@ -293,6 +293,33 @@ test('P8-10 public record is path-safe and exposes only sealed result evidence',
   );
 });
 
+test('P9-01 marks an interrupted media export failed without creating output evidence', async (t) => {
+  const local = await createLocalMediaExportFixture(t, 90070);
+  const database = createMigratedV2Database(t);
+  const repositories = seedSucceededExportNode(database, local.fixture.executionPlan);
+  const prepared = repositories.mediaExportRuns.prepareFromNode(
+    NODE_RUN_UID,
+    1_800_001_000_000,
+  );
+  repositories.mediaExportRuns.start(prepared.uid);
+  const service = createMediaExportService({
+    repository: repositories.mediaExportRuns,
+    exporter: { async export() { throw new Error('must not execute during recovery'); } },
+    createUid: () => uid(90071),
+    removeOutput: async () => {},
+    nowEpochMs: () => 1_800_001_001_000,
+  });
+
+  assert.deepEqual(service.recoverInterrupted(), { recoveredCount: 1 });
+  const recovered = service.get(prepared.uid);
+  assert.equal(recovered.status, 'failed');
+  assert.equal(recovered.errorCode, 'MEDIA_EXPORT_FAILED');
+  assert.equal(recovered.outputAssetUid, null);
+  assert.equal(recovered.outputAssetVersionUid, null);
+  assert.equal(recovered.output, null);
+  assert.deepEqual(service.recoverInterrupted(), { recoveredCount: 0 });
+});
+
 test('P8-10 service dependency boundary is explicit and modular', () => {
   assert.throws(() => createMediaExportService({}), /Media export service dependencies are invalid/);
 });
@@ -555,6 +582,7 @@ test('P8-10 removes an installed output when DB completion cannot commit', async
     getExecutionPlan: actual.getExecutionPlan,
     listByDrama: actual.listByDrama,
     prepareFromNode: actual.prepareFromNode,
+    recoverInterrupted: actual.recoverInterrupted,
     start: actual.start,
   });
   const service = createMediaExportService({

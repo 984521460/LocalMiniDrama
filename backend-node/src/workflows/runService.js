@@ -193,6 +193,61 @@ function createWorkflowRunService({ repositories, createUid = randomUUID }) {
       }
     },
 
+    recoverInterruptedRuns() {
+      try {
+        return repositories.withTransaction((scoped) => {
+          const runUids = scoped.runs.listRecoverableWorkflowRunUids();
+          for (const runUid of runUids) {
+            const before = validateRunAggregate(scoped.runs.getWorkflowWithNodes(runUid));
+            const statuses = before.nodes.map((node) => node.status);
+            if (statuses.every((status) => status === 'succeeded' || status === 'skipped')) {
+              scoped.runs.transitionWorkflowStatus({
+                uid: runUid,
+                expectedStatus: 'running',
+                nextStatus: 'succeeded',
+              });
+              continue;
+            }
+            if (statuses.some((status) => status === 'cancelled')
+              && statuses.every((status) => (
+                status === 'succeeded' || status === 'skipped' || status === 'cancelled'
+              ))) {
+              scoped.runs.transitionWorkflowStatus({
+                uid: runUid,
+                expectedStatus: 'running',
+                nextStatus: 'cancelled',
+              });
+              continue;
+            }
+            for (const node of before.nodes) {
+              if (node.status !== 'running' && node.status !== 'queued') continue;
+              scoped.runs.transitionNodeStatus({
+                uid: node.uid,
+                expectedStatus: node.status,
+                nextStatus: node.status === 'running' ? 'failed' : 'blocked',
+                inputSnapshot: {},
+                output: null,
+                cacheKey: null,
+                errorCode: 'ERR_WORKFLOW_RECOVERY_ORPHANED',
+                errorDetailRef: null,
+              });
+            }
+            scoped.runs.transitionWorkflowStatus({
+              uid: runUid,
+              expectedStatus: 'running',
+              nextStatus: 'failed',
+              errorCode: 'ERR_WORKFLOW_RECOVERY_ORPHANED',
+              errorDetailRef: null,
+            });
+            validateRunAggregate(scoped.runs.getWorkflowWithNodes(runUid));
+          }
+          return Object.freeze({ recoveredCount: runUids.length });
+        });
+      } catch (error) {
+        throw translateRepositoryError(error);
+      }
+    },
+
     restartFailedNodes(input) {
       const request = inputObject(input, ['runUid', 'nodeRunUids']);
       const runUid = inputUuid(request.runUid);

@@ -9,6 +9,10 @@ const { setupRouter } = require('./routes/index.js');
 const { createProductionRemoteRuntime } = require('./remote/productionRuntime');
 const { createProductionH3Runtime } = require('./h3/productionRuntime');
 const { createProductionMediaExportRuntime } = require('./media/productionRuntime');
+const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
+const { createV2Repositories } = require('./repositories/v2');
+const { createWorkflowRunService } = require('./workflows');
+const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery');
 
 function createApp({
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
@@ -37,26 +41,46 @@ function createApp({
     localRoot: storageRoot,
     dependencies: remoteDependencies,
   });
+  const h3Runtime = createProductionH3Runtime({
+    database: db,
+    storageBaseUrl: config.storage?.base_url || '',
+    dependencies: h3Dependencies,
+  });
+  const mediaExportRuntime = createProductionMediaExportRuntime({
+    database: db,
+    localRoot: storageRoot,
+    workspaceRoot: mediaExportWorkspaceRoot,
+    dependencies: mediaExportDependencies,
+  });
   const runtime = Object.freeze({
     ...remoteRuntime,
-    h3: createProductionH3Runtime({
-      database: db,
-      storageBaseUrl: config.storage?.base_url || '',
-      dependencies: h3Dependencies,
-    }),
-    ...createProductionMediaExportRuntime({
-      database: db,
-      localRoot: storageRoot,
-      workspaceRoot: mediaExportWorkspaceRoot,
-      dependencies: mediaExportDependencies,
-    }),
+    h3: h3Runtime,
+    ...mediaExportRuntime,
   });
-
   const taskService = require('./services/taskService');
-  taskService.failOrphanedAsyncTasksOnStartup(db, log);
-
   const { resumeProcessingVideoGenerations } = require('./services/videoService');
-  resumeProcessingVideoGenerations(db, log);
+  const recoveryLog = Object.freeze({ info() {}, warn() {}, error() {} });
+  const startupRecovery = createStartupRecoveryCoordinator({
+    legacyAsyncTasks: Object.freeze({
+      recover() {
+        return Object.freeze({
+          recoveredCount: taskService.failOrphanedAsyncTasksOnStartup(db, recoveryLog),
+        });
+      },
+    }),
+    legacyVideoGenerations: Object.freeze({
+      recover() {
+        const result = resumeProcessingVideoGenerations(db, recoveryLog);
+        return Object.freeze({ recoveredCount: result.recoveredCount });
+      },
+    }),
+    workflowRuns: createWorkflowRunService({ repositories: createV2Repositories(db) }),
+    mediaExports: mediaExportRuntime.mediaExports.service,
+    h3ApiSubmissions: createH3ApiSubmissionStore(db),
+    remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
+    log,
+  });
+  const startupRecoveryPromise = startupRecovery.run();
 
   const app = express();
   app.use(express.json({ limit: '10mb' }));
@@ -138,7 +162,7 @@ function createApp({
     }
   });
 
-  return { app, config, db, runtime };
+  return { app, config, db, runtime, startupRecovery, startupRecoveryPromise };
 }
 
 module.exports = { createApp };

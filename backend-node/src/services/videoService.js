@@ -435,6 +435,11 @@ function resumeProcessingVideoGenerations(db, log) {
       });
     });
   }
+  return Object.freeze({
+    recoveredCount: stuck.length + resumable.length,
+    failedCount: stuck.length,
+    resumedCount: resumable.length,
+  });
 }
 
 async function processVideoGeneration(db, log, videoGenId) {
