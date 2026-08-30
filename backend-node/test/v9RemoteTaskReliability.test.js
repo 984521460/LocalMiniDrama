@@ -125,20 +125,27 @@ test('P9-02 automatically heartbeats a long phase and stops the lease afterward'
     expectedStateVersion: prepared.stateVersion,
   });
   let calls = 0;
+  let release;
+  const operation = new Promise((resolve) => { release = resolve; });
   const service = Object.freeze({
     heartbeat(uidValue, value) {
       calls += 1;
-      return fixture.service.heartbeat(uidValue, value);
+      const result = fixture.service.heartbeat(uidValue, value);
+      if (calls === 2) release('done');
+      return result;
     },
   });
+  const watchdog = setTimeout(() => release('heartbeat-timeout'), 2000);
+  t.after(() => clearTimeout(watchdog));
   const phase = await runWithRemoteTaskHeartbeat({
     service,
     task: uploading,
     intervalMs: 5,
-  }, () => new Promise((resolve) => setTimeout(() => resolve('done'), 30)));
+  }, () => operation);
+  clearTimeout(watchdog);
   assert.equal(phase.result, 'done');
   assert.equal(phase.task.stateVersion, uploading.stateVersion);
-  assert.ok(calls >= 2);
+  assert.equal(calls, 2);
   const stoppedAt = calls;
   await new Promise((resolve) => setTimeout(resolve, 15));
   assert.equal(calls, stoppedAt);
