@@ -6,7 +6,7 @@ const { randomUUID } = require('node:crypto');
 const {
   parseAssetLocator,
   parseStorageRelativePath,
-} = require('../../../../../packages/storage/dist');
+} = require('@local-mini-drama/storage');
 
 class LocalStorageError extends Error {
   constructor(code, message) {

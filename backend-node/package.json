@@ -14,8 +14,12 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@local-mini-drama/credential-vault": "file:../packages/credential-vault",
+    "@local-mini-drama/storage": "file:../packages/storage",
+    "@local-mini-drama/workflow-engine": "file:../packages/workflow-engine",
     "@volcengine/openapi": "^1.36.1",
     "adm-zip": "^0.5.16",
+    "ajv": "8.20.0",
     "better-sqlite3": "^11.6.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",

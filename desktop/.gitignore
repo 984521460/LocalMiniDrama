@@ -2,4 +2,5 @@ node_modules/
 release/
 frontweb-dist/
 backend-app/
+schemas/
 *.log

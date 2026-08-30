@@ -17,6 +17,21 @@ const projects = [
 ]
 const dependencyGroups = ['dependencies', 'devDependencies']
 
+const firstPartyWorkspaceDependencies = new Map()
+const packagesDirectory = path.join(repoRoot, 'packages')
+for (const entry of fs.readdirSync(packagesDirectory, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue
+
+  const packageDirectory = path.join(packagesDirectory, entry.name)
+  const packageJsonPath = path.join(packageDirectory, 'package.json')
+  if (!fs.existsSync(packageJsonPath)) continue
+
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))
+  if (packageJson.private === true && typeof packageJson.name === 'string') {
+    firstPartyWorkspaceDependencies.set(packageJson.name, packageDirectory)
+  }
+}
+
 const rows = []
 const errors = []
 
@@ -32,6 +47,15 @@ for (const project of projects) {
   for (const group of dependencyGroups) {
     for (const name of Object.keys(packageJson[group] ?? {}).sort()) {
       const locked = packageLock.packages?.[`node_modules/${name}`]
+      const workspaceDirectory = firstPartyWorkspaceDependencies.get(name)
+      const isBoundFirstPartyWorkspace = (
+        workspaceDirectory
+        && locked?.link === true
+        && typeof locked.resolved === 'string'
+        && path.resolve(projectDir, locked.resolved) === workspaceDirectory
+      )
+      if (isBoundFirstPartyWorkspace) continue
+
       if (!locked?.version || !locked?.license) {
         errors.push(`${project.name}:${group}:${name}`)
         continue

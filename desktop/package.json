@@ -6,21 +6,27 @@
   "author": "LocalMiniDrama",
   "license": "MIT",
   "scripts": {
-    "prestart": "node scripts/copy-backend.js",
+    "prestart": "npm run prepare-backend",
     "start": "electron .",
     "build:front": "cd ../frontweb && npm run build",
     "copy-front": "node scripts/copy-front.js",
     "clean:unpacked": "node scripts/clean-win-unpacked.js",
-    "pack": "npm run prepare-backend && npm run build:front && npm run copy-front && npm run clean:unpacked && electron-builder --dir",
-    "dist": "npm run prepare-backend && npm run build:front && npm run copy-front && npm run clean:unpacked && electron-builder --win",
+    "prepare:packaging": "node scripts/prune-optional-native.js",
+    "pack": "npm run prepare-backend && npm run build:front && npm run copy-front && npm run clean:unpacked && npm run prepare:packaging && electron-builder --dir",
+    "dist": "npm run prepare-backend && npm run build:front && npm run copy-front && npm run clean:unpacked && npm run prepare:packaging && electron-builder --win",
+    "verify:windows-release": "node scripts/verify-windows-release.js",
     "dist:cn": "node scripts/dist-cn.js",
     "dist:mac": "bash dist-mac.sh",
-    "postinstall": "node scripts/copy-backend.js && electron-builder install-app-deps",
-    "prepare-backend": "node scripts/copy-backend.js"
+    "postinstall": "node scripts/copy-backend.js && npm run prepare:packaging && electron-builder install-app-deps",
+    "prepare-backend": "npm --prefix .. run build:packages && node scripts/copy-backend.js"
   },
   "dependencies": {
+    "@local-mini-drama/credential-vault": "file:../packages/credential-vault",
+    "@local-mini-drama/storage": "file:../packages/storage",
+    "@local-mini-drama/workflow-engine": "file:../packages/workflow-engine",
     "@volcengine/openapi": "^1.36.1",
     "adm-zip": "^0.5.16",
+    "ajv": "8.20.0",
     "better-sqlite3": "^11.6.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
@@ -47,11 +53,14 @@
       "main.js",
       "product-identity.js",
       "user-data-path.js",
+      "windows-release-contract.js",
       "package.json",
       "backend-app/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "schemas/**/*"
     ],
     "asarUnpack": [
+      "backend-app/migrations/**",
       "node_modules/better-sqlite3/**",
       "node_modules/sharp/**"
     ],
@@ -89,6 +98,10 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "allowElevation": false,
+      "runAfterFinish": false,
       "artifactName": "AI漫剧工作台 Setup ${version}.${ext}"
     }
   }

@@ -7,7 +7,7 @@ const {
   parseCredentialDescriptor,
   parseCredentialKind,
   parseCredentialRef,
-} = require('../../../../../packages/credential-vault/dist');
+} = require('@local-mini-drama/credential-vault');
 const { CredentialBridgeError, PowerShellCredentialBridge } = require('./powershellCredentialBridge');
 
 const MAX_SECRET_BYTES = 2560;

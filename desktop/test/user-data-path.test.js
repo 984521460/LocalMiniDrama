@@ -27,6 +27,11 @@ test('migrates legacy data before the current user-data directory is created', (
   assert.equal(result.migratedFrom, legacyPath);
   assert.equal(fs.readFileSync(path.join(currentPath, 'project.db'), 'utf8'), 'legacy-data');
   assert.equal(fs.existsSync(legacyPath), false);
+
+  const secondLaunch = resolveUserDataPath({ appDataPath });
+  assert.equal(secondLaunch.path, currentPath);
+  assert.equal(secondLaunch.migratedFrom, null);
+  assert.equal(fs.readFileSync(path.join(currentPath, 'project.db'), 'utf8'), 'legacy-data');
 });
 
 test('replaces an empty current directory so interrupted upgrades can recover', (t) => {

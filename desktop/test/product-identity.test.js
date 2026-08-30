@@ -24,8 +24,16 @@ test('desktop package metadata uses the approved product identity', () => {
   assert.match(packageJson.build.artifactName, /^AI漫剧工作台/);
   assert.match(packageJson.build.nsis.artifactName, /^AI漫剧工作台 Setup/);
   assert.notEqual(packageJson.build.nsis.artifactName, packageJson.build.artifactName);
+  assert.deepEqual(packageJson.build.win.target, ['nsis', 'portable']);
+  assert.equal(packageJson.build.nsis.perMachine, false);
+  assert.equal(packageJson.build.nsis.deleteAppDataOnUninstall, false);
+  assert.equal(packageJson.build.nsis.allowElevation, false);
+  assert.equal(packageJson.build.nsis.runAfterFinish, false);
+  assert.equal(packageJson.build.publish, undefined);
   assert.ok(packageJson.build.files.includes('product-identity.js'));
   assert.ok(packageJson.build.files.includes('user-data-path.js'));
+  assert.ok(packageJson.build.files.includes('windows-release-contract.js'));
+  assert.equal(packageJson.scripts['verify:windows-release'], 'node scripts/verify-windows-release.js');
 });
 
 test('alternate builder configs keep the same product name and app id', () => {

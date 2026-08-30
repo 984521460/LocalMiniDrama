@@ -6,7 +6,18 @@ const { discoverV2Migrations, runV2Migrations } = require('./v2');
 const { ensurePreV2MigrationBackup } = require('./v2/migrationBackup');
 const { loadConfig } = require('../config/index.js');
 
-const V2_MIGRATIONS_DIR = path.resolve(__dirname, '../../migrations/v2');
+function resolvePhysicalMigrationsDir(moduleDirectory = __dirname, pathImpl = path) {
+  const bundledDirectory = pathImpl.resolve(moduleDirectory, '../../migrations');
+  const asarSegment = `${pathImpl.sep}app.asar${pathImpl.sep}`;
+  if (!bundledDirectory.includes(asarSegment)) return bundledDirectory;
+  return bundledDirectory.replace(
+    asarSegment,
+    `${pathImpl.sep}app.asar.unpacked${pathImpl.sep}`,
+  );
+}
+
+const MIGRATIONS_DIR = resolvePhysicalMigrationsDir();
+const V2_MIGRATIONS_DIR = path.join(MIGRATIONS_DIR, 'v2');
 
 function stripLeadingComments(sql) {
   return sql
@@ -39,7 +50,7 @@ function runOne(database, sql, file, index) {
 }
 
 function runMigrations(database) {
-  const migrationsDir = path.join(__dirname, '..', '..', 'migrations');
+  const migrationsDir = MIGRATIONS_DIR;
   if (!fs.existsSync(migrationsDir)) {
     console.log('Migrations dir missing, skipping:', migrationsDir);
     return;
@@ -550,4 +561,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { runMigrationsAndEnsure, ensureColumns };
+module.exports = { runMigrationsAndEnsure, ensureColumns, resolvePhysicalMigrationsDir };

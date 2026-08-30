@@ -10,7 +10,7 @@
 
 ## 2. 直接 NPM 依赖
 
-下表从根工程与三个子项目当前 `package.json` 与 `package-lock.json` 重建。重建命令：
+下表从根工程与三个子项目当前 `package.json` 与 `package-lock.json` 重建；精确绑定到本仓库 `packages/*` 的私有一方工作区包不属于第三方组件，故不重复列入。重建命令：
 
 ```powershell
 node licenses/collect-direct-npm-licenses.mjs
@@ -22,6 +22,7 @@ node licenses/collect-direct-npm-licenses.mjs
 | root | devDependencies | `typescript` | `7.0.2` | `Apache-2.0` |
 | backend-node | dependencies | `@volcengine/openapi` | `1.36.1` | `Apache-2.0` |
 | backend-node | dependencies | `adm-zip` | `0.5.16` | `MIT` |
+| backend-node | dependencies | `ajv` | `8.20.0` | `MIT` |
 | backend-node | dependencies | `better-sqlite3` | `11.10.0` | `MIT` |
 | backend-node | dependencies | `cors` | `2.8.6` | `MIT` |
 | backend-node | dependencies | `express` | `4.22.1` | `MIT` |
@@ -46,6 +47,7 @@ node licenses/collect-direct-npm-licenses.mjs
 | frontweb | devDependencies | `vite` | `5.4.21` | `MIT` |
 | desktop | dependencies | `@volcengine/openapi` | `1.36.2` | `Apache-2.0` |
 | desktop | dependencies | `adm-zip` | `0.5.16` | `MIT` |
+| desktop | dependencies | `ajv` | `8.20.0` | `MIT` |
 | desktop | dependencies | `better-sqlite3` | `11.10.0` | `MIT` |
 | desktop | dependencies | `cors` | `2.8.6` | `MIT` |
 | desktop | dependencies | `express` | `4.22.1` | `MIT` |

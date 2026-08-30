@@ -3,7 +3,7 @@
 const { createHash } = require('node:crypto');
 const { types: { isProxy } } = require('node:util');
 
-const { createAssetLocator } = require('../../../packages/storage/dist');
+const { createAssetLocator } = require('@local-mini-drama/storage');
 const { LocalStorageProvider } = require('../adapters/v2/storage');
 const {
   canonicalUid,

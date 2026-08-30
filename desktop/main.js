@@ -3,10 +3,15 @@ const path = require('path');
 const fs = require('fs');
 const { PRODUCT_NAME } = require('./product-identity');
 const { resolveUserDataPath } = require('./user-data-path');
+const { resolvePackagingSmokeAppData } = require('./windows-release-contract');
 
 // 显式固定 userData 目录，使开发模式与打包 exe 路径完全一致，防止 productName 变更导致路径漂移
 // 迁移必须早于日志目录创建，否则空的新目录会掩盖旧版数据。
-const userDataResolution = resolveUserDataPath({ appDataPath: app.getPath('appData') });
+const startupAppDataPath = resolvePackagingSmokeAppData({
+  env: process.env,
+  defaultPath: app.getPath('appData'),
+});
+const userDataResolution = resolveUserDataPath({ appDataPath: startupAppDataPath });
 const USERDATA_DIR = userDataResolution.path;
 app.setPath('userData', USERDATA_DIR);
 
@@ -40,6 +45,24 @@ const BACKEND_NODE_PATH = path.join(__dirname, '..', 'backend-node');
 const DEFAULT_PORT = 5679;
 
 let serverInstance = null;
+
+function isPackagingSmoke(env) {
+  return env.LOCALMINIDRAMA_PACKAGING_SMOKE === '1';
+}
+
+function exitPackagingSmoke() {
+  writeMainLog('packaging-smoke-ready');
+  if (serverInstance) {
+    try {
+      if (typeof serverInstance.closeAllConnections === 'function') {
+        serverInstance.closeAllConnections();
+      }
+      serverInstance.close();
+    } catch (_) {}
+    serverInstance = null;
+  }
+  app.exit(0);
+}
 
 /** 开发模式用 backend-node（改代码即生效）；打包后用 backend-app */
 function getBackendModulePath() {
@@ -256,6 +279,10 @@ app.whenReady().then(async () => {
     const stack = err && err.stack ? err.stack : String(err);
     writeMainLog(`Failed to start backend\n${stack}`);
     console.error('Failed to start backend', err);
+    if (isPackagingSmoke(process.env)) {
+      app.exit(1);
+      return;
+    }
     const { dialog } = require('electron');
     dialog.showErrorBox(
       `${PRODUCT_NAME}启动失败`,
@@ -265,6 +292,10 @@ app.whenReady().then(async () => {
     return;
   }
   // startBackend 的 Promise 在 listen 回调中 resolve，服务器此时已就绪，直接建窗口
+  if (isPackagingSmoke(process.env)) {
+    exitPackagingSmoke();
+    return;
+  }
   createWindow(port);
 });
 
