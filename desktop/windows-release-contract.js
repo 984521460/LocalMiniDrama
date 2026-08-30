@@ -3,10 +3,16 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {
+  DistributionAssetContractError,
+  assertArchiveDistributionEntries,
+  assertDistributionBuildConfig,
+} = require('./distribution-assets');
 
 const WINDOWS_RELEASE_ERROR = 'WINDOWS_RELEASE_CONTRACT_INVALID';
 const REQUIRED_ASAR_ENTRIES = Object.freeze([
   '/main.js',
+  '/distribution-assets.js',
   '/product-identity.js',
   '/user-data-path.js',
   '/windows-release-contract.js',
@@ -19,6 +25,19 @@ const REQUIRED_ASAR_ENTRIES = Object.freeze([
   '/node_modules/@local-mini-drama/credential-vault/package.json',
   '/node_modules/@local-mini-drama/credential-vault/dist/index.js',
   '/node_modules/ajv/package.json',
+  '/node_modules/ajv/LICENSE',
+  '/node_modules/@volcengine/openapi/LICENSE',
+  '/node_modules/adm-zip/LICENSE',
+  '/node_modules/better-sqlite3/LICENSE',
+  '/node_modules/cors/LICENSE',
+  '/node_modules/express/LICENSE',
+  '/node_modules/js-yaml/LICENSE',
+  '/node_modules/jsonrepair/LICENSE.md',
+  '/node_modules/jsonwebtoken/LICENSE',
+  '/node_modules/multer/LICENSE',
+  '/node_modules/sharp/LICENSE',
+  '/node_modules/ssh2/LICENSE',
+  '/node_modules/uuid/LICENSE.md',
   '/node_modules/ajv/dist/2020.js',
   '/node_modules/fast-uri/index.js',
   '/node_modules/require-from-string/index.js',
@@ -32,7 +51,8 @@ const REQUIRED_ARCHIVE_ENTRIES = Object.freeze([
   'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
   'resources/app.asar.unpacked/backend-app/migrations/v2/0001_add_core_uids.sql',
   'resources/frontweb/dist/index.html',
-  'resources/ffmpeg/ffmpeg.exe',
+  'resources/licenses/LICENSE',
+  'resources/licenses/THIRD_PARTY_NOTICES.md',
 ]);
 
 class WindowsReleaseContractError extends Error {
@@ -174,6 +194,12 @@ function assertWindowsReleaseConfig(packageJson) {
   const win = build && build.win;
   const nsis = build && build.nsis;
   if (!build || !win || !nsis) invalid();
+  try {
+    assertDistributionBuildConfig(packageJson);
+  } catch (error) {
+    if (!(error instanceof DistributionAssetContractError)) throw error;
+    invalid();
+  }
   if (build.appId !== 'com.localminidrama.desktop') invalid();
   if (build.productName !== 'AI漫剧工作台') invalid();
   if (!Array.isArray(win.target) || win.target.length !== 2) invalid();
@@ -188,6 +214,7 @@ function assertWindowsReleaseConfig(packageJson) {
     || !build.asarUnpack.includes('backend-app/migrations/**')) invalid();
   for (const required of [
     'main.js',
+    'distribution-assets.js',
     'product-identity.js',
     'user-data-path.js',
     'windows-release-contract.js',
@@ -254,15 +281,23 @@ function assertEntries(entries, requiredEntries) {
 }
 
 function assertAsarEntries(entries) {
+  try {
+    assertArchiveDistributionEntries(entries);
+  } catch (error) {
+    if (!(error instanceof DistributionAssetContractError)) throw error;
+    invalid();
+  }
   return assertEntries(entries, REQUIRED_ASAR_ENTRIES);
 }
 
 function assertArchiveEntries(entries) {
-  const required = assertEntries(entries, REQUIRED_ARCHIVE_ENTRIES.map((entry) => `/${entry}`));
-  const normalized = entries.map(normalizedEntry);
-  if (!normalized.some((entry) => entry.startsWith('/resources/example_drama/') && !entry.endsWith('/'))) {
+  try {
+    assertArchiveDistributionEntries(entries);
+  } catch (error) {
+    if (!(error instanceof DistributionAssetContractError)) throw error;
     invalid();
   }
+  const required = assertEntries(entries, REQUIRED_ARCHIVE_ENTRIES.map((entry) => `/${entry}`));
   return required;
 }
 
@@ -273,7 +308,8 @@ function assertUnpackedPayload({ desktopRoot, packageJson, asarEntries, fsImpl =
   for (const relativePath of [
     ['resources', 'app.asar'],
     ['resources', 'frontweb', 'dist', 'index.html'],
-    ['resources', 'ffmpeg', 'ffmpeg.exe'],
+    ['resources', 'licenses', 'LICENSE'],
+    ['resources', 'licenses', 'THIRD_PARTY_NOTICES.md'],
     ['resources', 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'],
     ['resources', 'app.asar.unpacked', 'backend-app', 'migrations', 'v2', '0001_add_core_uids.sql'],
     ['resources', 'app.asar.unpacked', 'node_modules', '@img', 'sharp-win32-x64', 'lib', 'sharp-win32-x64.node'],
@@ -286,12 +322,8 @@ function assertUnpackedPayload({ desktopRoot, packageJson, asarEntries, fsImpl =
       invalid();
     }
   }
-  try {
-    const exampleEntries = fsImpl.readdirSync(path.join(unpackedRoot, 'resources', 'example_drama'));
-    if (exampleEntries.length < 1) invalid();
-  } catch (error) {
-    if (error instanceof WindowsReleaseContractError) throw error;
-    invalid();
+  for (const forbiddenDirectory of ['example_drama', 'ffmpeg']) {
+    if (fsImpl.existsSync(path.join(unpackedRoot, 'resources', forbiddenDirectory))) invalid();
   }
   assertAsarEntries(asarEntries);
   return Object.freeze({ unpackedExecutable: names.unpackedExecutable });

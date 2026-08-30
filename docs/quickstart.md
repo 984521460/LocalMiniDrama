@@ -238,6 +238,10 @@ storage/
 └── merged/        # 合成后的完整视频
 ```
 
+### Q: 为什么本地视频探测或合成提示缺少 FFmpeg？
+
+安装包不分发 FFmpeg、示例剧集或模型权重。请自行取得符合使用场景许可条件的 `ffmpeg` 与 `ffprobe`。Windows 桌面版可将两者放入 `%APPDATA%\localminidrama-desktop\backend\tools\ffmpeg\`，也可配置 `FFMPEG_PATH` / `FFPROBE_PATH` 或系统 `PATH`。项目仓库中的开发用二进制不会自动进入安装包。
+
 ---
 
 ### Q: 如何备份/迁移项目数据？

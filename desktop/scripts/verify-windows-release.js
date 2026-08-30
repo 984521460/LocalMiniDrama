@@ -11,6 +11,7 @@ const {
   WINDOWS_RELEASE_ERROR,
   WindowsReleaseContractError,
   assertArchiveEntries,
+  assertAsarEntries,
   assertPackagingSmokeTaskRoot,
   assertPeFile,
   assertUnpackedPayload,
@@ -27,6 +28,8 @@ const {
 const desktopRoot = path.join(__dirname, '..');
 const releaseRoot = path.join(desktopRoot, 'release');
 const PROCESS_TIMEOUT_MS = 120_000;
+const MAX_EMBEDDED_ASAR_BYTES = 512 * 1024 * 1024;
+const MAX_LICENSE_BYTES = 4 * 1024 * 1024;
 const SYNTHETIC_SENTINEL = Buffer.from('p9-05-synthetic-upgrade-sentinel\n', 'utf8');
 
 function fail() {
@@ -121,8 +124,12 @@ function runProcess(executable, args, options = {}) {
   });
 }
 
+function sevenZipPath() {
+  return path.join(desktopRoot, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe');
+}
+
 async function listExecutableArchive(executable) {
-  const sevenZip = path.join(desktopRoot, 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe');
+  const sevenZip = sevenZipPath();
   assertPeFile(sevenZip);
   const result = await runProcess(sevenZip, ['l', '-slt', executable]);
   const entries = parseArchiveEntries(result.stdout);
@@ -144,6 +151,83 @@ function sha256(filePath) {
     fs.closeSync(handle);
   }
   return hash.digest('hex');
+}
+
+function assertBoundedRegularFile(filePath, maxBytes) {
+  let stat;
+  try {
+    stat = fs.lstatSync(filePath);
+  } catch (_) {
+    fail();
+  }
+  if (!stat.isFile() || stat.isSymbolicLink()
+    || !Number.isSafeInteger(stat.size) || stat.size < 1 || stat.size > maxBytes) fail();
+  return stat.size;
+}
+
+function assertExtractedExecutablePayload({
+  extractionRoot,
+  sidecarAsarPath,
+  projectLicensePath = path.join(desktopRoot, '..', 'LICENSE'),
+  thirdPartyNoticesPath = path.join(desktopRoot, '..', 'THIRD_PARTY_NOTICES.md'),
+  asarImpl = asar,
+  assertAsarEntriesImpl = assertAsarEntries,
+}) {
+  const extractedAsar = path.join(extractionRoot, 'resources', 'app.asar');
+  const extractedLicense = path.join(extractionRoot, 'resources', 'licenses', 'LICENSE');
+  const extractedNotices = path.join(
+    extractionRoot,
+    'resources',
+    'licenses',
+    'THIRD_PARTY_NOTICES.md',
+  );
+  assertBoundedRegularFile(sidecarAsarPath, MAX_EMBEDDED_ASAR_BYTES);
+  assertBoundedRegularFile(extractedAsar, MAX_EMBEDDED_ASAR_BYTES);
+  assertBoundedRegularFile(projectLicensePath, MAX_LICENSE_BYTES);
+  assertBoundedRegularFile(thirdPartyNoticesPath, MAX_LICENSE_BYTES);
+  assertBoundedRegularFile(extractedLicense, MAX_LICENSE_BYTES);
+  assertBoundedRegularFile(extractedNotices, MAX_LICENSE_BYTES);
+
+  const sidecarAsarSha256 = sha256(sidecarAsarPath);
+  const embeddedAsarSha256 = sha256(extractedAsar);
+  if (embeddedAsarSha256 !== sidecarAsarSha256
+    || sha256(extractedLicense) !== sha256(projectLicensePath)
+    || sha256(extractedNotices) !== sha256(thirdPartyNoticesPath)) fail();
+
+  let entries;
+  try {
+    entries = asarImpl.listPackage(extractedAsar);
+  } catch (_) {
+    fail();
+  }
+  assertAsarEntriesImpl(entries);
+  return Object.freeze({
+    asarEntries: entries.length,
+    asarSha256: embeddedAsarSha256,
+  });
+}
+
+async function inspectExecutablePayload(executable, kind, sidecarAsarPath) {
+  if (kind !== 'installer' && kind !== 'portable') fail();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `ai-drama-p9-05-${kind}-payload-`));
+  try {
+    const sevenZip = sevenZipPath();
+    assertPeFile(sevenZip);
+    await runProcess(sevenZip, [
+      'x',
+      '-y',
+      '-bd',
+      '-bb0',
+      `-o${root}`,
+      executable,
+      'resources\\app.asar',
+      'resources\\licenses\\LICENSE',
+      'resources\\licenses\\THIRD_PARTY_NOTICES.md',
+    ]);
+    return assertExtractedExecutablePayload({ extractionRoot: root, sidecarAsarPath });
+  } finally {
+    removeTaskRoot(root);
+  }
 }
 
 function removeTaskRoot(root) {
@@ -180,8 +264,14 @@ async function verifyArtifacts() {
   const portableStat = assertPeFile(portable);
   const entries = asar.listPackage(asarPath);
   assertUnpackedPayload({ desktopRoot, packageJson: manifest, asarEntries: entries });
-  const installerEntries = await listExecutableArchive(installer);
-  const portableEntries = await listExecutableArchive(portable);
+  const [installerEntries, portableEntries] = await Promise.all([
+    listExecutableArchive(installer),
+    listExecutableArchive(portable),
+  ]);
+  const [installerPayload, portablePayload] = await Promise.all([
+    inspectExecutablePayload(installer, 'installer', asarPath),
+    inspectExecutablePayload(portable, 'portable', asarPath),
+  ]);
 
   return Object.freeze({
     manifest,
@@ -192,9 +282,13 @@ async function verifyArtifacts() {
       installerBytes: installerStat.bytes,
       installerSha256: sha256(installer),
       installerEntries,
+      installerAsarEntries: installerPayload.asarEntries,
+      installerAsarSha256: installerPayload.asarSha256,
       portableBytes: portableStat.bytes,
       portableSha256: sha256(portable),
       portableEntries,
+      portableAsarEntries: portablePayload.asarEntries,
+      portableAsarSha256: portablePayload.asarSha256,
       asarEntries: entries.length,
     }),
   });
@@ -393,6 +487,7 @@ if (require.main === module) {
 }
 
 module.exports = Object.freeze({
+  assertExtractedExecutablePayload,
   hasHostInstallerFlag,
   main,
   parseArchiveEntries,

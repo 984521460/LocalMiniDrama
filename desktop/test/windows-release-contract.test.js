@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const asar = require('@electron/asar');
 
 const {
   WINDOWS_RELEASE_ERROR,
@@ -15,6 +16,7 @@ const {
   resolvePackagingSmokeAppData,
 } = require('../windows-release-contract');
 const {
+  assertExtractedExecutablePayload,
   hasHostInstallerFlag,
   parseArchiveEntries,
   removeTaskRoot,
@@ -63,6 +65,8 @@ test('release config rejects unsafe or ambiguous Windows packaging changes', () 
     (value) => { value.build.nsis.deleteAppDataOnUninstall = true; },
     (value) => { value.build.artifactName = value.build.nsis.artifactName; },
     (value) => { value.build.publish = [{ provider: 'github' }]; },
+    (value) => { value.build.extraResources.push({ from: '../example_drama', to: 'example_drama', filter: ['**/*'] }); },
+    (value) => { value.build.extraResources.push({ from: '../backend-node/tools/ffmpeg', to: 'ffmpeg', filter: ['**/*'] }); },
   ]) {
     const packageJson = packageFixture();
     mutate(packageJson);
@@ -92,6 +96,7 @@ test('PE and packaged asar contracts fail closed on missing production payload',
 
   const required = [
     '/main.js',
+    '/distribution-assets.js',
     '/product-identity.js',
     '/user-data-path.js',
     '/windows-release-contract.js',
@@ -104,6 +109,19 @@ test('PE and packaged asar contracts fail closed on missing production payload',
     '/node_modules/@local-mini-drama/credential-vault/package.json',
     '/node_modules/@local-mini-drama/credential-vault/dist/index.js',
     '/node_modules/ajv/package.json',
+    '/node_modules/ajv/LICENSE',
+    '/node_modules/@volcengine/openapi/LICENSE',
+    '/node_modules/adm-zip/LICENSE',
+    '/node_modules/better-sqlite3/LICENSE',
+    '/node_modules/cors/LICENSE',
+    '/node_modules/express/LICENSE',
+    '/node_modules/js-yaml/LICENSE',
+    '/node_modules/jsonrepair/LICENSE.md',
+    '/node_modules/jsonwebtoken/LICENSE',
+    '/node_modules/multer/LICENSE',
+    '/node_modules/sharp/LICENSE',
+    '/node_modules/ssh2/LICENSE',
+    '/node_modules/uuid/LICENSE.md',
     '/node_modules/ajv/dist/2020.js',
     '/node_modules/fast-uri/index.js',
     '/node_modules/require-from-string/index.js',
@@ -116,18 +134,42 @@ test('PE and packaged asar contracts fail closed on missing production payload',
     () => assertAsarEntries(required.filter((entry) => entry !== '/backend-app/src/app.js')),
     (error) => error && error.code === WINDOWS_RELEASE_ERROR,
   );
+  assert.throws(
+    () => assertAsarEntries([...required, '/backend-app/models/weights.onnx']),
+    (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+  );
+  for (const forbiddenAsarEntry of [
+    '/ffmpeg/ffmpeg.exe',
+    '/example_drama/demo.zip',
+    '/backend-app/tools/ffmpeg/ffmpeg.exe',
+  ]) {
+    assert.throws(
+      () => assertAsarEntries([...required, forbiddenAsarEntry]),
+      (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+    );
+  }
 
   const archiveEntries = [
     'resources\\app.asar',
     'resources\\app.asar.unpacked\\node_modules\\@img\\sharp-win32-x64\\lib\\sharp-win32-x64.node',
     'resources\\app.asar.unpacked\\node_modules\\better-sqlite3\\build\\Release\\better_sqlite3.node',
     'resources\\app.asar.unpacked\\backend-app\\migrations\\v2\\0001_add_core_uids.sql',
-    'resources\\example_drama\\synthetic.zip',
     'resources\\frontweb\\dist\\index.html',
-    'resources\\ffmpeg\\ffmpeg.exe',
+    'resources\\licenses\\LICENSE',
+    'resources\\licenses\\THIRD_PARTY_NOTICES.md',
   ];
   const { assertArchiveEntries } = require('../windows-release-contract');
-  assert.equal(assertArchiveEntries(archiveEntries).length, 6);
+  assert.equal(assertArchiveEntries(archiveEntries).length, 7);
+  for (const forbidden of [
+    'resources\\example_drama\\synthetic.zip',
+    'resources\\ffmpeg\\ffmpeg.exe',
+    'resources\\frontweb\\dist\\weights.safetensors',
+  ]) {
+    assert.throws(
+      () => assertArchiveEntries([...archiveEntries, forbidden]),
+      (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+    );
+  }
 });
 
 test('packaged runtime exposes an exact local smoke gate without opening the UI', () => {
@@ -262,6 +304,78 @@ test('release verifier parses bounded 7-Zip listings and requires an explicit ho
   assert.equal(hasHostInstallerFlag(['--allow-host-installer']), true);
   assert.throws(
     () => hasHostInstallerFlag(['--unknown']),
+    (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+  );
+});
+
+test('release verifier binds each final executable payload to the reviewed sidecar asar', async (t) => {
+  const root = withTempDirectory(t);
+  const cleanSource = path.join(root, 'clean-source');
+  const poisonedSource = path.join(root, 'poisoned-source');
+  const extractionRoot = path.join(root, 'extracted');
+  const sidecarAsarPath = path.join(root, 'sidecar.asar');
+  const extractedAsarPath = path.join(extractionRoot, 'resources', 'app.asar');
+  const projectLicensePath = path.join(root, 'LICENSE');
+  const thirdPartyNoticesPath = path.join(root, 'THIRD_PARTY_NOTICES.md');
+  const extractedLicensePath = path.join(extractionRoot, 'resources', 'licenses', 'LICENSE');
+  const extractedNoticesPath = path.join(
+    extractionRoot,
+    'resources',
+    'licenses',
+    'THIRD_PARTY_NOTICES.md',
+  );
+  fs.mkdirSync(cleanSource, { recursive: true });
+  fs.mkdirSync(poisonedSource, { recursive: true });
+  fs.mkdirSync(path.dirname(extractedAsarPath), { recursive: true });
+  fs.mkdirSync(path.dirname(extractedLicensePath), { recursive: true });
+  fs.writeFileSync(path.join(cleanSource, 'main.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(poisonedSource, 'main.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(poisonedSource, 'model.onnx'), 'synthetic-model');
+  fs.writeFileSync(projectLicensePath, 'synthetic-license\n');
+  fs.writeFileSync(thirdPartyNoticesPath, 'synthetic-notices\n');
+  fs.copyFileSync(projectLicensePath, extractedLicensePath);
+  fs.copyFileSync(thirdPartyNoticesPath, extractedNoticesPath);
+  await asar.createPackage(cleanSource, sidecarAsarPath);
+  await asar.createPackage(poisonedSource, extractedAsarPath);
+
+  assert.throws(
+    () => assertExtractedExecutablePayload({
+      extractionRoot,
+      sidecarAsarPath,
+      projectLicensePath,
+      thirdPartyNoticesPath,
+      assertAsarEntriesImpl() {},
+    }),
+    (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+  );
+
+  fs.copyFileSync(sidecarAsarPath, extractedAsarPath);
+  assert.deepEqual(
+    assertExtractedExecutablePayload({
+      extractionRoot,
+      sidecarAsarPath,
+      projectLicensePath,
+      thirdPartyNoticesPath,
+      assertAsarEntriesImpl() {},
+    }),
+    {
+      asarEntries: 1,
+      asarSha256: require('node:crypto')
+        .createHash('sha256')
+        .update(fs.readFileSync(sidecarAsarPath))
+        .digest('hex'),
+    },
+  );
+
+  fs.writeFileSync(extractedNoticesPath, 'drifted-notices\n');
+  assert.throws(
+    () => assertExtractedExecutablePayload({
+      extractionRoot,
+      sidecarAsarPath,
+      projectLicensePath,
+      thirdPartyNoticesPath,
+      assertAsarEntriesImpl() {},
+    }),
     (error) => error && error.code === WINDOWS_RELEASE_ERROR,
   );
 });

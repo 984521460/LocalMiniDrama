@@ -51,6 +51,7 @@
     },
     "files": [
       "main.js",
+      "distribution-assets.js",
       "product-identity.js",
       "startup-error.js",
       "user-data-path.js",
@@ -74,18 +75,12 @@
         ]
       },
       {
-        "from": "../example_drama",
-        "to": "example_drama",
-        "filter": [
-          "**/*"
-        ]
+        "from": "../LICENSE",
+        "to": "licenses/LICENSE"
       },
       {
-        "from": "../backend-node/tools/ffmpeg",
-        "to": "ffmpeg",
-        "filter": [
-          "**/*"
-        ]
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "licenses/THIRD_PARTY_NOTICES.md"
       }
     ],
     "win": {

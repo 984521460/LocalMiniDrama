@@ -69,6 +69,8 @@ npm run dist:cn
 
 首次运行时，会在用户数据目录（如 `%APPDATA%/localminidrama-desktop`）下生成 `backend/`，包含 `configs/config.yaml`（从 example 复制）和 `data/`（数据库与文件存储），按需修改配置即可。
 
+安装包不携带 FFmpeg、示例剧集或模型权重。需要本地视频探测/合成时，请自行取得符合使用场景许可条件的 `ffmpeg.exe` 与 `ffprobe.exe`，放入 `%APPDATA%\localminidrama-desktop\backend\tools\ffmpeg\`，或通过 `FFMPEG_PATH` / `FFPROBE_PATH` 或系统 `PATH` 配置；缺少时相关媒体操作会失败关闭，不影响项目和凭据数据。
+
 从旧版升级时，应用会在首次启动、创建新日志前，将 `%APPDATA%/LocalMiniDrama` 安全迁移为 `%APPDATA%/localminidrama-desktop`。若新目录已经包含数据，则不会覆盖；迁移失败时本次启动继续使用旧目录，避免把已有项目误判为丢失。NSIS 卸载不会删除该用户数据目录。
 
 升级、恢复或迁移到新电脑前，请按[用户数据备份、恢复与迁移](../docs/user-data-backup-and-migration.md)完整退出应用并备份整个稳定用户数据目录。项目 ZIP、自动 pre-v2 数据库副本和卸载保留都不能单独替代完整备份；采用 `credential:v1` 引用、实际保存在 Windows Credential Manager 中的凭据不会随文件复制。
@@ -82,7 +84,7 @@ npm run dist
 npm run verify:windows-release
 ```
 
-验证器会检查安装包、便携版、`win-unpacked`、ASAR、前端、FFmpeg 与原生依赖，并在隔离的临时 `APPDATA` / `LOCALAPPDATA` 下启动便携版。不会读取现有应用用户数据，也不会连接 AI Provider。
+验证器会检查安装包、便携版、`win-unpacked`、ASAR、前端、根 MIT 许可证、第三方通知与直接运行时依赖的许可证文件，并明确拒绝包内 FFmpeg、示例剧集和模型权重；随后在隔离的临时 `APPDATA` / `LOCALAPPDATA` 下启动便携版。不会读取现有应用用户数据，也不会连接 AI Provider。
 
 在确认本机没有现存的 `AI漫剧工作台`、`LocalMiniDrama` 或 `本地短剧助手` 安装后，可显式执行 current-user 安装生命周期验证：
 

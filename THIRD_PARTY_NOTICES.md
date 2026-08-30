@@ -1,8 +1,8 @@
 # 第三方组件与分发说明
 
-> 基线：LocalMiniDrama `7b6c1a748e9e3013b88a902cfbfd31ec283da0d1`（v1.2.8）
-> 清单日期：2026-08-25
-> 状态：Phase 0 审计基线；不是法律意见
+> 审计基线：`321f5950f5984c21401bbd65f0c092610e5dabde`（应用版本 v1.2.8）
+> 清单日期：2026-08-31
+> 状态：P9-07 工程分发复核；不是法律意见
 
 ## 1. 上游源码
 
@@ -61,14 +61,14 @@ node licenses/collect-direct-npm-licenses.mjs
 | desktop | devDependencies | `electron` | `28.3.3` | `MIT` |
 | desktop | devDependencies | `electron-builder` | `24.13.3` | `MIT` |
 
-版本与许可证字段来自当前锁文件。最终安装包还包含传递依赖；发布前必须保留各包自带许可证和必要版权声明，不能只依赖本表。
+版本与许可证字段来自当前锁文件。最终安装包还包含传递依赖；发布前必须保留各包自带许可证和必要版权声明，不能只依赖本表。当前桌面配置会把根 MIT `LICENSE` 与本通知放入 `resources/licenses/`，Windows 发布合同还要求 ASAR 中存在每个直接运行时依赖的许可证文件。
 
 ## 3. 当前仓库中的非 NPM 资产
 
-| 路径/类别 | 当前事实 | Phase 0 处理 |
+| 路径/类别 | 当前事实 | P9-07 分发处理 |
 |---|---|---|
-| `backend-node/tools/ffmpeg/ffmpeg.exe` | 仓库中存在 99,264,000 字节的可执行文件（SHA-256 `5AF82A0D4FE2B9EAE211B967332EA97EDFC51C6B328CA35B827E73EAC560DC0D`）。其 `-version` 自报 `8.0.1-essentials_build-www.gyan.dev`，配置含 `--enable-gpl --enable-version3 --enable-static`；`-L` 自报 GPL v3-or-later。当前目录未找到可验证的取得来源记录、对应源码提供安排或随附 GPL 文本 | `desktop/package.json` 当前会把整个目录复制进 `extraResources`；在来源与该构建的分发材料逐项核验完成前，不得让此文件通过发布门禁 |
-| `example_drama/衣服设计天才302.zip` | 当前 checkout 仅有 133 字节 Git LFS 指针，声明对象大小为 82,156,132 字节；本次本地审计未取得或核验实体文件，也未复现上游配额状态 | 不作为测试 fixture，也不作为安装包验收依据；实体和授权证据齐备前不得进入发布包 |
+| `backend-node/tools/ffmpeg/ffmpeg.exe` | 仓库中存在 99,264,000 字节的可执行文件（SHA-256 `5AF82A0D4FE2B9EAE211B967332EA97EDFC51C6B328CA35B827E73EAC560DC0D`）。其 `-version` 自报 `8.0.1-essentials_build-www.gyan.dev`，配置含 `--enable-gpl --enable-version3 --enable-static`；`-L` 自报 GPL v3-or-later。当前目录未找到可验证的取得来源记录、该二进制的精确对应源码提供安排或完整随附材料 | 仅保留为本地开发资产；四套 Electron Builder 配置和发布归档合同均明确排除 `resources/ffmpeg`。证据闭合前不得重新加入安装包 |
+| `example_drama/衣服设计天才302.zip` | 当前 checkout 仅有 133 字节 Git LFS 指针，声明对象大小为 82,156,132 字节；本次本地审计未取得或核验实体文件，也未复现上游配额状态 | 仅保留为非分发开发资产；四套打包配置和发布归档合同明确排除 `resources/example_drama`。实体与授权证据齐备前不得重新加入 |
 | `项目截图/*.mp4` 及其他演示素材 | 当前未形成逐项来源和再分发证据 | 发布前逐项核验；无证据则排除 |
 | `backend-node/tools/ffmpeg/README.md` | 仅说明如何放置 FFmpeg，没有证明具体二进制的许可状态 | 保留操作说明，但不能替代分发审计 |
 
@@ -81,14 +81,24 @@ node licenses/collect-direct-npm-licenses.mjs
 - 从第三方取得的 Workflow JSON、提示模板和示例素材；
 - 音乐、音效、字体、角色参考图和生成内容。
 
-Phase 1 起，每个资产必须登记来源、精确版本或哈希、许可证、商用与再分发条件、下载方式和是否进入安装包。默认策略是“运行时由用户在远程实例中按许可自行取得”，不把大模型权重打进桌面安装包。
+Phase 1 起，每个资产必须登记来源、精确版本或哈希、许可证、商用与再分发条件、下载方式和是否进入安装包。默认策略是“运行时由用户在远程实例中按许可自行取得”，不把大模型权重打进桌面安装包。`licenses/distribution-policy.mjs` 会核验四套打包配置，并扫描实际可分发源码/生成输入中的常见模型权重扩展名；Windows 归档验证还会拒绝包内 FFmpeg、示例剧集和模型权重路径。
 
-## 5. 发布阻断条件
+## 5. FFmpeg 工程判断依据
+
+FFmpeg 官方说明：启用 GPL 组件会使相应构建适用 GPL，合规清单要求分发者提供与所分发二进制精确对应的源码和构建信息。FFmpeg 官方下载页把 Windows 二进制构建链接到第三方构建提供者；当前文件自报的 Gyan 构建也说明其静态变体采用 GPLv3。参考：
+
+- <https://ffmpeg.org/legal.html>
+- <https://ffmpeg.org/download.html>
+- <https://www.gyan.dev/ffmpeg/builds/>
+
+这些公开页面不能单独证明仓库内这一个 8.0.1 文件的取得链、精确源码对应关系和随附材料，因此当前工程结论是“不得分发”，而不是“已经合规”。用户如需本地媒体能力，应自行取得符合其使用与分发场景许可条件的 `ffmpeg`/`ffprobe`；项目不会把用户本地安装自动变成可再分发资产。
+
+## 6. 发布阻断条件
 
 存在以下任一情况时不得发布：
 
 1. 安装包包含无来源或无许可证证据的二进制、模型或素材；
 2. 应保留的许可证或版权声明未随包提供；
-3. 安装包包含该 FFmpeg 二进制，但其来源记录和 GPL v3-or-later 分发材料尚未核验完成；
+3. 安装包重新包含 FFmpeg、示例剧集或模型权重，但对应来源、许可和分发材料未逐项核验完成；
 4. 锁文件与本清单不一致；
 5. 把可运行、可下载或 API 可访问误当成可再分发。

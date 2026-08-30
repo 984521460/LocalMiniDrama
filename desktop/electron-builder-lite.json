@@ -6,6 +6,7 @@
   },
   "files": [
     "main.js",
+    "distribution-assets.js",
     "product-identity.js",
     "startup-error.js",
     "user-data-path.js",
@@ -26,9 +27,12 @@
       "filter": ["**/*"]
     },
     {
-      "from": "../backend-node/tools/ffmpeg",
-      "to": "ffmpeg",
-      "filter": ["**/*"]
+      "from": "../LICENSE",
+      "to": "licenses/LICENSE"
+    },
+    {
+      "from": "../THIRD_PARTY_NOTICES.md",
+      "to": "licenses/THIRD_PARTY_NOTICES.md"
     }
   ],
   "win": {
