@@ -6,12 +6,13 @@ const {
 } = require('./generationHistoryArchive');
 const { parseMediaExportExecutionPlanRecord } = require('../../../media/mediaExportExecutionPlan');
 const { parseMediaExportReceiptRecord } = require('../../../media/mediaExportReceipt');
+const { ARCHIVE_V20 } = require('./archiveVersionRouter');
 const {
   createMediaExportRunPublicRecord,
   publicOutputFromReceipt,
 } = require('../../../media/mediaExportRun');
 
-const SCHEMA_VERSION = '2.0.0';
+const SCHEMA_VERSION = ARCHIVE_V20;
 const ARCHIVE_KIND = 'local-mini-drama-project';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const MAX_RECORDS = 100000;

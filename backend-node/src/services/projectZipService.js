@@ -4,11 +4,20 @@ const legacyExportService = require('./dramaExportService');
 const legacyImportService = require('./dramaImportService');
 const { readProjectArchive } = require('../adapters/v2/zip/archiveReader');
 const {
+  ARCHIVE_V20,
+  createArchiveVersionRouter,
+} = require('../adapters/v2/zip/archiveVersionRouter');
+const {
   assertNoCredentialData,
   assertNoLocalPathData,
   createProjectManifest,
   parseProjectManifest,
+  RECORD_SPECS,
 } = require('../adapters/v2/zip/manifest');
+const {
+  PROJECT_ARCHIVE_CATALOG,
+  validateProjectArchiveCatalog,
+} = require('../adapters/v2/zip/projectArchiveCatalog');
 const {
   archiveError,
   isProjectArchiveError,
@@ -22,6 +31,10 @@ const { createProjectImportMediaStaging } = require('./projectImportMediaStaging
 const path = require('node:path');
 
 const quietLog = Object.freeze({ info() {}, error() {} });
+validateProjectArchiveCatalog(PROJECT_ARCHIVE_CATALOG, RECORD_SPECS);
+const archiveVersionRouter = createArchiveVersionRouter({
+  [ARCHIVE_V20]: parseProjectManifest,
+});
 
 function getStoragePath(config) {
   const raw = config?.storage?.local_path || './data/storage';
@@ -48,7 +61,7 @@ function exportDrama(database, config, log, dramaId) {
     const zip = new AdmZip(legacy.buffer);
     zip.addFile('v2/manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
     const buffer = zip.toBuffer();
-    log?.info?.('Drama exported', { drama_id: Number(dramaId), title: legacy.title, archive_version: '2.0.0' });
+    log?.info?.('Drama exported', { drama_id: Number(dramaId), title: legacy.title, archive_version: ARCHIVE_V20 });
     return { buffer, title: legacy.title };
   } catch (error) {
     if (isProjectArchiveError(error)) throw error;
@@ -62,7 +75,8 @@ function importDrama(database, config, log, zipBuffer) {
     assertNoCredentialData(parsedArchive.legacyProject);
     const storagePath = getStoragePath(config);
     assertNoLocalPathData(parsedArchive.legacyProject, [storagePath]);
-    if (parsedArchive.manifestData === null) {
+    const archiveRoute = archiveVersionRouter.parse(parsedArchive.manifestData);
+    if (archiveRoute.kind === 'legacy-v1') {
       const mediaWriter = createProjectImportMediaStaging(storagePath);
       return legacyImportService.importDrama(database, config, log, zipBuffer, {
         parsedArchive,
@@ -71,7 +85,7 @@ function importDrama(database, config, log, zipBuffer) {
       });
     }
 
-    const manifest = parseProjectManifest(parsedArchive.manifestData);
+    const manifest = archiveRoute.manifest;
     assertProjectArchiveSourceEvidence(manifest.records);
     const mediaWriter = createProjectImportMediaStaging(storagePath);
     const repositories = createV2Repositories(database);
@@ -85,7 +99,7 @@ function importDrama(database, config, log, zipBuffer) {
       afterImport({ result }) {
         repositories.projectArchives.importSnapshot(result.drama_id, manifest);
       },
-      archiveVersion: '2.0.0',
+      archiveVersion: archiveRoute.schemaVersion,
       mediaWriter,
       immediate: true,
     });
