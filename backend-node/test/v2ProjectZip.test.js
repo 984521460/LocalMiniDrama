@@ -424,7 +424,7 @@ test('startup migration keeps v1 ZIP import compatible and installs the v2 ledge
   const result = projectZipService.importDrama(database, { storage: { local_path: storage } }, createLog(), createV1Zip());
 
   assert.equal(result.title, 'Phase 0 最小迁移样例');
-  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 14);
+  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 15);
   assert.equal(database.prepare('SELECT count(*) AS count FROM source_documents').get().count, 0);
 });
 

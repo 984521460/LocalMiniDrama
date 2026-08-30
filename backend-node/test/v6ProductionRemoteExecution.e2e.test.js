@@ -677,6 +677,50 @@ test('the actual application production runtime executes and phase-fails Mock Co
     assert.equal(JSON.stringify(failedTask).includes('synthetic-password'), false);
 
     dependencyReady = true;
+    const retryClassification = await fetch(
+      `${base}/remote-tasks/${failed.task.uid}/retry-classification`,
+    );
+    assert.equal(retryClassification.status, 200);
+    assert.deepEqual((await retryClassification.json()).data, {
+      taskUid: failed.task.uid,
+      stateVersion: failedTask.stateVersion,
+      disposition: 'safe_replay',
+      allowed: true,
+      retryCount: 0,
+      maxRetries: 3,
+      reasonCode: 'REMOTE_RETRY_SAFE_BEFORE_SUBMISSION',
+    });
+    db.exec(`
+      CREATE TEMP TRIGGER p9_retry_rollback_fixture
+      BEFORE UPDATE ON remote_tasks
+      WHEN OLD.uid = '${failed.task.uid}' AND NEW.stage = 'prepared'
+      BEGIN
+        SELECT RAISE(ABORT, 'synthetic retry rollback');
+      END;
+    `);
+    const rejectedRetry = await jsonRequest(
+      `${base}/remote-tasks/${failed.task.uid}/retry`,
+      'POST',
+      { ...executeBody(failed), expectedStateVersion: failedTask.stateVersion },
+    );
+    assert.equal(rejectedRetry.response.status, 409);
+    assert.equal(rejectedRetry.body.error.code, 'REMOTE_TASK_CONFLICT');
+    assert.equal(repositories.remote.getFormalTask(failed.task.uid).stateVersion, failedTask.stateVersion);
+    assert.equal(runService.getRun(failed.run.run.uid).run.status, 'failed');
+    assert.equal(runService.getRun(failed.run.run.uid).nodes[0].status, 'failed');
+    assert.equal(promptOrdinal, 2);
+    db.exec('DROP TRIGGER p9_retry_rollback_fixture');
+    const retried = await jsonRequest(
+      `${base}/remote-tasks/${failed.task.uid}/retry`,
+      'POST',
+      { ...executeBody(failed), expectedStateVersion: failedTask.stateVersion },
+    );
+    assert.equal(retried.response.status, 200);
+    assert.equal(retried.body.data.task.stage, 'completed');
+    assert.equal(retried.body.data.task.retryCount, 1);
+    assert.equal(runService.getRun(failed.run.run.uid).run.status, 'succeeded');
+    assert.equal(repositories.assets.listVersions(failed.assetUid).length, 4);
+
     workflowService.replaceGraph(workflow.definition.uid, {
       expectedRevision: 4,
       nodes: [videoNode('disabled')],
@@ -696,7 +740,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
       assert.equal(fs.existsSync(path.join(
         remoteRoot, 'ai-drama-studio', 'jobs', execution.task.uid,
       )), false);
-      assert.equal(promptOrdinal, 2);
+      assert.equal(promptOrdinal, 3);
     }
 
     await rejectsBeforeRemote(await preparedExecution());
@@ -851,7 +895,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
     const racedTask = repositories.remote.getFormalTask(racingExecution.task.uid);
     assert.equal(racedTask.promptId, null);
     assert.equal(racedTask.stage, 'failed');
-    assert.equal(promptOrdinal, 2);
+    assert.equal(promptOrdinal, 3);
     assert.equal(fs.existsSync(path.join(
       remoteRoot,
       'ai-drama-studio-v2',

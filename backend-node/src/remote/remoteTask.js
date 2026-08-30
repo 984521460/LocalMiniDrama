@@ -11,6 +11,8 @@ const PROMPT_ID = /^[A-Za-z0-9._-]{1,128}$/u;
 const ERROR_CODE = /^ERR_[A-Z0-9_]{1,60}$/u;
 const ERROR_DETAIL_REF = /^error-detail:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const PATH_SEGMENT = /^[A-Za-z0-9._-]{1,96}$/u;
+const DEFAULT_MAX_RETRIES = 3;
+const MAX_CONFIGURED_RETRIES = 10;
 
 const STAGE_STATUS = Object.freeze({
   prepared: 'queued',
@@ -136,7 +138,7 @@ function createRemoteTaskRequest(value) {
   const input = exactObject(value, [
     'connectionUid', 'connectionEvidenceSha256', 'workflowRunUid', 'workflowManifestUid',
     'idempotencyKey', 'promptSha256', 'remoteRelativeDir',
-  ], [], 'REMOTE_TASK_INPUT_INVALID');
+  ], ['maxRetries'], 'REMOTE_TASK_INPUT_INVALID');
   if (typeof input.idempotencyKey !== 'string' || !IDEMPOTENCY_KEY.test(input.idempotencyKey)
     || typeof input.connectionEvidenceSha256 !== 'string'
     || !SHA256.test(input.connectionEvidenceSha256)
@@ -149,12 +151,27 @@ function createRemoteTaskRequest(value) {
     idempotencyKey: input.idempotencyKey,
     promptSha256: input.promptSha256,
     remoteRelativeDir: remoteRelativeDir(input.remoteRelativeDir),
+    maxRetries: integer(
+      input.maxRetries === undefined ? DEFAULT_MAX_RETRIES : input.maxRetries,
+      0,
+      MAX_CONFIGURED_RETRIES,
+      'REMOTE_TASK_INPUT_INVALID',
+    ),
   });
 }
 
 function hashRemoteTaskRequest(request) {
   const normalized = createRemoteTaskRequest(request);
-  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+  const legacyIdentity = {
+    connectionUid: normalized.connectionUid,
+    connectionEvidenceSha256: normalized.connectionEvidenceSha256,
+    workflowRunUid: normalized.workflowRunUid,
+    workflowManifestUid: normalized.workflowManifestUid,
+    idempotencyKey: normalized.idempotencyKey,
+    promptSha256: normalized.promptSha256,
+    remoteRelativeDir: normalized.remoteRelativeDir,
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(legacyIdentity)).digest('hex');
 }
 
 function hashRemoteTaskPrompt(prompt) {
@@ -181,6 +198,7 @@ function createRemoteTaskRecord(value) {
     'workflowManifestUid', 'contractVersion',
     'idempotencyKey', 'requestSha256', 'promptSha256', 'provider', 'promptId', 'remoteRelativeDir',
     'stage', 'status', 'heartbeatAt', 'retryCount', 'outputAssetVersionUid',
+    'maxRetries',
     'errorCode', 'errorDetailRef', 'errorPhase', 'errorRetryable', 'recoveryState',
     'stateVersion', 'submissionLeaseExpiresAtEpochMs',
     'createdAt', 'startedAt', 'completedAt', 'updatedAt',
@@ -209,6 +227,7 @@ function createRemoteTaskRecord(value) {
   }
   if (input.requestSha256 !== expectedRequestSha256) fail(code);
   const errorCode = nullablePattern(input.errorCode, ERROR_CODE, code);
+  const maxRetries = integer(input.maxRetries, 0, MAX_CONFIGURED_RETRIES, code);
   const errorDetailRef = nullablePattern(input.errorDetailRef, ERROR_DETAIL_REF, code);
   const errorPhase = input.errorPhase === null ? null : input.errorPhase;
   if (errorPhase !== null && !ERROR_PHASES.has(errorPhase)) fail(code);
@@ -260,7 +279,8 @@ function createRemoteTaskRecord(value) {
     stage: input.stage,
     status: input.status,
     heartbeatAt: canonicalTimestamp(input.heartbeatAt, true, code),
-    retryCount: integer(input.retryCount, 0, 1_000_000, code),
+    retryCount: integer(input.retryCount, 0, maxRetries, code),
+    maxRetries,
     outputAssetVersionUid: nullableUid(input.outputAssetVersionUid, code),
     errorCode,
     errorDetailRef,
@@ -281,6 +301,7 @@ module.exports = Object.freeze({
   createRemoteTaskError,
   createRemoteTaskRecord,
   createRemoteTaskRequest,
+  DEFAULT_MAX_RETRIES,
   hashRemoteTaskRequest,
   hashRemoteTaskPrompt,
   isRemoteTaskError,

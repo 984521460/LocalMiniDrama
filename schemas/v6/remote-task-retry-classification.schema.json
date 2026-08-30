@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/remote-task-retry-classification.schema.json",
+  "title": "Remote Task Retry Classification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "taskUid", "stateVersion", "disposition", "allowed",
+    "retryCount", "maxRetries", "reasonCode"
+  ],
+  "properties": {
+    "taskUid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "stateVersion": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+    "disposition": {
+      "enum": ["safe_replay", "manual_reconcile", "exhausted", "terminal", "in_progress"]
+    },
+    "allowed": { "type": "boolean" },
+    "retryCount": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "maxRetries": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "reasonCode": {
+      "enum": [
+        "REMOTE_RETRY_SAFE_BEFORE_SUBMISSION",
+        "REMOTE_RETRY_MANUAL_RECONCILIATION_REQUIRED",
+        "REMOTE_RETRY_LIMIT_EXHAUSTED",
+        "REMOTE_RETRY_TASK_TERMINAL",
+        "REMOTE_RETRY_TASK_IN_PROGRESS"
+      ]
+    }
+  },
+  "allOf": [
+    { "$ref": "#/$defs/retryBudgetValid" }
+  ],
+  "oneOf": [
+    {
+      "allOf": [
+        { "$ref": "#/$defs/retryBudgetAvailable" }
+      ],
+      "properties": {
+        "disposition": { "const": "safe_replay" },
+        "allowed": { "const": true },
+        "reasonCode": { "const": "REMOTE_RETRY_SAFE_BEFORE_SUBMISSION" }
+      }
+    },
+    {
+      "properties": {
+        "disposition": { "const": "manual_reconcile" },
+        "allowed": { "const": false },
+        "reasonCode": { "const": "REMOTE_RETRY_MANUAL_RECONCILIATION_REQUIRED" }
+      }
+    },
+    {
+      "allOf": [
+        { "$ref": "#/$defs/retryBudgetExhausted" }
+      ],
+      "properties": {
+        "disposition": { "const": "exhausted" },
+        "allowed": { "const": false },
+        "reasonCode": { "const": "REMOTE_RETRY_LIMIT_EXHAUSTED" }
+      }
+    },
+    {
+      "properties": {
+        "disposition": { "const": "terminal" },
+        "allowed": { "const": false },
+        "reasonCode": { "const": "REMOTE_RETRY_TASK_TERMINAL" }
+      }
+    },
+    {
+      "properties": {
+        "disposition": { "const": "in_progress" },
+        "allowed": { "const": false },
+        "reasonCode": { "const": "REMOTE_RETRY_TASK_IN_PROGRESS" }
+      }
+    }
+  ],
+  "$defs": {
+    "retryBudgetValid": {
+      "type": "object",
+      "anyOf": [
+        { "properties": { "maxRetries": { "const": 0 }, "retryCount": { "type": "integer", "maximum": 0 } } },
+        { "properties": { "maxRetries": { "const": 1 }, "retryCount": { "type": "integer", "maximum": 1 } } },
+        { "properties": { "maxRetries": { "const": 2 }, "retryCount": { "type": "integer", "maximum": 2 } } },
+        { "properties": { "maxRetries": { "const": 3 }, "retryCount": { "type": "integer", "maximum": 3 } } },
+        { "properties": { "maxRetries": { "const": 4 }, "retryCount": { "type": "integer", "maximum": 4 } } },
+        { "properties": { "maxRetries": { "const": 5 }, "retryCount": { "type": "integer", "maximum": 5 } } },
+        { "properties": { "maxRetries": { "const": 6 }, "retryCount": { "type": "integer", "maximum": 6 } } },
+        { "properties": { "maxRetries": { "const": 7 }, "retryCount": { "type": "integer", "maximum": 7 } } },
+        { "properties": { "maxRetries": { "const": 8 }, "retryCount": { "type": "integer", "maximum": 8 } } },
+        { "properties": { "maxRetries": { "const": 9 }, "retryCount": { "type": "integer", "maximum": 9 } } },
+        { "properties": { "maxRetries": { "const": 10 }, "retryCount": { "type": "integer", "maximum": 10 } } }
+      ]
+    },
+    "retryBudgetAvailable": {
+      "type": "object",
+      "anyOf": [
+        { "properties": { "maxRetries": { "const": 1 }, "retryCount": { "type": "integer", "maximum": 0 } } },
+        { "properties": { "maxRetries": { "const": 2 }, "retryCount": { "type": "integer", "maximum": 1 } } },
+        { "properties": { "maxRetries": { "const": 3 }, "retryCount": { "type": "integer", "maximum": 2 } } },
+        { "properties": { "maxRetries": { "const": 4 }, "retryCount": { "type": "integer", "maximum": 3 } } },
+        { "properties": { "maxRetries": { "const": 5 }, "retryCount": { "type": "integer", "maximum": 4 } } },
+        { "properties": { "maxRetries": { "const": 6 }, "retryCount": { "type": "integer", "maximum": 5 } } },
+        { "properties": { "maxRetries": { "const": 7 }, "retryCount": { "type": "integer", "maximum": 6 } } },
+        { "properties": { "maxRetries": { "const": 8 }, "retryCount": { "type": "integer", "maximum": 7 } } },
+        { "properties": { "maxRetries": { "const": 9 }, "retryCount": { "type": "integer", "maximum": 8 } } },
+        { "properties": { "maxRetries": { "const": 10 }, "retryCount": { "type": "integer", "maximum": 9 } } }
+      ]
+    },
+    "retryBudgetExhausted": {
+      "type": "object",
+      "anyOf": [
+        { "properties": { "maxRetries": { "const": 0 }, "retryCount": { "const": 0 } } },
+        { "properties": { "maxRetries": { "const": 1 }, "retryCount": { "const": 1 } } },
+        { "properties": { "maxRetries": { "const": 2 }, "retryCount": { "const": 2 } } },
+        { "properties": { "maxRetries": { "const": 3 }, "retryCount": { "const": 3 } } },
+        { "properties": { "maxRetries": { "const": 4 }, "retryCount": { "const": 4 } } },
+        { "properties": { "maxRetries": { "const": 5 }, "retryCount": { "const": 5 } } },
+        { "properties": { "maxRetries": { "const": 6 }, "retryCount": { "const": 6 } } },
+        { "properties": { "maxRetries": { "const": 7 }, "retryCount": { "const": 7 } } },
+        { "properties": { "maxRetries": { "const": 8 }, "retryCount": { "const": 8 } } },
+        { "properties": { "maxRetries": { "const": 9 }, "retryCount": { "const": 9 } } },
+        { "properties": { "maxRetries": { "const": 10 }, "retryCount": { "const": 10 } } }
+      ]
+    }
+  }
+}

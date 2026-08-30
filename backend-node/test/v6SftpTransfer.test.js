@@ -95,6 +95,25 @@ test('SFTP upload and download keep task paths isolated and verify both hashes',
     fs.readFileSync(path.join(remoteRoot, ...uploaded.remoteRelativePath.split('/'))),
     content,
   );
+  const replayed = await transfer.uploadFile({
+    session: createSession(new LocalSftp(remoteRoot)),
+    localRelativePath: 'source.bin',
+    remoteWorkDir: 'ai-drama-studio',
+    taskUid: TASK_UID,
+    relativePath: 'inputs/source.bin',
+    expectedSha256: sha256(content),
+  });
+  assert.deepEqual(replayed, uploaded);
+  const changed = Buffer.from('synthetic changed transfer payload');
+  fs.writeFileSync(path.join(localRoot, 'source.bin'), changed);
+  await assert.rejects(transfer.uploadFile({
+    session: createSession(new LocalSftp(remoteRoot)),
+    localRelativePath: 'source.bin',
+    remoteWorkDir: 'ai-drama-studio',
+    taskUid: TASK_UID,
+    relativePath: 'inputs/source.bin',
+    expectedSha256: sha256(changed),
+  }), { code: 'SFTP_TRANSFER_CONFLICT' });
 
   const inspected = await transfer.inspectRemoteFile({
     session: createSession(new LocalSftp(remoteRoot)),

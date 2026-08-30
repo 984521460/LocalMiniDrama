@@ -16,10 +16,13 @@ const {
 } = require('./remoteTask');
 const { remoteExecutionRequest } = require('./remoteExecutionRequest');
 const { remoteConnectionEvidenceSha256 } = require('./connectionProfile');
+const { runWithRemoteTaskHeartbeat } = require('./remoteHeartbeatLease');
 const { createComfyWorkflowManifest } = require('./workflowManifest');
+const { createRemoteTaskRetryClassification } = require('./remoteRetryPolicy');
 const { resolveRemoteExecutionBinding } = require('./remoteExecutionBinding');
 const { isRemoteOutputVerifier } = require('./outputVerifier');
 const { isH3GenerationHistoryService } = require('../h3/generationHistoryService');
+const { validateRunAggregate } = require('../workflows/runState');
 
 const OUTPUT_TYPES = Object.freeze({
   '.jpeg': Object.freeze({ mediaKind: 'image', mimeType: 'image/jpeg' }),
@@ -43,7 +46,7 @@ function configuration(value) {
     'repositories', 'taskService', 'sessionService', 'transfer', 'remoteClient', 'outputVerifier',
     'h3HistoryService', 'localRoot',
   ];
-  const optional = ['createUid', 'timeoutMs'];
+  const optional = ['createUid', 'timeoutMs', 'heartbeatIntervalMs'];
   const allowed = new Set([...required, ...optional]);
   if (Reflect.ownKeys(descriptors).some((key) => typeof key !== 'string' || !allowed.has(key))
     || required.some((key) => !Object.hasOwn(descriptors, key))) {
@@ -61,7 +64,7 @@ function configuration(value) {
   const methodSets = [
     [input.taskService, [
       'beginUpload', 'complete', 'fail', 'get', 'markDownloading',
-      'markExecuting', 'markVerifying', 'submit',
+      'heartbeat', 'markExecuting', 'markVerifying', 'retryClassification', 'submit',
     ]],
     [input.sessionService, ['openSession']],
     [input.transfer, ['downloadFile', 'inspectRemoteFile', 'uploadFile']],
@@ -83,15 +86,20 @@ function configuration(value) {
   }
   const createUid = input.createUid ?? crypto.randomUUID;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const heartbeatIntervalMs = input.heartbeatIntervalMs ?? 5_000;
   if (typeof input.localRoot !== 'string' || !path.isAbsolute(input.localRoot)
     || typeof createUid !== 'function' || isProxy(createUid)
     || !isRemoteOutputVerifier(input.outputVerifier)
     || !isH3GenerationHistoryService(input.h3HistoryService)
-    || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 86_400_000) {
+    || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 86_400_000
+    || !Number.isSafeInteger(heartbeatIntervalMs)
+    || heartbeatIntervalMs < 5 || heartbeatIntervalMs > 60_000) {
     throw new TypeError('Remote execution coordinator configuration is invalid');
   }
   const localRoot = path.resolve(input.localRoot);
-  return Object.freeze({ ...input, createUid, localRoot, timeoutMs });
+  return Object.freeze({
+    ...input, createUid, localRoot, timeoutMs, heartbeatIntervalMs,
+  });
 }
 
 function executionIdentity(request) {
@@ -161,7 +169,7 @@ function outputDescriptor(state, compiled, logicalName, connection, taskUid) {
   });
 }
 
-function nodeContext(repositories, runService, task, assetUid) {
+function nodeContext(repositories, runService, task, assetUid, allowFailed = false) {
   if (task.workflowRunUid === null || !task.idempotencyKey.startsWith('remote-task:v1:')) {
     fail('REMOTE_TASK_INPUT_INVALID');
   }
@@ -188,8 +196,10 @@ function nodeContext(repositories, runService, task, assetUid) {
   if (node.workflowRunUid !== task.workflowRunUid || !binding
     || asset.ownerType !== 'drama' || asset.ownerUid !== graph.definition.dramaUid
     || asset.status === 'deleted'
-    || !['queued', 'running'].includes(aggregate.run.status)
-    || !['queued', 'running'].includes(node.status)) fail('REMOTE_TASK_CONFLICT');
+    || !(allowFailed ? aggregate.run.status === 'failed' : ['queued', 'running'].includes(aggregate.run.status))
+    || !(allowFailed ? node.status === 'failed' : ['queued', 'running'].includes(node.status))) {
+    fail('REMOTE_TASK_CONFLICT');
+  }
   return Object.freeze({
     aggregate, asset, binding, connection, dramaUid: graph.definition.dramaUid, node, planNode,
   });
@@ -282,11 +292,15 @@ function createRemoteExecutionCoordinator(options) {
     return task;
   }
 
-  async function executeOperation(taskUid, request) {
-    let task = configured.taskService.get(taskUid);
-    if (task.stage !== 'prepared' || task.stateVersion !== request.expectedStateVersion) {
-      fail('REMOTE_TASK_CONFLICT');
-    }
+  async function heartbeatPhase(currentTask, operation) {
+    return runWithRemoteTaskHeartbeat({
+      service: configured.taskService,
+      task: currentTask,
+      intervalMs: configured.heartbeatIntervalMs,
+    }, operation);
+  }
+
+  function executionPreparation(task, request, allowFailed = false) {
     let manifest;
     try { manifest = configured.repositories.comfyManifests.get(task.workflowManifestUid); } catch {
       fail('REMOTE_TASK_INPUT_INVALID');
@@ -297,6 +311,7 @@ function createRemoteExecutionCoordinator(options) {
       runService,
       task,
       request.output.assetUid,
+      allowFailed,
     );
     let h3Expectation;
     try {
@@ -327,6 +342,15 @@ function createRemoteExecutionCoordinator(options) {
         || h3Intent.filenamePrefix !== request.values.filenamePrefix
         || h3Intent.taskPromptSha256 !== task.promptSha256) fail('REMOTE_TASK_INPUT_INVALID');
     }
+    return Object.freeze({ compiled, context, h3Intent, manifest });
+  }
+
+  async function executeOperation(taskUid, request) {
+    let task = configured.taskService.get(taskUid);
+    if (task.stage !== 'prepared' || task.stateVersion !== request.expectedStateVersion) {
+      fail('REMOTE_TASK_CONFLICT');
+    }
+    const { compiled, context, h3Intent, manifest } = executionPreparation(task, request);
     configured.repositories.withTransaction(() => {
       startNode(context, task.uid);
       task = configured.taskService.beginUpload(task.uid, {
@@ -335,7 +359,8 @@ function createRemoteExecutionCoordinator(options) {
     });
 
     try {
-      if (request.uploads.length > 0) {
+      const phase = await heartbeatPhase(task, async () => {
+        if (request.uploads.length === 0) return null;
         await withSession(task.connectionUid, task.connectionEvidenceSha256, async (opened) => {
           for (const upload of request.uploads) {
             await configured.transfer.uploadFile({
@@ -348,7 +373,9 @@ function createRemoteExecutionCoordinator(options) {
             });
           }
         });
-      }
+        return null;
+      });
+      task = phase.task;
     } catch {
       failNode(task.uid, 'upload', 'ERR_REMOTE_UPLOAD_FAILED', true, context);
       fail();
@@ -376,12 +403,12 @@ function createRemoteExecutionCoordinator(options) {
     }
     let output;
     try {
-      const state = await configured.remoteClient.waitForPrompt(
-        task.connectionUid,
-        task.connectionEvidenceSha256,
-        task.promptId,
+      const phase = await heartbeatPhase(task, () => configured.remoteClient.waitForPrompt(
+        task.connectionUid, task.connectionEvidenceSha256, task.promptId,
         { timeoutMs: configured.timeoutMs, pollIntervalMs: 1000 },
-      );
+      ));
+      task = phase.task;
+      const state = phase.result;
       output = outputDescriptor(
         state,
         compiled,
@@ -411,7 +438,8 @@ function createRemoteExecutionCoordinator(options) {
     const localRelativePath = `projects/${context.dramaUid}/assets/${versionUid}${extension}`;
     let measured;
     try {
-      measured = await withSession(task.connectionUid, task.connectionEvidenceSha256, async (opened) => {
+      const phase = await heartbeatPhase(task, () => withSession(
+        task.connectionUid, task.connectionEvidenceSha256, async (opened) => {
         const remote = await configured.transfer.inspectRemoteFile({
           session: opened.session,
           remoteWorkDir: opened.connection.remoteWorkDir,
@@ -427,22 +455,35 @@ function createRemoteExecutionCoordinator(options) {
           expectedSha256: remote.sha256,
         });
         return remote;
-      });
+      }));
+      task = phase.task;
+      measured = phase.result;
     } catch {
       failNode(task.uid, 'download', 'ERR_REMOTE_DOWNLOAD_FAILED', true, context);
       fail();
     }
 
+    try {
+      task = configured.taskService.markVerifying(task.uid, {
+        expectedStateVersion: task.stateVersion,
+      });
+    } catch {
+      failNode(task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context);
+      fail();
+    }
+
     let verifiedOutput;
     try {
-      verifiedOutput = await configured.outputVerifier.verify({
+      const phase = await heartbeatPhase(task, () => configured.outputVerifier.verify({
         planNode: context.planNode,
         manifest,
         localRelativePath,
         remoteSha256: measured.sha256,
         remoteBytes: measured.bytes,
         mimeType: output.mimeType,
-      });
+      }));
+      task = phase.task;
+      verifiedOutput = phase.result;
     } catch {
       try {
         const target = path.resolve(configured.localRoot, ...localRelativePath.split('/'));
@@ -473,9 +514,6 @@ function createRemoteExecutionCoordinator(options) {
             : h3Intent.parentVersionUid,
           status: 'ready',
         }, { makeCurrent: false });
-        task = configured.taskService.markVerifying(task.uid, {
-          expectedStateVersion: task.stateVersion,
-        });
         if (h3Intent !== null) {
           generationHistory = configured.h3HistoryService.recordPrepared(
             scoped,
@@ -519,6 +557,49 @@ function createRemoteExecutionCoordinator(options) {
     return Object.freeze({ task, assetVersion: version, node, generationHistory });
   }
 
+  async function retryOperation(taskUid, request) {
+    const failedTask = configured.taskService.get(taskUid);
+    const classification = createRemoteTaskRetryClassification(failedTask);
+    if (failedTask.stateVersion !== request.expectedStateVersion
+      || classification.disposition !== 'safe_replay') fail('REMOTE_TASK_CONFLICT');
+    const { context } = executionPreparation(failedTask, request, true);
+    let retried;
+    try {
+      configured.repositories.withTransaction((scoped) => {
+        const before = validateRunAggregate(scoped.runs.getWorkflowWithNodes(context.aggregate.run.uid));
+        const node = before.nodes.find((candidate) => candidate.uid === context.node.uid);
+        if (before.run.status !== 'failed' || node?.status !== 'failed') fail('REMOTE_TASK_CONFLICT');
+        scoped.runs.transitionWorkflowStatus({
+          uid: before.run.uid,
+          expectedStatus: 'failed',
+          nextStatus: 'running',
+        });
+        scoped.runs.transitionNodeStatus({
+          uid: node.uid,
+          expectedStatus: 'failed',
+          nextStatus: 'queued',
+          inputSnapshot: {},
+          output: null,
+          cacheKey: null,
+          errorCode: null,
+          errorDetailRef: null,
+        });
+        retried = scoped.remote.retryFormalTask({
+          uid: failedTask.uid,
+          expectedStateVersion: failedTask.stateVersion,
+        });
+        validateRunAggregate(scoped.runs.getWorkflowWithNodes(before.run.uid));
+      });
+    } catch (error) {
+      if (isRemoteTaskError(error)) throw error;
+      fail('REMOTE_TASK_CONFLICT');
+    }
+    return executeOperation(taskUid, Object.freeze({
+      ...request,
+      expectedStateVersion: retried.stateVersion,
+    }));
+  }
+
   function execute(taskUid, value) {
     const request = remoteExecutionRequest(value);
     const identity = executionIdentity(request);
@@ -534,7 +615,22 @@ function createRemoteExecutionCoordinator(options) {
     return promise;
   }
 
-  return Object.freeze({ execute });
+  function retry(taskUid, value) {
+    const request = remoteExecutionRequest(value);
+    const identity = executionIdentity(request);
+    const current = active.get(taskUid);
+    if (current) {
+      if (current.identity !== identity) fail('REMOTE_TASK_CONFLICT');
+      return current.promise;
+    }
+    const promise = retryOperation(taskUid, request).finally(() => {
+      if (active.get(taskUid)?.promise === promise) active.delete(taskUid);
+    });
+    active.set(taskUid, Object.freeze({ identity, promise }));
+    return promise;
+  }
+
+  return Object.freeze({ execute, retry });
 }
 
 module.exports = Object.freeze({ createRemoteExecutionCoordinator });

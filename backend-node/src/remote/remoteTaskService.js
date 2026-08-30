@@ -17,6 +17,7 @@ const {
   hashRemoteTaskRequest,
   isRemoteTaskError,
 } = require('./remoteTask');
+const { createRemoteTaskRetryClassification } = require('./remoteRetryPolicy');
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const PROMPT_ID = /^[A-Za-z0-9._-]{1,128}$/u;
@@ -154,7 +155,7 @@ function preparationRequest(value) {
   const input = exactObject(value, [
     'connectionUid', 'connectionEvidenceSha256', 'workflowRunUid', 'workflowManifestUid',
     'idempotencyKey', 'promptSha256', 'remoteRelativeDir',
-  ], ['taskUid']);
+  ], ['taskUid', 'maxRetries']);
   return Object.freeze({
     requestedTaskUid: input.taskUid === undefined ? null : taskUid(input.taskUid),
     request: createRemoteTaskRequest({
@@ -165,6 +166,7 @@ function preparationRequest(value) {
       idempotencyKey: input.idempotencyKey,
       promptSha256: input.promptSha256,
       remoteRelativeDir: input.remoteRelativeDir,
+      ...(input.maxRetries === undefined ? {} : { maxRetries: input.maxRetries }),
     }),
   });
 }
@@ -569,6 +571,10 @@ function createRemoteTaskService(options) {
     }]);
   }
 
+  function retryClassification(uidValue) {
+    return createRemoteTaskRetryClassification(get(uidValue));
+  }
+
   function failRecovery(task, recoveryState, errorCode) {
     return callSync(repository, 'transitionFormalTask', [{
       uid: task.uid,
@@ -684,6 +690,7 @@ function createRemoteTaskService(options) {
     prepare,
     recover,
     recoverAll,
+    retryClassification,
     submit,
   });
 }

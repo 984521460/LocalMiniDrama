@@ -160,6 +160,21 @@ async function ensureRemoteDirectories(sftp, directorySegments, baseSegmentCount
   }
 }
 
+async function verifiedRemoteFile(sftp, remoteSegments, baseSegmentCount) {
+  const remotePath = remoteSegments.join('/');
+  const stats = await lstatMaybe(sftp, remotePath);
+  if (!stats) return null;
+  if (!safeFileStat(stats)) throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+  const base = remoteSegments.slice(0, baseSegmentCount).join('/');
+  const baseReal = path.posix.normalize(await call(sftp, 'realpath', base));
+  const remoteReal = path.posix.normalize(await call(sftp, 'realpath', remotePath));
+  if (!baseReal.startsWith('/') || !remoteReal.startsWith('/')
+    || (remoteReal !== baseReal && !remoteReal.startsWith(`${baseReal}/`))) {
+    throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+  }
+  return hashReadable(sftp.createReadStream(remotePath));
+}
+
 function hashReadable(stream) {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256');
@@ -295,7 +310,21 @@ function createSftpTransfer({ localRoot } = {}) {
       const finalRemotePath = input.remoteSegments.join('/');
       const parentSegments = input.remoteSegments.slice(0, -1);
       await ensureRemoteDirectories(sftp, parentSegments, input.baseSegmentCount);
-      if (await lstatMaybe(sftp, finalRemotePath)) throw createError('SFTP_TRANSFER_CONFLICT');
+      const installed = await verifiedRemoteFile(
+        sftp,
+        input.remoteSegments,
+        input.baseSegmentCount,
+      );
+      if (installed) {
+        if (installed.sha256 !== input.expectedSha256 || installed.bytes !== sourceHash.bytes) {
+          throw createError('SFTP_TRANSFER_CONFLICT');
+        }
+        return Object.freeze({
+          remoteRelativePath: finalRemotePath,
+          sha256: installed.sha256,
+          bytes: installed.bytes,
+        });
+      }
       temporaryRemotePath = `${parentSegments.join('/')}/.${input.remoteSegments.at(-1)}.${randomUUID()}.part`;
       await call(sftp, 'fastPut', source, temporaryRemotePath);
       const remoteHash = await hashReadable(sftp.createReadStream(temporaryRemotePath));

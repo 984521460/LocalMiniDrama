@@ -112,6 +112,24 @@ function remoteTaskRoutes(log, runtime = {}, database) {
     }
   });
 
+  router.get('/remote-tasks/:taskUid/retry-classification', async (req, res) => {
+    if (!service) return unavailable(res);
+    try {
+      return response.success(res, service.retryClassification(req.params.taskUid));
+    } catch (error) {
+      return handleError(res, error, 'remote-task-retry-classification');
+    }
+  });
+
+  router.post('/remote-tasks/:taskUid/retry', async (req, res) => {
+    if (!coordinator || typeof coordinator.retry !== 'function') return unavailable(res);
+    try {
+      return response.success(res, await coordinator.retry(req.params.taskUid, req.body));
+    } catch (error) {
+      return handleError(res, error, 'remote-task-retry');
+    }
+  });
+
   router.post('/remote-tasks/:taskUid/recover', async (req, res) => {
     if (!service) return unavailable(res);
     try {

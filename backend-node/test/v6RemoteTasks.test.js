@@ -749,7 +749,7 @@ test('startup recovery classifies history, queue, retryable, and orphaned withou
   });
   const stillQueued = await queuedFixture.service.recover(uid(9812));
   assert.equal(stillQueued.stage, 'submitted');
-  assert.equal(stillQueued.stateVersion, queuedTask.stateVersion + 1);
+  assert.equal(stillQueued.stateVersion, queuedTask.stateVersion);
 });
 
 test('remote task errors are trusted fixed envelopes', () => {
@@ -791,6 +791,7 @@ test('remote recovery paginates a bounded snapshot and returns only aggregate co
     assignFormalPrompt() { throw new Error('not used'); },
     heartbeatFormalTask() { throw new Error('not used'); },
     renewFormalSubmissionLease() { throw new Error('not used'); },
+    retryFormalTask() { throw new Error('not used'); },
     listRecoverableFormalTasks(cursor) {
       pages.push(cursor);
       const start = cursor.afterUid === null
@@ -837,6 +838,7 @@ test('remote recovery never reads an inherited Array iterator', () => {
         assignFormalPrompt() { throw new Error('not used'); },
         heartbeatFormalTask() { throw new Error('not used'); },
         renewFormalSubmissionLease() { throw new Error('not used'); },
+        retryFormalTask() { throw new Error('not used'); },
         listRecoverableFormalTasks() { return page; },
       };
       return createRemoteTaskService({

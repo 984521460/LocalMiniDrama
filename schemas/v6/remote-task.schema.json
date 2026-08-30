@@ -7,7 +7,7 @@
   "required": [
     "uid", "connectionUid", "connectionEvidenceSha256", "workflowRunUid", "workflowManifestUid", "contractVersion",
     "idempotencyKey", "requestSha256", "promptSha256", "provider", "promptId", "remoteRelativeDir",
-    "stage", "status", "heartbeatAt", "retryCount", "outputAssetVersionUid",
+    "stage", "status", "heartbeatAt", "retryCount", "maxRetries", "outputAssetVersionUid",
     "errorCode", "errorDetailRef", "errorPhase", "errorRetryable", "recoveryState",
     "stateVersion", "submissionLeaseExpiresAtEpochMs",
     "createdAt", "startedAt", "completedAt", "updatedAt"
@@ -46,7 +46,13 @@
     },
     "status": { "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
     "heartbeatAt": { "$ref": "#/$defs/nullableTimestamp" },
-    "retryCount": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "retryCount": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "maxRetries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "$comment": "Runtime and database additionally require retryCount <= maxRetries."
+    },
     "outputAssetVersionUid": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
     "errorCode": {
       "oneOf": [

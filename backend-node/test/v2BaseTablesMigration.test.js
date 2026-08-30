@@ -81,8 +81,70 @@ function migrateEmptyLegacyDatabase(database) {
     VALUES ('legacy poster', 'image', 'legacy://poster', '2026-01-01', '2026-01-01')
   `).run();
   const result = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
-  assert.equal(result.currentVersion, 14);
+  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.equal(result.currentVersion, 15);
+}
+
+function migrateThroughFourteen(workspace, database, directoryName) {
+  const migrationsDir = path.join(workspace.root, directoryName);
+  fs.mkdirSync(migrationsDir);
+  for (const filename of fs.readdirSync(V2_MIGRATIONS_DIR)
+    .filter((name) => /^(?:000[1-9]|001[0-4])_.*\.sql$/u.test(name))) {
+    fs.copyFileSync(path.join(V2_MIGRATIONS_DIR, filename), path.join(migrationsDir, filename));
+  }
+  database.exec(LEGACY_SCHEMA_SQL);
+  assert.equal(runV2Migrations(database, { migrationsDir }).currentVersion, 14);
+}
+
+function insertLegacyFormalTaskWithRetryCount(database, retryCount, ordinal) {
+  const connectionUid = uid(15000 + ordinal * 10);
+  const manifestUid = uid(15001 + ordinal * 10);
+  const taskUid = uid(15002 + ordinal * 10);
+  database.prepare(`
+    INSERT INTO remote_connections
+      (uid, name, host, port, username, credential_ref, status)
+    VALUES (?, 'Reliability migration', 'worker.example.invalid', 22, 'fixture', ?, 'ready')
+  `).run(connectionUid, `credential:v1:${uid(15003 + ordinal * 10)}`);
+  database.prepare(`
+    INSERT INTO workflow_manifests
+      (uid, manifest_id, version, engine, workflow_file, workflow_sha256,
+       model_family, requirements_json, inputs_json, outputs_json, validation_json, status)
+    VALUES (?, ?, '1.0.0', 'comfyui', 'fixtures/reliability.json', ?,
+            'fixture', ?, ?, ?, ?, 'validated')
+  `).run(
+    manifestUid,
+    `reliability-${ordinal}`,
+    SHA_A,
+    '[{"kind":"node","nodeType":"PromptNode"}]',
+    '{"prompt":{"marker":"APP_INPUT","inputName":"text","valueType":"string","required":true}}',
+    '{"video":{"marker":"APP_OUTPUT"}}',
+    '{"schemaVersion":"comfy-workflow-manifest.v1","workflowFormat":"api","markersValidated":true}',
+  );
+  database.prepare(`
+    INSERT INTO remote_tasks
+      (uid, connection_uid, connection_evidence_sha256, workflow_run_uid,
+       workflow_manifest_uid, contract_version, idempotency_key, request_sha256,
+       prompt_sha256, provider, prompt_id, remote_relative_dir, stage, status,
+       recovery_state, state_version, retry_count)
+    VALUES (?, ?, ?, NULL, ?, 'remote-task.v1', ?, ?, ?, 'comfyui', NULL, ?,
+            'prepared', 'queued', 'none', 0, 0)
+  `).run(
+    taskUid,
+    connectionUid,
+    SHA_A,
+    manifestUid,
+    `remote-task:v1:${uid(15004 + ordinal * 10)}`,
+    SHA_B,
+    SHA_A,
+    `jobs/${taskUid}`,
+  );
+  database.exec('DROP TRIGGER v2_remote_tasks_formal_validate_update');
+  database.prepare('UPDATE remote_tasks SET retry_count = ? WHERE uid = ?').run(retryCount, taskUid);
+  database.exec(`
+    CREATE TRIGGER v2_remote_tasks_formal_validate_update
+    BEFORE UPDATE ON remote_tasks WHEN 0 BEGIN SELECT 1; END;
+  `);
+  return taskUid;
 }
 
 function assertBaseTableContract(database) {
@@ -401,6 +463,31 @@ test('migration seven fails atomically instead of accepting unverifiable provisi
   assert.equal(database.pragma('integrity_check', { simple: true }), 'ok');
 });
 
+test('migration fifteen preserves bounded legacy retry evidence and rejects unbounded drift atomically', (t) => {
+  const workspace = createWorkspace(t);
+  const preserved = openDatabase(workspace, 'reliability-preserved.sqlite');
+  migrateThroughFourteen(workspace, preserved, 'through-fourteen-preserved');
+  const preservedTaskUid = insertLegacyFormalTaskWithRetryCount(preserved, 4, 1);
+  const upgraded = runV2Migrations(preserved, { migrationsDir: V2_MIGRATIONS_DIR });
+  assert.deepEqual(upgraded.appliedVersions, [15]);
+  assert.deepEqual(
+    preserved.prepare('SELECT retry_count, max_retries FROM remote_tasks WHERE uid = ?')
+      .get(preservedTaskUid),
+    { retry_count: 4, max_retries: 4 },
+  );
+
+  const rejected = openDatabase(workspace, 'reliability-rejected.sqlite');
+  migrateThroughFourteen(workspace, rejected, 'through-fourteen-rejected');
+  insertLegacyFormalTaskWithRetryCount(rejected, 11, 2);
+  assert.throws(
+    () => runV2Migrations(rejected, { migrationsDir: V2_MIGRATIONS_DIR }),
+    (error) => error instanceof V2MigrationError && error.code === 'MIGRATION_EXECUTION_FAILED',
+  );
+  assert.equal(rejected.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 14);
+  assert.equal(rejected.prepare('PRAGMA table_info(remote_tasks)').all()
+    .some((column) => column.name === 'max_retries'), false);
+});
+
 test('refuses to seal a version-two source document that has no evidence blocks', (t) => {
   const workspace = createWorkspace(t);
   const migrationsDir = path.join(workspace.root, 'migrations-orphan');
@@ -678,8 +765,8 @@ test('rolls back a failed base-table migration and succeeds after the schema col
 
   database.exec('DROP TABLE source_documents');
   const recovered = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
-  assert.equal(recovered.currentVersion, 14);
+  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  assert.equal(recovered.currentVersion, 15);
   assertBaseTableContract(database);
   assert.equal(database.prepare('SELECT count(*) AS count FROM legacy_assets').get().count, 0);
   assert.equal(database.pragma('integrity_check', { simple: true }), 'ok');

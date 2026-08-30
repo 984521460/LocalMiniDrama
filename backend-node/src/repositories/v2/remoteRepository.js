@@ -71,6 +71,7 @@ function createRemoteRepository(database) {
     database.prepare('PRAGMA table_info(remote_tasks)').all().map((column) => column.name),
   );
   const hasFormalTasks = taskColumns.has('contract_version');
+  const hasReliabilityPolicy = taskColumns.has('max_retries');
   const insertConnection = database.prepare(hasProductizedConnections ? `
       INSERT INTO remote_connections
         (uid, name, host, port, username, host_fingerprint, credential_ref, status,
@@ -90,7 +91,16 @@ function createRemoteRepository(database) {
     VALUES
       (@uid, @connectionUid, @workflowRunUid, @provider, @promptId, @remoteRelativeDir, @stage, @status)
   `);
-  const insertFormalTask = hasFormalTasks ? database.prepare(`
+  const insertFormalTask = hasFormalTasks ? database.prepare(hasReliabilityPolicy ? `
+    INSERT INTO remote_tasks
+      (uid, connection_uid, connection_evidence_sha256, workflow_run_uid, workflow_manifest_uid, contract_version,
+       idempotency_key, request_sha256, prompt_sha256, provider, prompt_id, remote_relative_dir,
+       stage, status, recovery_state, state_version, max_retries)
+    VALUES
+      (@uid, @connectionUid, @connectionEvidenceSha256, @workflowRunUid, @workflowManifestUid, 'remote-task.v1',
+       @idempotencyKey, @requestSha256, @promptSha256, 'comfyui', NULL, @remoteRelativeDir,
+       'prepared', 'queued', 'none', 0, @maxRetries)
+  ` : `
     INSERT INTO remote_tasks
       (uid, connection_uid, connection_evidence_sha256, workflow_run_uid, workflow_manifest_uid, contract_version,
        idempotency_key, request_sha256, prompt_sha256, provider, prompt_id, remote_relative_dir,
@@ -228,7 +238,14 @@ function createRemoteRepository(database) {
       AND stage = 'submitted' AND status = 'running' AND prompt_id IS NULL
       AND submission_lease_expires_at_epoch_ms IS NOT NULL
   `) : null;
-  const heartbeatFormalTask = hasFormalTasks ? database.prepare(`
+  const heartbeatFormalTask = hasFormalTasks ? database.prepare(hasReliabilityPolicy ? `
+    UPDATE remote_tasks
+    SET heartbeat_at = @heartbeatAt,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE uid = @uid AND contract_version = 'remote-task.v1'
+      AND state_version = @expectedStateVersion AND status = 'running'
+      AND NOT (stage = 'submitted' AND prompt_id IS NULL)
+  ` : `
     UPDATE remote_tasks
     SET heartbeat_at = @heartbeatAt,
         state_version = state_version + 1,
@@ -236,6 +253,31 @@ function createRemoteRepository(database) {
     WHERE uid = @uid AND contract_version = 'remote-task.v1'
       AND state_version = @expectedStateVersion AND status = 'running'
       AND NOT (stage = 'submitted' AND prompt_id IS NULL)
+  `) : null;
+  const retryFormalTask = hasReliabilityPolicy ? database.prepare(`
+    UPDATE remote_tasks
+    SET stage = 'prepared',
+        status = 'queued',
+        heartbeat_at = NULL,
+        prompt_id = NULL,
+        output_asset_version_uid = NULL,
+        error_code = NULL,
+        error_detail_ref = NULL,
+        error_phase = NULL,
+        error_retryable = NULL,
+        recovery_state = 'none',
+        submission_lease_expires_at_epoch_ms = NULL,
+        retry_count = retry_count + 1,
+        state_version = state_version + 1,
+        started_at = NULL,
+        completed_at = NULL,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE uid = @uid AND contract_version = 'remote-task.v1'
+      AND state_version = @expectedStateVersion
+      AND stage = 'failed' AND status = 'failed'
+      AND recovery_state = 'retryable' AND error_retryable = 1
+      AND prompt_id IS NULL AND error_phase IN ('dependency', 'upload', 'recovery')
+      AND retry_count < max_retries
   `) : null;
   const listRecoverableFormalTaskRows = hasFormalTasks ? database.prepare(`
     SELECT * FROM remote_tasks
@@ -280,7 +322,10 @@ function createRemoteRepository(database) {
     const mapped = mapRow(row, TASK_MAP);
     if (!hasFormalTasks || mapped.contractVersion !== 'remote-task.v1') return mapped;
     try {
-      return createRemoteTaskRecord(mapped);
+      return createRemoteTaskRecord(hasReliabilityPolicy ? mapped : {
+        ...mapped,
+        maxRetries: 3,
+      });
     } catch {
       throw new V2RepositoryDataError('remote task', 'record');
     }
@@ -397,7 +442,7 @@ function createRemoteRepository(database) {
       assertAllowedKeys(task, [
         'uid', 'connectionUid', 'connectionEvidenceSha256', 'workflowRunUid',
         'workflowManifestUid', 'idempotencyKey', 'promptSha256', 'remoteRelativeDir',
-        'requestSha256',
+        'requestSha256', 'maxRetries',
       ], 'formal remote task');
       const request = createRemoteTaskRequest({
         connectionUid: task.connectionUid,
@@ -407,6 +452,7 @@ function createRemoteRepository(database) {
         idempotencyKey: task.idempotencyKey,
         promptSha256: task.promptSha256,
         remoteRelativeDir: task.remoteRelativeDir,
+        maxRetries: task.maxRetries,
       });
       if (typeof task.requestSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(task.requestSha256)
         || task.requestSha256 !== hashRemoteTaskRequest(request)) {
@@ -418,7 +464,8 @@ function createRemoteRepository(database) {
       );
       if (existing) {
         const persisted = mapTask(existing);
-        if (persisted.requestSha256 !== task.requestSha256) {
+        if (persisted.requestSha256 !== task.requestSha256
+          || persisted.maxRetries !== request.maxRetries) {
           throw new V2RepositoryConflictError('remote task', 'created idempotently');
         }
         return Object.freeze({ created: false, task: persisted });
@@ -428,6 +475,7 @@ function createRemoteRepository(database) {
           uid: task.uid,
           ...request,
           requestSha256: task.requestSha256,
+          maxRetries: request.maxRetries,
         }));
       } catch (error) {
         if (!(error instanceof V2RepositoryConflictError)) throw error;
@@ -437,7 +485,8 @@ function createRemoteRepository(database) {
         );
         if (!raced) throw error;
         const persisted = mapTask(raced);
-        if (persisted.requestSha256 !== task.requestSha256) throw error;
+        if (persisted.requestSha256 !== task.requestSha256
+          || persisted.maxRetries !== request.maxRetries) throw error;
         return Object.freeze({ created: false, task: persisted });
       }
       return Object.freeze({ created: true, task: getFormalTask(task.uid) });
@@ -561,6 +610,25 @@ function createRemoteRepository(database) {
         entity: 'remote task',
         uid,
         operation: 'recorded its heartbeat',
+      });
+      return getFormalTask(uid);
+    },
+
+    retryFormalTask({ uid, expectedStateVersion }) {
+      if (!retryFormalTask) {
+        throw new V2RepositoryDataError('remote task', 'reliability policy');
+      }
+      const result = executeWrite(
+        'remote task',
+        'retried safely',
+        () => retryFormalTask.run({ uid, expectedStateVersion }),
+      );
+      optimisticResult({
+        changes: result.changes,
+        exists: () => Boolean(getFormalTaskRow.get(uid)),
+        entity: 'remote task',
+        uid,
+        operation: 'retried safely',
       });
       return getFormalTask(uid);
     },

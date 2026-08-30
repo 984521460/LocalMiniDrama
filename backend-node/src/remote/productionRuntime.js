@@ -19,7 +19,7 @@ const { createRemoteOutputVerifier } = require('./outputVerifier');
 
 const DEPENDENCY_KEYS = Object.freeze([
   'credentialVault', 'sshTransport', 'tunnelManager', 'comfyClientFactory',
-  'h3Inspector', 'remoteTimeoutMs', 'executionTimeoutMs',
+  'h3Inspector', 'remoteTimeoutMs', 'executionTimeoutMs', 'heartbeatIntervalMs',
 ]);
 
 function dependencySnapshot(value) {
@@ -104,6 +104,9 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
     localRoot,
     ...(configured.executionTimeoutMs !== undefined
       ? { timeoutMs: configured.executionTimeoutMs }
+      : {}),
+    ...(configured.heartbeatIntervalMs !== undefined
+      ? { heartbeatIntervalMs: configured.heartbeatIntervalMs }
       : {}),
   });
 
