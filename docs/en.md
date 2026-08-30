@@ -98,7 +98,9 @@ Go to **[Releases](../../releases)** and download the latest:
 Double-click → open **AI Config** → enter your API key → start creating.
 
 > On first launch a config file is created at:  
-> `%APPDATA%\LocalMiniDrama\backend\configs\config.yaml`
+> `%APPDATA%\localminidrama-desktop\backend\configs\config.yaml`
+
+Installer and portable builds share that user-data root. Fully exit the application before copying it; see the [user-data backup and migration guide](user-data-backup-and-migration.md) for the authoritative procedure.
 
 ### Option B — Development Mode
 

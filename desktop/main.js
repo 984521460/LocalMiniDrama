@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { PRODUCT_NAME } = require('./product-identity');
+const { formatStartupError } = require('./startup-error');
 const { resolveUserDataPath } = require('./user-data-path');
 const { resolvePackagingSmokeAppData } = require('./windows-release-contract');
 
@@ -276,9 +277,9 @@ app.whenReady().then(async () => {
     port = await startBackend();
     writeMainLog(`startBackend ok port=${port}`);
   } catch (err) {
-    const stack = err && err.stack ? err.stack : String(err);
-    writeMainLog(`Failed to start backend\n${stack}`);
-    console.error('Failed to start backend', err);
+    const safeError = formatStartupError(err);
+    writeMainLog(`Failed to start backend\n${safeError.text}`);
+    console.error('Failed to start backend', safeError.text);
     if (isPackagingSmoke(process.env)) {
       app.exit(1);
       return;
@@ -286,7 +287,7 @@ app.whenReady().then(async () => {
     const { dialog } = require('electron');
     dialog.showErrorBox(
       `${PRODUCT_NAME}启动失败`,
-      `后端服务未能启动，请查看日志：\n${MAIN_STARTUP_LOG}\n\n${stack}`
+      `后端服务未能启动，请查看应用用户数据目录中的 main-startup.log。\n\n${safeError.text}`
     );
     app.quit();
     return;

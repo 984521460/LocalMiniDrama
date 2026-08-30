@@ -29,7 +29,7 @@
 
 3. 首次运行会在以下路径生成配置文件：
    ```
-   %APPDATA%\LocalMiniDrama\backend\configs\config.yaml
+   %APPDATA%\localminidrama-desktop\backend\configs\config.yaml
    ```
 
 4. 点击软件右上角「AI 配置」，填入你的 AI API Key，即可开始使用。
@@ -148,7 +148,7 @@ npm run dist:cn
 
 ## 配置文件说明
 
-配置文件位于 `backend-node/configs/config.yaml`（开发模式）或 `%APPDATA%\LocalMiniDrama\backend\configs\config.yaml`（exe 模式）。
+配置文件位于 `backend-node/configs/config.yaml`（开发模式）或 `%APPDATA%\localminidrama-desktop\backend\configs\config.yaml`（exe 模式）。
 
 主要配置项：
 
@@ -181,9 +181,9 @@ AI 服务配置通过软件内「AI 配置」页面管理，无需手动编辑 Y
 |------|------|
 | `backend-node/data/drama_generator.db` | SQLite 数据库（开发模式） |
 | `backend-node/data/storage/` | 生成的图片和视频文件 |
-| `%APPDATA%\LocalMiniDrama\` | exe 模式下的所有数据 |
+| `%APPDATA%\localminidrama-desktop\` | exe 模式下的所有用户数据（安装版与便携版共用） |
 
-> ⚠️ 升级版本前建议备份 `data/` 目录；数据库会在启动时自动执行迁移脚本，一般无需手动操作。
+> ⚠️ 升级版本前应完全退出应用并备份整个用户数据目录，不能只复制运行中的数据库或 `data/` 子目录。详见[用户数据备份、恢复与迁移](user-data-backup-and-migration.md)。
 
 ---
 
@@ -226,7 +226,7 @@ npm run dist
 ### Q: 生成的图片/视频保存在哪里？
 
 开发模式：`backend-node/data/storage/`  
-exe 模式：`%APPDATA%\LocalMiniDrama\backend\data\storage\`
+exe 模式：`%APPDATA%\localminidrama-desktop\backend\data\storage\`
 
 目录结构：
 ```
@@ -242,9 +242,9 @@ storage/
 
 ### Q: 如何备份/迁移项目数据？
 
-**方法一（推荐）**：在软件首页点击项目卡片上的「导出」按钮，下载 ZIP 格式的工程文件，在新机器上导入即可。
+**单个项目**：在软件首页点击项目卡片上的「导出」按钮，下载 ZIP 格式的工程文件，在新机器上导入。
 
-**方法二**：直接备份整个 `data/` 目录，将其复制到新机器的相同位置。
+**完整迁移**：项目 ZIP 不包含全部用户配置和 Windows 凭据。完全退出应用后备份整个 `%APPDATA%\localminidrama-desktop`，恢复时不要合并两个非空目录，并在新机器重新配置凭据。完整步骤见[用户数据备份、恢复与迁移](user-data-backup-and-migration.md)。
 
 ---
 

@@ -52,6 +52,7 @@
     "files": [
       "main.js",
       "product-identity.js",
+      "startup-error.js",
       "user-data-path.js",
       "windows-release-contract.js",
       "package.json",

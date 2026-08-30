@@ -184,7 +184,8 @@
 
 双击运行 → 「AI 配置」填入 API Key → 开始创作。
 
-> 首次运行配置：`%APPDATA%\LocalMiniDrama\backend\configs\config.yaml`
+> 首次运行配置：`%APPDATA%\localminidrama-desktop\backend\configs\config.yaml`
+> 升级、备份或迁移前请阅读：[用户数据备份、恢复与迁移](docs/user-data-backup-and-migration.md)
 
 ### 方式二：源码开发
 

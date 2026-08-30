@@ -71,6 +71,8 @@ npm run dist:cn
 
 从旧版升级时，应用会在首次启动、创建新日志前，将 `%APPDATA%/LocalMiniDrama` 安全迁移为 `%APPDATA%/localminidrama-desktop`。若新目录已经包含数据，则不会覆盖；迁移失败时本次启动继续使用旧目录，避免把已有项目误判为丢失。NSIS 卸载不会删除该用户数据目录。
 
+升级、恢复或迁移到新电脑前，请按[用户数据备份、恢复与迁移](../docs/user-data-backup-and-migration.md)完整退出应用并备份整个稳定用户数据目录。项目 ZIP、自动 pre-v2 数据库副本和卸载保留都不能单独替代完整备份；采用 `credential:v1` 引用、实际保存在 Windows Credential Manager 中的凭据不会随文件复制。
+
 ### Windows 发布前验证
 
 构建当前生产安装包和便携版后，先执行不改变系统安装状态的产物闭包与便携启动验证：
