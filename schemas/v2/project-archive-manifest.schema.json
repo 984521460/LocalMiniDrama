@@ -92,6 +92,21 @@
       "required": ["uid", "drama_uid", "workflow_run_uid", "timeline_snapshot_json", "encoding_json", "audio_json", "subtitle_json", "output_asset_version_uid", "validation_json", "status", "error_code", "error_detail_ref", "created_at", "started_at", "completed_at", "updated_at"],
       "properties": { "uid": { "$ref": "#/$defs/uid" }, "drama_uid": { "$ref": "#/$defs/uid" }, "workflow_run_uid": { "$ref": "#/$defs/uidOrNull" }, "timeline_snapshot_json": { "type": "string" }, "encoding_json": { "type": "string" }, "audio_json": { "type": "string" }, "subtitle_json": { "type": "string" }, "output_asset_version_uid": { "$ref": "#/$defs/uidOrNull" }, "validation_json": { "type": "string" }, "status": { "$ref": "#/$defs/scalar" }, "error_code": { "$ref": "#/$defs/scalar" }, "error_detail_ref": { "$ref": "#/$defs/scalar" }, "created_at": { "$ref": "#/$defs/scalar" }, "started_at": { "$ref": "#/$defs/scalar" }, "completed_at": { "$ref": "#/$defs/scalar" }, "updated_at": { "$ref": "#/$defs/scalar" } }
     },
+    "mediaExportRunSeal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid", "source_node_run_uid", "execution_plan_json", "execution_plan_sha256", "output_asset_uid", "output_asset_version_uid", "receipt_json", "created_at_epoch_ms", "completed_at_epoch_ms"],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uid" },
+        "source_node_run_uid": { "$ref": "#/$defs/uid" },
+        "execution_plan_json": { "type": "string", "minLength": 2, "maxLength": 16777216 },
+        "execution_plan_sha256": { "$ref": "#/$defs/sha256" },
+        "output_asset_uid": { "$ref": "#/$defs/uidOrNull" },
+        "output_asset_version_uid": { "$ref": "#/$defs/uidOrNull" },
+        "receipt_json": { "oneOf": [{ "type": "string", "minLength": 2, "maxLength": 1048576 }, { "type": "null" }] },
+        "created_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+        "completed_at_epoch_ms": { "oneOf": [{ "type": "integer", "minimum": 0, "maximum": 253402300799999 }, { "type": "null" }] }
+      }
+    },
     "workflowManifest": {
       "type": "object", "additionalProperties": false,
       "required": ["uid", "manifest_id", "version", "engine", "workflow_file", "workflow_sha256", "model_family", "requirements_json", "inputs_json", "outputs_json", "validation_json", "status", "created_at", "updated_at"],
@@ -114,7 +129,7 @@
     },
     "records": {
       "type": "object", "additionalProperties": false,
-      "required": ["sourceDocuments", "sourceBlocks", "sourceSelections", "assets", "assetVersions", "workflowDefinitions", "canvasNodes", "canvasEdges", "generationRuns", "workflowRuns", "nodeRuns", "exportRuns", "workflowManifests", "promptSemanticVersions", "assetGenerationHistory", "assetVersionSelectionEvents"],
+      "required": ["sourceDocuments", "sourceBlocks", "sourceSelections", "assets", "assetVersions", "workflowDefinitions", "canvasNodes", "canvasEdges", "generationRuns", "workflowRuns", "nodeRuns", "exportRuns", "mediaExportRunSeals", "workflowManifests", "promptSemanticVersions", "assetGenerationHistory", "assetVersionSelectionEvents"],
       "properties": {
         "sourceDocuments": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/sourceDocument" } },
         "sourceBlocks": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/sourceBlock" } },
@@ -128,6 +143,7 @@
         "workflowRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/workflowRun" } },
         "nodeRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/nodeRun" } },
         "exportRuns": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/exportRun" } },
+        "mediaExportRunSeals": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/mediaExportRunSeal" } },
         "workflowManifests": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/workflowManifest" } },
         "promptSemanticVersions": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/promptSemanticVersion" } },
         "assetGenerationHistory": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/assetGenerationHistory" } },

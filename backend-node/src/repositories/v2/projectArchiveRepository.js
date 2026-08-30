@@ -9,6 +9,12 @@ const ALL_UID_TABLES = Object.freeze([
   ...RECORD_NAMES.map((name) => RECORD_SPECS[name].table),
   ...GLOBAL_V2_TABLES,
 ]);
+const UNIQUE_UID_TABLES = Object.freeze([
+  ...CORE_TABLES,
+  ...RECORD_NAMES.filter((name) => !RECORD_SPECS[name].sharedUidWith)
+    .map((name) => RECORD_SPECS[name].table),
+  ...GLOBAL_V2_TABLES,
+]);
 
 function sortByUid(rows) {
   return rows.sort((left, right) => left.uid.localeCompare(right.uid));
@@ -67,6 +73,7 @@ function createProjectArchiveRepository(database) {
   const listWorkflowRuns = database.prepare('SELECT * FROM workflow_runs WHERE workflow_uid = ? ORDER BY created_at, uid');
   const listNodeRuns = database.prepare('SELECT * FROM node_runs WHERE workflow_run_uid = ? ORDER BY created_at, uid');
   const listExportRuns = database.prepare('SELECT * FROM export_runs WHERE drama_uid = ? ORDER BY created_at, uid');
+  const listAllMediaExportRunSeals = database.prepare('SELECT * FROM media_export_run_seals ORDER BY uid');
   const listAllAssets = database.prepare('SELECT * FROM assets ORDER BY uid');
   const listAllAssetVersions = database.prepare('SELECT * FROM asset_versions ORDER BY uid');
   const listAllGenerationRuns = database.prepare('SELECT * FROM generation_runs ORDER BY uid');
@@ -81,7 +88,7 @@ function createProjectArchiveRepository(database) {
     ${ALL_UID_TABLES.map((table) => `SELECT 1 AS found FROM ${table} WHERE uid = @uid`).join('\nUNION ALL\n')}
     LIMIT 1
   `);
-  const uidOccurrenceReaders = Object.freeze(ALL_UID_TABLES.map((table) => (
+  const uidOccurrenceReaders = Object.freeze(UNIQUE_UID_TABLES.map((table) => (
     database.prepare(`SELECT count(*) AS count FROM ${table} WHERE uid = ?`)
   )));
   const importedCore = Object.freeze({
@@ -144,7 +151,18 @@ function createProjectArchiveRepository(database) {
     const canvasEdges = workflowDefinitions.flatMap((workflow) => listCanvasEdges.all(workflow.uid));
     const workflowRuns = workflowDefinitions.flatMap((workflow) => listWorkflowRuns.all(workflow.uid));
     const nodeRuns = workflowRuns.flatMap((run) => listNodeRuns.all(run.uid));
-    const exportRuns = listExportRuns.all(project.dramaUid);
+    const allExportRuns = listExportRuns.all(project.dramaUid);
+    const exportRunByUid = new Map(allExportRuns.map((row) => [row.uid, row]));
+    const allMediaExportRunSeals = listAllMediaExportRunSeals.all()
+      .filter((row) => exportRunByUid.has(row.uid));
+    const sealedUids = new Set(allMediaExportRunSeals.map((row) => row.uid));
+    const exportRuns = allExportRuns.filter((row) => (
+      !sealedUids.has(row.uid) || row.status === 'succeeded' || row.status === 'failed'
+    ));
+    const exportedRunUids = new Set(exportRuns.map((row) => row.uid));
+    const mediaExportRunSeals = allMediaExportRunSeals.filter(
+      (row) => exportedRunUids.has(row.uid),
+    );
 
     const owned = new Map([
       ['drama', new Set([project.dramaUid])],
@@ -225,6 +243,7 @@ function createProjectArchiveRepository(database) {
         workflowRuns: uniqueRows(workflowRuns),
         nodeRuns: uniqueRows(nodeRuns),
         exportRuns: uniqueRows(exportRuns),
+        mediaExportRunSeals: uniqueRows(mediaExportRunSeals),
         workflowManifests: uniqueRows(workflowManifests),
         promptSemanticVersions: uniqueRows(promptSemanticVersions),
         assetGenerationHistory: uniqueRows(assetGenerationHistory),
@@ -240,7 +259,8 @@ function createProjectArchiveRepository(database) {
       ...manifest.project.scenes,
       ...manifest.project.props,
       ...manifest.project.episodes.flatMap((episode) => [episode.uid, ...episode.storyboards]),
-      ...RECORD_NAMES.flatMap((name) => manifest.records[name].map((row) => row.uid)),
+      ...RECORD_NAMES.filter((name) => !RECORD_SPECS[name].sharedUidWith)
+        .flatMap((name) => manifest.records[name].map((row) => row.uid)),
     ];
   }
 
@@ -371,6 +391,9 @@ function createProjectArchiveRepository(database) {
     );
     for (const name of ['exportRuns']) {
       for (const row of manifest.records[name]) insertRecords[name].run(row);
+    }
+    for (const row of manifest.records.mediaExportRunSeals) {
+      importRow('media export seal', insertRecords.mediaExportRunSeals, row);
     }
     assertImportedUidSnapshot(manifest);
     if (database.pragma('foreign_key_check').length !== 0) {

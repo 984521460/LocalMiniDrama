@@ -8,6 +8,7 @@ const { createCharacterVersionRepository } = require('./characterVersionReposito
 const { createComfyManifestRepository } = require('./comfyManifestRepository');
 const { createGenerationHistoryRepository } = require('./generationHistoryRepository');
 const { createH3GenerationIntentRepository } = require('./h3GenerationIntentRepository');
+const { createMediaExportRunRepository } = require('./mediaExportRunRepository');
 const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
@@ -43,6 +44,40 @@ function createLazyProjectArchiveRepository(database) {
     },
     importSnapshot(...args) {
       return getTarget().importSnapshot(...args);
+    },
+  });
+}
+
+function createLazyMediaExportRunRepository(database) {
+  let target;
+  function getTarget() {
+    if (!target) target = createMediaExportRunRepository(database);
+    return target;
+  }
+  return Object.freeze({
+    complete(...args) {
+      return getTarget().complete(...args);
+    },
+    fail(...args) {
+      return getTarget().fail(...args);
+    },
+    get(...args) {
+      return getTarget().get(...args);
+    },
+    getExecutionPlan(...args) {
+      return getTarget().getExecutionPlan(...args);
+    },
+    getBySourceNodeRun(...args) {
+      return getTarget().getBySourceNodeRun(...args);
+    },
+    listByDrama(...args) {
+      return getTarget().listByDrama(...args);
+    },
+    prepareFromNode(...args) {
+      return getTarget().prepareFromNode(...args);
+    },
+    start(...args) {
+      return getTarget().start(...args);
     },
   });
 }
@@ -112,6 +147,7 @@ function createV2Repositories(database) {
     comfyManifests,
     generationHistory,
     h3GenerationIntents,
+    mediaExportRuns: createLazyMediaExportRunRepository(database),
     narrativeReviews,
     projectArchives: createLazyProjectArchiveRepository(database),
     remote,

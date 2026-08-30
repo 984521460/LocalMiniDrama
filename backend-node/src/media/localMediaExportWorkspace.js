@@ -4,6 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { fail } = require('../audio/audioContract');
+const {
+  assertLocalMediaFileUnchanged,
+  hashLocalMediaFile,
+  resolveStableLocalMediaFile,
+} = require('./localMediaFile');
 
 const INPUT_CODE = 'MEDIA_EXPORT_INPUT_INVALID';
 const FAILED_CODE = 'MEDIA_EXPORT_FAILED';
@@ -204,9 +209,31 @@ async function rollbackMediaExportInstallation(installation) {
   }
 }
 
+async function removeVerifiedMediaExportOutput(localRoot, relativePath, expectedSha256) {
+  try {
+    if (typeof expectedSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(expectedSha256)) invalid();
+    const config = Object.freeze({ localRoot, maxFileBytes: 64 * 1024 * 1024 * 1024 });
+    const resolved = await resolveStableLocalMediaFile(config, relativePath);
+    const hashed = await hashLocalMediaFile(resolved.real, config.maxFileBytes);
+    if (hashed.sha256 !== expectedSha256) invalid();
+    await assertLocalMediaFileUnchanged(config, resolved, hashed);
+    await fs.promises.unlink(resolved.real);
+    await assertRootUnchanged(resolved.root);
+    try {
+      await fs.promises.lstat(resolved.real);
+      invalid();
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  } catch {
+    return invalid();
+  }
+}
+
 module.exports = Object.freeze({
   assertMediaExportWorkspaceUnchanged,
   createMediaExportWorkspace,
   installMediaExportCandidate,
+  removeVerifiedMediaExportOutput,
   rollbackMediaExportInstallation,
 });

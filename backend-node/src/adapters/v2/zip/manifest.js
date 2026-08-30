@@ -4,6 +4,12 @@ const {
   GENERATION_HISTORY_RECORD_SPECS,
   validateGenerationHistoryArchive,
 } = require('./generationHistoryArchive');
+const { parseMediaExportExecutionPlanRecord } = require('../../../media/mediaExportExecutionPlan');
+const { parseMediaExportReceiptRecord } = require('../../../media/mediaExportReceipt');
+const {
+  createMediaExportRunPublicRecord,
+  publicOutputFromReceipt,
+} = require('../../../media/mediaExportRun');
 
 const SCHEMA_VERSION = '2.0.0';
 const ARCHIVE_KIND = 'local-mini-drama-project';
@@ -65,6 +71,16 @@ const RECORD_SPECS = Object.freeze({
     table: 'export_runs',
     columns: Object.freeze(['uid', 'drama_uid', 'workflow_run_uid', 'timeline_snapshot_json', 'encoding_json', 'audio_json', 'subtitle_json', 'output_asset_version_uid', 'validation_json', 'status', 'error_code', 'error_detail_ref', 'created_at', 'started_at', 'completed_at', 'updated_at']),
     json: Object.freeze({ timeline_snapshot_json: 'object', encoding_json: 'object', audio_json: 'object', subtitle_json: 'object', validation_json: 'object' }),
+  }),
+  mediaExportRunSeals: Object.freeze({
+    table: 'media_export_run_seals',
+    columns: Object.freeze([
+      'uid', 'source_node_run_uid', 'execution_plan_json', 'execution_plan_sha256',
+      'output_asset_uid', 'output_asset_version_uid', 'receipt_json',
+      'created_at_epoch_ms', 'completed_at_epoch_ms',
+    ]),
+    json: Object.freeze({ execution_plan_json: 'object', receipt_json: 'object?' }),
+    sharedUidWith: 'exportRuns',
   }),
   ...GENERATION_HISTORY_RECORD_SPECS,
 });
@@ -304,7 +320,11 @@ function assertPortableBasename(value) {
 
 function assertRecord(record, spec, seen) {
   assertExactObject(record, spec.columns);
-  assertUid(record.uid, seen);
+  if (spec.sharedUidWith) {
+    if (typeof record.uid !== 'string' || !UUID_V4.test(record.uid)) invalidManifest();
+  } else {
+    assertUid(record.uid, seen);
+  }
   for (const [key, value] of Object.entries(record)) {
     if (Array.isArray(value) || isPlainObject(value)) invalidManifest();
     assertJsonValue(value);
@@ -409,7 +429,10 @@ function assertManifestClosure(manifest) {
   const assetByUid = new Map(records.assets.map((row) => [row.uid, row]));
   const versionByUid = new Map(records.assetVersions.map((row) => [row.uid, row]));
   const workflowRunByUid = new Map(records.workflowRuns.map((row) => [row.uid, row]));
+  const nodeRunByUid = new Map(records.nodeRuns.map((row) => [row.uid, row]));
+  const exportRunByUid = new Map(records.exportRuns.map((row) => [row.uid, row]));
   const generationRunByUid = new Map(records.generationRuns.map((row) => [row.uid, row]));
+  const runAggregateByUid = new Map();
   const nodeRunsByWorkflowRun = new Map();
   for (const row of records.nodeRuns) {
     const rows = nodeRunsByWorkflowRun.get(row.workflow_run_uid) || [];
@@ -480,12 +503,13 @@ function assertManifestClosure(manifest) {
   for (const row of records.workflowRuns) {
     if (!workflowByUid.has(row.workflow_uid)) invalidManifest();
     try {
-      validateRunAggregate({
+      const aggregate = validateRunAggregate({
         run: workflowRunRecord(row),
         nodes: [...(nodeRunsByWorkflowRun.get(row.uid) || [])]
           .sort((left, right) => left.ordinal - right.ordinal)
           .map(nodeRunRecord),
       });
+      runAggregateByUid.set(row.uid, aggregate);
     } catch {
       invalidManifest();
     }
@@ -502,6 +526,135 @@ function assertManifestClosure(manifest) {
       if (!run || workflowByUid.get(run.workflow_uid)?.drama_uid !== row.drama_uid) invalidManifest();
     }
     if (row.output_asset_version_uid !== null && !versionByUid.has(row.output_asset_version_uid)) invalidManifest();
+  }
+  for (const row of records.mediaExportRunSeals) {
+    const exportRun = exportRunByUid.get(row.uid);
+    const sourceNode = nodeRunByUid.get(row.source_node_run_uid);
+    const sourceAggregate = sourceNode
+      ? runAggregateByUid.get(sourceNode.workflow_run_uid) : null;
+    const normalizedSourceNode = sourceAggregate?.nodes.find(
+      (node) => node.uid === sourceNode?.uid,
+    );
+    const sourceGraphMatches = normalizedSourceNode
+      ? sourceAggregate.run.graphSnapshot.snapshot.nodes.filter((node) => (
+        node.uid === normalizedSourceNode.nodeUid
+        && node.nodeType === 'export.final'
+        && node.enabled === true
+      )) : [];
+    let plan;
+    let sourcePlan;
+    try {
+      plan = parseMediaExportExecutionPlanRecord(JSON.parse(row.execution_plan_json));
+      const sourceOutput = assertExactObject(
+        JSON.parse(sourceNode?.output_json), ['schemaVersion', 'executionPlan'],
+      );
+      if (sourceOutput.schemaVersion !== 'media-export-node-output.v1') invalidManifest();
+      sourcePlan = parseMediaExportExecutionPlanRecord(sourceOutput.executionPlan);
+    } catch {
+      invalidManifest();
+    }
+    let sealCompletedAt;
+    try {
+      sealCompletedAt = row.completed_at_epoch_ms === null
+        ? null : new Date(row.completed_at_epoch_ms).toISOString();
+    } catch {
+      invalidManifest();
+    }
+    if (!exportRun || !sourceNode || plan.uid !== row.uid
+      || sourceAggregate?.run.status !== 'succeeded'
+      || normalizedSourceNode?.status !== 'succeeded'
+      || sourceGraphMatches.length !== 1
+      || plan.executionPlanSha256 !== row.execution_plan_sha256
+      || plan.dramaUid !== exportRun.drama_uid
+      || plan.workflowRunUid !== exportRun.workflow_run_uid
+      || sourceNode.workflow_run_uid !== exportRun.workflow_run_uid
+      || JSON.stringify(sourcePlan) !== JSON.stringify(plan)
+      || exportRun.timeline_snapshot_json !== JSON.stringify({
+        uid: plan.productionTimelineSnapshotUid,
+        sha256: plan.productionTimelineSnapshotSha256,
+      })
+      || exportRun.encoding_json !== JSON.stringify(plan.profile)
+      || exportRun.audio_json !== JSON.stringify({
+        mode: plan.mode, uid: plan.audioMixPlan.uid, sha256: plan.audioMixPlan.mixSha256,
+      })
+      || exportRun.subtitle_json !== JSON.stringify({
+        trackSha256: plan.subtitleTrackSha256,
+        documentSha256: plan.subtitleDocument.documentSha256,
+      })
+      || !['succeeded', 'failed'].includes(exportRun.status)
+      || row.completed_at_epoch_ms === null
+      || row.completed_at_epoch_ms < row.created_at_epoch_ms
+      || sealCompletedAt !== exportRun.completed_at) invalidManifest();
+    if (exportRun.status === 'failed') {
+      if (row.output_asset_uid !== null || row.output_asset_version_uid !== null
+        || row.receipt_json !== null || exportRun.output_asset_version_uid !== null
+        || exportRun.validation_json !== '{}'
+        || !['ERR_MEDIA_EXPORT_FAILED', 'ERR_MEDIA_EXPORT_CLEANUP_FAILED']
+          .includes(exportRun.error_code)) invalidManifest();
+      try {
+        createMediaExportRunPublicRecord({
+          schemaVersion: 'media-export-run.v1', uid: row.uid,
+          dramaUid: exportRun.drama_uid, workflowRunUid: exportRun.workflow_run_uid,
+          sourceNodeRunUid: row.source_node_run_uid,
+          executionPlanSha256: row.execution_plan_sha256, status: exportRun.status,
+          outputAssetUid: null, outputAssetVersionUid: null, output: null,
+          errorCode: exportRun.error_code.replace(/^ERR_/u, ''),
+          createdAt: exportRun.created_at, startedAt: exportRun.started_at,
+          completedAt: exportRun.completed_at,
+        });
+      } catch { invalidManifest(); }
+      continue;
+    }
+    let receipt;
+    try {
+      receipt = parseMediaExportReceiptRecord(JSON.parse(row.receipt_json));
+    } catch {
+      invalidManifest();
+    }
+    const asset = assetByUid.get(row.output_asset_uid);
+    const version = versionByUid.get(row.output_asset_version_uid);
+    const completedAt = new Date(receipt.completedAtEpochMs).toISOString();
+    if (!asset || !version || receipt.uid !== plan.uid
+      || receipt.dramaUid !== plan.dramaUid
+      || receipt.workflowRunUid !== plan.workflowRunUid
+      || receipt.productionTimelineSnapshotUid !== plan.productionTimelineSnapshotUid
+      || receipt.productionTimelineSnapshotSha256 !== plan.productionTimelineSnapshotSha256
+      || receipt.normalizationPlanUid !== plan.normalizationPlanUid
+      || receipt.normalizationPlanSha256 !== plan.normalizationPlanSha256
+      || receipt.executionPlanSha256 !== plan.executionPlanSha256
+      || receipt.profileSha256 !== plan.profile.profileSha256
+      || receipt.output.relativePath !== plan.outputRelativePath
+      || Math.abs(receipt.output.durationMs - plan.durationMs) > 50
+      || row.completed_at_epoch_ms !== receipt.completedAtEpochMs
+      || exportRun.output_asset_version_uid !== version.uid
+      || exportRun.validation_json !== row.receipt_json
+      || exportRun.error_code !== null || exportRun.error_detail_ref !== null
+      || asset.current_version_uid !== version.uid || asset.asset_type !== 'final_video'
+      || asset.owner_type !== 'drama' || asset.owner_uid !== plan.dramaUid
+      || asset.status !== 'ready' || version.asset_uid !== asset.uid
+      || version.storage_provider !== 'local'
+      || version.logical_uri !== `asset://dramas/${plan.dramaUid}/final/${asset.uid}/${version.uid}`
+      || version.relative_path !== receipt.output.relativePath
+      || version.sha256 !== receipt.output.sha256 || version.mime_type !== 'video/mp4'
+      || version.width !== receipt.output.video.width
+      || version.height !== receipt.output.video.height
+      || version.duration_ms !== receipt.output.durationMs
+      || version.parent_uid !== null || version.status !== 'ready'
+      || asset.created_at !== completedAt || asset.updated_at !== completedAt
+      || version.created_at !== completedAt) invalidManifest();
+    try {
+      createMediaExportRunPublicRecord({
+        schemaVersion: 'media-export-run.v1', uid: row.uid,
+        dramaUid: exportRun.drama_uid, workflowRunUid: exportRun.workflow_run_uid,
+        sourceNodeRunUid: row.source_node_run_uid,
+        executionPlanSha256: row.execution_plan_sha256, status: exportRun.status,
+        outputAssetUid: row.output_asset_uid,
+        outputAssetVersionUid: row.output_asset_version_uid,
+        output: publicOutputFromReceipt(receipt), errorCode: null,
+        createdAt: exportRun.created_at, startedAt: exportRun.started_at,
+        completedAt: exportRun.completed_at,
+      });
+    } catch { invalidManifest(); }
   }
 }
 

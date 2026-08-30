@@ -103,6 +103,16 @@
               @cancel="cancelRun"
             />
           </el-tab-pane>
+          <el-tab-pane label="成片" name="export">
+            <MediaExportRunPanel
+              :runs="mediaExports.runs.value"
+              :node-run-uid="succeededExportNodeRunUid"
+              :busy="mediaExports.busy.value"
+              :error="mediaExports.error.value || ''"
+              @refresh="refreshMediaExports"
+              @start="startMediaExport"
+            />
+          </el-tab-pane>
         </el-tabs>
       </aside>
     </main>
@@ -141,6 +151,8 @@ import WorkflowNode from '@/components/workflow/WorkflowNode.vue'
 import WorkflowPalette from '@/components/workflow/WorkflowPalette.vue'
 import WorkflowRunPanel from '@/components/workflow/WorkflowRunPanel.vue'
 import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
+import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
+import { useMediaExports } from '@/composables/useMediaExports'
 import { useTheme } from '@/composables/useTheme'
 import { useWorkflowCanvas } from '@/composables/useWorkflowCanvas'
 
@@ -149,6 +161,7 @@ const router = useRouter()
 const dramaId = Number(route.params.id)
 const { isDark, toggle: toggleTheme } = useTheme()
 const canvas = useWorkflowCanvas({ dramaId })
+const mediaExports = useMediaExports({ dramaId })
 
 const drama = ref(null)
 const createVisible = ref(false)
@@ -162,6 +175,18 @@ const nodeTypes = { workflowNode: markRaw(WorkflowNode) }
 const selectedNode = computed(() => {
   if (canvas.selectedNodeUids.value.length !== 1) return null
   return canvas.nodes.value.find((node) => node.id === canvas.selectedNodeUids.value[0]) || null
+})
+
+const succeededExportNodeRunUid = computed(() => {
+  const aggregate = canvas.activeRun.value
+  const graphNodes = aggregate?.run?.graphSnapshot?.snapshot?.nodes
+  if (!Array.isArray(graphNodes) || !Array.isArray(aggregate?.nodes)) return ''
+  const exportNodeUids = new Set(graphNodes.filter(
+    (node) => node?.nodeType === 'export.final' && node.enabled === true,
+  ).map((node) => node.uid))
+  return aggregate.nodes.find(
+    (node) => node?.status === 'succeeded' && exportNodeUids.has(node.nodeUid),
+  )?.uid || ''
 })
 
 function onConnect(connection) {
@@ -284,6 +309,18 @@ async function refreshRuns() {
   try { await canvas.refreshRuns() } catch { /* request layer reports */ }
 }
 
+async function refreshMediaExports() {
+  if (!(await mediaExports.load())) ElMessage.error('成片记录加载失败')
+}
+
+async function startMediaExport(nodeRunUid) {
+  if (await mediaExports.start(nodeRunUid)) {
+    ElMessage.success('成片导出已完成验证')
+  } else {
+    ElMessage.error('成片导出失败')
+  }
+}
+
 async function openRun(runUid) {
   try { await canvas.loadRun(runUid) } catch { /* request layer reports */ }
 }
@@ -301,12 +338,17 @@ onMounted(async () => {
     router.replace('/')
     return
   }
-  const [dramaResult] = await Promise.allSettled([dramaAPI.get(dramaId), canvas.load()])
+  const [dramaResult] = await Promise.allSettled([
+    dramaAPI.get(dramaId), canvas.load(), mediaExports.load(),
+  ])
   if (dramaResult.status === 'fulfilled') drama.value = dramaResult.value
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 
-onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+onBeforeUnmount(() => {
+  mediaExports.invalidate()
+  window.removeEventListener('beforeunload', warnBeforeUnload)
+})
 </script>
 
 <style scoped>

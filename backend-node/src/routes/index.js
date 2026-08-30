@@ -32,6 +32,7 @@ const remoteConnectionRoutes = require('./v2/remoteConnections');
 const remoteExecutionRoutes = require('./v2/remoteExecution');
 const h3Routes = require('./v2/h3');
 const voiceProfileRoutes = require('./v2/voiceProfiles');
+const mediaExportRoutes = require('./v2/mediaExports');
 
 function setupRouter(cfg, db, log, runtime = {}) {
   const r = express.Router();
@@ -81,6 +82,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   const remoteExecution = remoteExecutionRoutes(log, runtime.remoteExecution, db);
   const h3 = h3Routes(log, db, runtime.h3);
   const voiceProfiles = voiceProfileRoutes(log, runtime.voiceProfiles, db);
+  const mediaExports = mediaExportRoutes(log, runtime.mediaExports, db);
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
@@ -93,6 +95,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   r.use('/v2', remoteExecution);
   r.use('/v2', h3);
   r.use('/v2', voiceProfiles);
+  r.use('/v2', mediaExports);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

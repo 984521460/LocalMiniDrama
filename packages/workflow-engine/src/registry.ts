@@ -117,7 +117,7 @@ const NODE_DEFINITIONS: WorkflowNodeTypeDefinition[] = [
   node('audio.tts', '对白配音', [port('dialogues', 'Dialogue', 'many'), port('voice', 'VoiceProfile')], [port('audio', 'AudioAsset', 'many')]),
   node('subtitle.align', '字幕对齐', [port('dialogues', 'Dialogue', 'many'), port('audio', 'AudioAsset', 'many')], [port('subtitle', 'SubtitleTrack')]),
   node('bgm.track', '背景音乐', [port('beats', 'EpisodeBeats')], [port('music', 'MusicAsset')]),
-  node('export.final', '成片导出', [port('videos', 'VideoAsset', 'many'), port('audio', 'AudioAsset', 'many'), port('subtitle', 'SubtitleTrack', 'one', false), port('music', 'MusicAsset', 'one', false)], [port('final', 'FinalVideoAsset')]),
+  node('export.final', '成片导出', [port('videos', 'VideoAsset', 'many'), port('audio', 'AudioAsset', 'many', false), port('subtitle', 'SubtitleTrack', 'one', false), port('music', 'MusicAsset', 'one', false)], [port('final', 'FinalVideoAsset')]),
 ];
 
 function assertUniqueIdentifiers(definitions: readonly WorkflowNodeTypeDefinition[]): void {

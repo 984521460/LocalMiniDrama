@@ -8,8 +8,11 @@ const logger = require('./logger.js');
 const { setupRouter } = require('./routes/index.js');
 const { createProductionRemoteRuntime } = require('./remote/productionRuntime');
 const { createProductionH3Runtime } = require('./h3/productionRuntime');
+const { createProductionMediaExportRuntime } = require('./media/productionRuntime');
 
-function createApp({ remoteDependencies = {}, h3Dependencies = {} } = {}) {
+function createApp({
+  remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
+} = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
   const { runMigrationsAndEnsure } = require('./db/migrate.js');
@@ -26,6 +29,9 @@ function createApp({ remoteDependencies = {}, h3Dependencies = {} } = {}) {
         ? config.storage.local_path
         : path.join(process.cwd(), config.storage.local_path))
     : path.join(process.cwd(), 'data', 'storage');
+  const mediaExportWorkspaceRoot = path.join(storageRoot, '.media-export-workspaces');
+  fs.mkdirSync(storageRoot, { recursive: true });
+  fs.mkdirSync(mediaExportWorkspaceRoot, { recursive: true });
   const remoteRuntime = createProductionRemoteRuntime({
     database: db,
     localRoot: storageRoot,
@@ -37,6 +43,12 @@ function createApp({ remoteDependencies = {}, h3Dependencies = {} } = {}) {
       database: db,
       storageBaseUrl: config.storage?.base_url || '',
       dependencies: h3Dependencies,
+    }),
+    ...createProductionMediaExportRuntime({
+      database: db,
+      localRoot: storageRoot,
+      workspaceRoot: mediaExportWorkspaceRoot,
+      dependencies: mediaExportDependencies,
     }),
   });
 

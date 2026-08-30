@@ -70,7 +70,7 @@ const EXPECTED_PORTS = Object.freeze({
     outputs: [['music', 'MusicAsset', 'one', true]],
   },
   'export.final': {
-    inputs: [['videos', 'VideoAsset', 'many', true], ['audio', 'AudioAsset', 'many', true], ['subtitle', 'SubtitleTrack', 'one', false], ['music', 'MusicAsset', 'one', false]],
+    inputs: [['videos', 'VideoAsset', 'many', true], ['audio', 'AudioAsset', 'many', false], ['subtitle', 'SubtitleTrack', 'one', false], ['music', 'MusicAsset', 'one', false]],
     outputs: [['final', 'FinalVideoAsset', 'one', true]],
   },
 });

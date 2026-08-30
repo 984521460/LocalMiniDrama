@@ -33,6 +33,8 @@ const ERROR_MESSAGES = Object.freeze({
   MEDIA_EXPORT_FAILED: 'Local media export failed',
   MEDIA_EXPORT_OUTPUT_INVALID: 'Media export output is invalid',
   MEDIA_EXPORT_DATA_INVALID: 'Media export data is invalid',
+  MEDIA_EXPORT_RUN_INPUT_INVALID: 'Media export run input is invalid',
+  MEDIA_EXPORT_RUN_DATA_INVALID: 'Media export run data is invalid',
   BGM_LICENSE_INVALID: 'BGM license metadata is invalid',
   BGM_LICENSE_NOT_EXPORTABLE: 'BGM license does not permit project export',
   BGM_TRACK_INVALID: 'BGM track is invalid',
