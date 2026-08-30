@@ -39,6 +39,9 @@ function createLazyProjectArchiveRepository(database) {
     exportSnapshot(...args) {
       return getTarget().exportSnapshot(...args);
     },
+    exportStructuredV21(...args) {
+      return getTarget().exportStructuredV21(...args);
+    },
     hasUidConflict(...args) {
       return getTarget().hasUidConflict(...args);
     },

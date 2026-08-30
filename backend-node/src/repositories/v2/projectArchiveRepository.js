@@ -1,4 +1,7 @@
 const { RECORD_NAMES, RECORD_SPECS } = require('../../adapters/v2/zip/manifest');
+const {
+  createProjectArchiveV21StructuredData,
+} = require('../../adapters/v2/zip/projectArchiveV21StructuredData');
 const { assertDatabase } = require('./repositorySupport');
 const { createWorkflowRunArchiveReplay } = require('./workflowRunArchiveReplay');
 
@@ -45,6 +48,12 @@ function importRow(stage, statement, row) {
 
 function createProjectArchiveRepository(database) {
   assertDatabase(database);
+  let structuredV21;
+
+  function exportStructuredV21(dramaUid) {
+    if (!structuredV21) structuredV21 = createProjectArchiveV21StructuredData(database);
+    return structuredV21.exportForDrama(dramaUid);
+  }
 
   const getDrama = database.prepare('SELECT id, uid FROM dramas WHERE id = ? AND deleted_at IS NULL');
   const listCharacters = database.prepare('SELECT id, uid FROM characters WHERE drama_id = ? AND deleted_at IS NULL ORDER BY sort_order, id');
@@ -403,6 +412,7 @@ function createProjectArchiveRepository(database) {
 
   return Object.freeze({
     exportSnapshot,
+    exportStructuredV21,
     hasUidConflict,
     importSnapshot(dramaId, manifest) {
       applySnapshotTransaction(dramaId, manifest);
