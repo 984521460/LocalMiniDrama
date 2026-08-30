@@ -180,3 +180,11 @@ database transaction cannot commit. Each license UID is permanently assigned
 to one track UID. The authoritative attestation is an independent append-only
 `bgm_licenses` row; each track freezes a complete snapshot and every read
 cross-checks the assignment and snapshot against that license row.
+
+Migration `0016_project_archive_v21_import.sql` stores only the secret-free
+portable-field projection required by Project Archive `2.1.0`. Each binding is
+append-only, drama-scoped, exact to one approved carrier field, and records
+whether a fresh local binding is required. Direct VoiceProfile credential
+bindings never contain a Vault reference or secret in this sidecar; imported
+profiles remain non-executable until an explicit local rebind flow replaces
+the import placeholder under the later production activation gate.

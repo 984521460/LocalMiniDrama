@@ -14,8 +14,12 @@ function createVoiceProfileRepository(database) {
   function getStatements() {
     if (!statements) {
       const profileProjection = `
-        SELECT profile.*
+        SELECT profile.*,binding.binding_state AS sidecar_binding_state
         FROM voice_profiles AS profile
+        LEFT JOIN project_archive_v21_portable_bindings AS binding
+          ON binding.table_name='voice_profiles'
+         AND binding.row_uid=profile.uid
+         AND binding.column_name='credential_ref'
       `;
       statements = Object.freeze({
         insertProfile: database.prepare(`
@@ -160,6 +164,17 @@ function createVoiceProfileRepository(database) {
 
   function mapProfile(row) {
     try {
+      const rowBindingState = row.archive_binding_state ?? null;
+      const sidecarBindingState = row.sidecar_binding_state ?? null;
+      if (rowBindingState !== sidecarBindingState) {
+        throw new V2RepositoryDataError('voice profile', 'archive binding drift');
+      }
+      if (rowBindingState !== null) {
+        if (rowBindingState !== 'needs_rebind') {
+          throw new TypeError('invalid archive voice binding state');
+        }
+        throw new V2RepositoryDataError('voice profile', 'needs rebind');
+      }
       const parsedEmotionMap = JSON.parse(row.emotion_map_json);
       const record = createVoiceProfileRecord({
         schemaVersion: '8.0',
