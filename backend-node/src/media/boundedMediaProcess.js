@@ -24,7 +24,7 @@ function invalid() {
   fail(CODE);
 }
 
-function runBoundedMediaProcess(command, args, { timeoutMs, maxOutputBytes }) {
+function runBoundedMediaProcess(command, args, { timeoutMs, maxOutputBytes, cwd }) {
   return new Promise((resolve, reject) => {
     let child;
     let settled = false;
@@ -57,6 +57,7 @@ function runBoundedMediaProcess(command, args, { timeoutMs, maxOutputBytes }) {
     }, timeoutMs);
     try {
       child = spawn(command, args, {
+        cwd,
         windowsHide: true,
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -174,10 +175,12 @@ function boundedProcessResult(value) {
 
 async function executeBoundedMediaProcess(config, command, args) {
   try {
-    const pending = config.runProcess(command, Object.freeze([...args]), Object.freeze({
+    const options = {
       timeoutMs: config.timeoutMs,
       maxOutputBytes: MAX_PROCESS_OUTPUT_BYTES,
-    }));
+    };
+    if (config.cwd !== undefined) options.cwd = config.cwd;
+    const pending = config.runProcess(command, Object.freeze([...args]), Object.freeze(options));
     const settled = await settleNativePromise(pending, config.timeoutMs);
     const result = boundedProcessResult(settled.value);
     if (result.exitCode !== 0) invalid();

@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://localminidrama.invalid/schemas/v8/media-export-receipt.schema.json",
+  "title": "Media Export Receipt v1",
+  "$comment": "Runtime additionally binds output.relativePath to dramaUid/uid, duration and frame count to the trusted execution plan, and every upstream hash to trusted immutable evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "algorithmVersion",
+    "uid",
+    "dramaUid",
+    "workflowRunUid",
+    "productionTimelineSnapshotUid",
+    "productionTimelineSnapshotSha256",
+    "normalizationPlanUid",
+    "normalizationPlanSha256",
+    "executionPlanSha256",
+    "profileSha256",
+    "output",
+    "startedAtEpochMs",
+    "completedAtEpochMs",
+    "receiptSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "media-export-receipt.v1" },
+    "algorithmVersion": { "const": "local-ffmpeg-export.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "workflowRunUid": { "$ref": "#/$defs/uid" },
+    "productionTimelineSnapshotUid": { "$ref": "#/$defs/uid" },
+    "productionTimelineSnapshotSha256": { "$ref": "#/$defs/sha256" },
+    "normalizationPlanUid": { "$ref": "#/$defs/uid" },
+    "normalizationPlanSha256": { "$ref": "#/$defs/sha256" },
+    "executionPlanSha256": { "$ref": "#/$defs/sha256" },
+    "profileSha256": { "$ref": "#/$defs/sha256" },
+    "output": { "$ref": "#/$defs/output" },
+    "startedAtEpochMs": { "$ref": "#/$defs/epoch" },
+    "completedAtEpochMs": { "$ref": "#/$defs/epoch" },
+    "receiptSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "epoch": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "rational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "type": "integer", "minimum": 1, "maximum": 1000000000 },
+        "denominator": { "type": "integer", "minimum": 1, "maximum": 1000000000 }
+      }
+    },
+    "video": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "codecName", "width", "height", "pixelFormat", "averageFrameRate",
+        "timeBase", "sampleAspectRatio", "displayAspectRatio", "frameCount"
+      ],
+      "properties": {
+        "codecName": { "const": "h264" },
+        "width": { "const": 1920 },
+        "height": { "const": 1080 },
+        "pixelFormat": { "const": "yuv420p" },
+        "averageFrameRate": {
+          "allOf": [
+            { "$ref": "#/$defs/rational" },
+            { "type": "object", "properties": { "numerator": { "const": 24 }, "denominator": { "const": 1 } } }
+          ]
+        },
+        "timeBase": {
+          "allOf": [
+            { "$ref": "#/$defs/rational" },
+            { "type": "object", "properties": { "numerator": { "const": 1 }, "denominator": { "const": 90000 } } }
+          ]
+        },
+        "sampleAspectRatio": { "const": "1:1" },
+        "displayAspectRatio": { "const": "16:9" },
+        "frameCount": { "type": "integer", "minimum": 1, "maximum": 10000000 }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codecName", "sampleRateHz", "channels", "channelLayout", "sampleFormat"],
+      "properties": {
+        "codecName": { "const": "aac" },
+        "sampleRateHz": { "const": 48000 },
+        "channels": { "const": 2 },
+        "channelLayout": { "const": "stereo" },
+        "sampleFormat": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+()-]{0,63}$" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relativePath", "sha256", "bytes", "durationMs", "formatNames", "video",
+        "audio", "decoded", "fastStart"
+      ],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^projects/[0-9a-f-]{36}/exports/[0-9a-f-]{36}\\.mp4$"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 68719476736 },
+        "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600100 },
+        "formatNames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+()-]{0,31}$" },
+          "allOf": [
+            { "contains": { "const": "mov" }, "minContains": 1, "maxContains": 1 },
+            { "contains": { "const": "mp4" }, "minContains": 1, "maxContains": 1 }
+          ]
+        },
+        "video": { "$ref": "#/$defs/video" },
+        "audio": { "$ref": "#/$defs/audio" },
+        "decoded": { "const": true },
+        "fastStart": { "const": true }
+      }
+    }
+  }
+}
