@@ -44,6 +44,7 @@ function createApp({
   });
   const h3Runtime = createProductionH3Runtime({
     database: db,
+    remoteCoordinator: remoteRuntime.remoteExecution.remoteCoordinator,
     storageBaseUrl: config.storage?.base_url || '',
     dependencies: h3Dependencies,
   });
@@ -57,6 +58,7 @@ function createApp({
   const runtime = Object.freeze({
     ...remoteRuntime,
     h3: h3Runtime,
+    h3Local: h3Runtime.localExecution,
     ...mediaExportRuntime,
     ...workflowRuntime,
   });

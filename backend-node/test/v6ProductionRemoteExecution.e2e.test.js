@@ -594,7 +594,7 @@ test('the actual application production runtime executes and phase-fails Mock Co
       createdAtEpochMs: 0,
     });
     const h3Executed = await jsonRequest(
-      `${base}/remote-tasks/${h3Execution.task.uid}/execute`,
+      `${base}/h3/local-t2v/${h3Execution.task.uid}/execute`,
       'POST',
       {
         expectedStateVersion: h3Execution.task.stateVersion,
@@ -619,9 +619,20 @@ test('the actual application production runtime executes and phase-fails Mock Co
         'SELECT count(*) AS count FROM generation_runs WHERE uid = ?',
       ).get(h3Intent.generationRunUid).count,
     }));
-    assert.equal(h3Executed.body.data.generationHistory.uid, h3Intent.historyUid);
-    assert.equal(h3Executed.body.data.generationHistory.input.remotePromptId, 'production-prompt-2');
-    assert.equal(repositories.generationHistory.listByAsset(outputAssetUid).length, 1);
+    assert.deepEqual(h3Executed.body.data, {
+      schemaVersion: 'h3-local-execution-result.v1',
+      taskUid: h3Intent.taskUid,
+      taskStateVersion: repositories.remote.getFormalTask(h3Intent.taskUid).stateVersion,
+      generationRunUid: h3Intent.generationRunUid,
+      historyUid: h3Intent.historyUid,
+      assetUid: h3Intent.assetUid,
+      assetVersionUid: repositories.remote.getFormalTask(h3Intent.taskUid).outputAssetVersionUid,
+      nodeRunUid: h3Execution.run.nodes[0].uid,
+      status: 'succeeded',
+    });
+    const h3Histories = repositories.generationHistory.listByAsset(outputAssetUid);
+    assert.equal(h3Histories.length, 1);
+    assert.equal(h3Histories[0].input.remotePromptId, 'production-prompt-2');
     assert.equal(repositories.assets.get(outputAssetUid).currentVersionUid, selectedBeforeExecutionUid);
 
     workflowService.replaceGraph(workflow.definition.uid, {

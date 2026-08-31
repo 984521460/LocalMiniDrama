@@ -13,6 +13,7 @@ const {
   isH3ContractError,
 } = require('../../h3');
 const { provisionH3TextToVideoManifest } = require('../../h3/provisioning');
+const { isRemoteTaskError } = require('../../remote/remoteTask');
 
 const STATUS_BY_CODE = Object.freeze({
   H3_GENERATION_INPUT_INVALID: 400,
@@ -25,6 +26,14 @@ const STATUS_BY_CODE = Object.freeze({
   H3_WORKFLOW_UNVERIFIED: 409,
   H3_HISTORY_CONFLICT: 409,
   H3_PROFILE_INVALID: 500,
+  REMOTE_TASK_INPUT_INVALID: 400,
+  REMOTE_TASK_NOT_FOUND: 404,
+  REMOTE_TASK_CONFLICT: 409,
+  REMOTE_TASK_DEPENDENCY_NOT_READY: 409,
+  REMOTE_TASK_SUBMISSION_FAILED: 502,
+  REMOTE_TASK_RECOVERY_FAILED: 502,
+  REMOTE_TASK_DATA_INVALID: 500,
+  REMOTE_TASK_UNEXPECTED: 500,
 });
 
 function publicIntent(intent) {
@@ -44,13 +53,14 @@ function publicIntent(intent) {
 function h3Routes(log, database, runtime = {}) {
   const router = express.Router();
   const apiService = runtime?.apiService || null;
+  const localExecution = runtime?.localExecution || null;
   const provisioned = database ? provisionH3TextToVideoManifest(database) : null;
   const intentService = database
     ? createH3ExecutionIntentService({ repositories: createV2Repositories(database) })
     : null;
 
   function handleError(res, error) {
-    if (isH3ContractError(error)) {
+    if (isH3ContractError(error) || isRemoteTaskError(error)) {
       const status = STATUS_BY_CODE[error.code] || 500;
       if (status >= 500) log?.error?.('h3-operation', { code: error.code });
       return response.error(res, status, error.code, error.message);
@@ -89,6 +99,24 @@ function h3Routes(log, database, runtime = {}) {
     }
     try {
       return response.success(res, publicIntent(intentService.prepare(req.body)));
+    } catch (error) {
+      return handleError(res, error);
+    }
+  });
+  router.post('/h3/local-t2v/:taskUid/execute', async (req, res) => {
+    if (!localExecution || typeof localExecution.execute !== 'function') {
+      return response.error(
+        res,
+        503,
+        'H3_LOCAL_EXECUTION_UNAVAILABLE',
+        'H3 local execution is unavailable',
+      );
+    }
+    try {
+      return response.success(
+        res,
+        await localExecution.execute(req.params.taskUid, req.body),
+      );
     } catch (error) {
       return handleError(res, error);
     }

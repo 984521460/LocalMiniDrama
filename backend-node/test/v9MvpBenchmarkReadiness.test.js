@@ -415,6 +415,25 @@ test('actual createApp exposes conservative readiness without external calls', a
       'h3-local-execution',
       'tts-execution',
     ]);
+    assert.equal(typeof created.runtime.h3Local.execute, 'function');
+
+    insertReadyConnection(created.db);
+    const readyConnectionResponse = await fetch(
+      `http://127.0.0.1:${address.port}/api/v1/v2/mvp-benchmark/readiness`,
+    );
+    const readyConnectionBody = await readyConnectionResponse.json();
+    assert.equal(readyConnectionResponse.status, 200);
+    assert.deepEqual(readyConnectionBody.data.blockedCapabilityIds, [
+      'narrative-execution',
+      'character-candidate-execution',
+      'tts-execution',
+    ]);
+    assert.equal(
+      readyConnectionBody.data.capabilities.find(
+        (capability) => capability.id === 'h3-local-execution',
+      ).status,
+      'ready',
+    );
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     closeDatabase();

@@ -3,6 +3,8 @@
 const { types: { isProxy } } = require('node:util');
 
 const { createMinimaxH3ApiService } = require('./apiService');
+const { createH3LocalExecutionService } = require('./localExecutionService');
+const { createV2Repositories } = require('../repositories/v2');
 
 const DEPENDENCY_KEYS = Object.freeze(new Set(['fetchImpl', 'timeoutMs']));
 
@@ -33,9 +35,16 @@ function dependencies(value) {
   return Object.freeze(result);
 }
 
-function createProductionH3Runtime({ database, storageBaseUrl = '', dependencies: input = {} }) {
+function createProductionH3Runtime({
+  database,
+  remoteCoordinator,
+  storageBaseUrl = '',
+  dependencies: input = {},
+}) {
   const configured = dependencies(input);
   const fetchImpl = configured.fetchImpl ?? globalThis.fetch;
+  const repositories = createV2Repositories(database);
+  const localExecution = createH3LocalExecutionService({ repositories, coordinator: remoteCoordinator });
   return Object.freeze({
     apiService: createMinimaxH3ApiService({
       database,
@@ -43,6 +52,7 @@ function createProductionH3Runtime({ database, storageBaseUrl = '', dependencies
       fetchImpl,
       ...(configured.timeoutMs === undefined ? {} : { timeoutMs: configured.timeoutMs }),
     }),
+    localExecution,
   });
 }
 

@@ -13,6 +13,10 @@ const { createH3GenerationHistoryService } = require('./generationHistoryService
 const { createH3ExecutionIntent, validateH3ExecutionIntent } = require('./executionIntent');
 const { createH3ExecutionIntentService } = require('./executionIntentService');
 const { createH3LocalVideoInspector } = require('./localVideoInspector');
+const {
+  createH3LocalExecutionService,
+  parseH3LocalExecutionResult,
+} = require('./localExecutionService');
 const { H3_REAL_VALIDATION_MATRIX } = require('./realValidationMatrix');
 const {
   H3_PHASE_7_ENVIRONMENT_SHA256,
@@ -59,6 +63,7 @@ module.exports = Object.freeze({
   createH3ExecutionIntentService,
   validateH3ExecutionIntent,
   createH3LocalVideoInspector,
+  createH3LocalExecutionService,
   createH3Phase7ValidationPlan,
   createH3RealValidationCollector,
   createH3TextToVideoWorkflowBundle,
@@ -66,6 +71,7 @@ module.exports = Object.freeze({
   h3FramesForDuration,
   isH3ContractError,
   normalizeH3GenerationSpec,
+  parseH3LocalExecutionResult,
   evaluateH3Phase7Evidence,
   validateH3RealValidationReceipt,
   validateH3RealGpuEnvironment,

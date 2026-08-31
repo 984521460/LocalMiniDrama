@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/h3-local-execution-result.schema.json",
+  "title": "H3 Local Execution Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskUid",
+    "taskStateVersion",
+    "generationRunUid",
+    "historyUid",
+    "assetUid",
+    "assetVersionUid",
+    "nodeRunUid",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "h3-local-execution-result.v1" },
+    "taskUid": { "$ref": "#/$defs/uuidV4" },
+    "taskStateVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "generationRunUid": { "$ref": "#/$defs/uuidV4" },
+    "historyUid": { "$ref": "#/$defs/uuidV4" },
+    "assetUid": { "$ref": "#/$defs/uuidV4" },
+    "assetVersionUid": { "$ref": "#/$defs/uuidV4" },
+    "nodeRunUid": { "$ref": "#/$defs/uuidV4" },
+    "status": { "const": "succeeded" }
+  },
+  "$defs": {
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}
