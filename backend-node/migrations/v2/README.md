@@ -211,3 +211,16 @@ for automatic replay. The optional `received` transition stores only a bounded
 digest, byte count, and MIME summary and is reserved for a later durable media
 sink. Credentials and audio bytes are not stored in this table. The table is
 local operation state and is excluded from project archives.
+
+Migration `0019_audio_tts_outputs.sql` seals each observed TTS response to a
+deterministic local Audio Asset and ready AssetVersion after the stored bytes
+have been re-read, SHA-256 verified, probed, and fully decoded. A completed
+intent stores one exact output row per request plus a whole-plan AudioExecution
+evidence record, then atomically advances the existing `audio.tts` NodeRun and
+its WorkflowRun. The insert boundary binds live Asset, AssetVersion, media
+probe, prepared plan, workflow/node identity, and every public evidence field;
+replacement, update, and delete are rejected. A `submission_unknown` record
+can complete only from the deterministic file already present and is never
+sent to the Provider again. These two tables are local execution seals and are
+excluded from project archives; the resulting portable Audio Asset and
+AssetVersion remain part of the ordinary project media closure.

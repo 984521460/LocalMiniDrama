@@ -31,6 +31,23 @@ function cleanupError() {
   return new LocalStorageError('LOCAL_STORAGE_CLEANUP_FAILED', 'Local storage temporary file cleanup failed');
 }
 
+function boundedReadError() {
+  return new LocalStorageError(
+    'LOCAL_STORAGE_ENTRY_TOO_LARGE',
+    'Local storage entry exceeds the bounded read limit',
+  );
+}
+
+function sameFileSnapshot(left, right) {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.mode === right.mode
+    && left.nlink === right.nlink
+    && left.size === right.size
+    && left.ctimeNs === right.ctimeNs
+    && left.mtimeNs === right.mtimeNs;
+}
+
 async function removeTemporaryFile(filename) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -214,6 +231,76 @@ class LocalStorageProvider {
       return await fsPromises.readFile(filename);
     } catch (error) {
       throw translateIoError(error, 'read');
+    }
+  }
+
+  async readBounded(locator, maxBytes) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+      throw new TypeError('Local storage bounded read limit must be a positive safe integer');
+    }
+    const filename = this.resolve(locator);
+    let handle;
+    let content;
+    try {
+      this.#assertRootIsStable();
+      const beforePath = await fsPromises.lstat(filename, { bigint: true });
+      if (!beforePath.isFile() || beforePath.isSymbolicLink()) {
+        throw new LocalStorageError(
+          'LOCAL_STORAGE_ENTRY_INVALID',
+          'Local storage entry must be a regular file',
+        );
+      }
+      if (beforePath.size > BigInt(maxBytes)) throw boundedReadError();
+
+      handle = await fsPromises.open(filename, 'r');
+      const opened = await handle.stat({ bigint: true });
+      if (!opened.isFile() || !sameFileSnapshot(beforePath, opened)) {
+        throw new LocalStorageError(
+          'LOCAL_STORAGE_ENTRY_CHANGED',
+          'Local storage entry changed during bounded read',
+        );
+      }
+
+      const expectedBytes = Number(opened.size);
+      content = Buffer.alloc(expectedBytes);
+      let offset = 0;
+      while (offset < expectedBytes) {
+        const result = await handle.read(content, offset, expectedBytes - offset, offset);
+        if (!result || result.bytesRead < 1) {
+          throw new LocalStorageError(
+            'LOCAL_STORAGE_ENTRY_CHANGED',
+            'Local storage entry changed during bounded read',
+          );
+        }
+        offset += result.bytesRead;
+      }
+      const eof = Buffer.alloc(1);
+      const eofResult = await handle.read(eof, 0, 1, expectedBytes);
+      eof.fill(0);
+      if (!eofResult || eofResult.bytesRead !== 0) throw boundedReadError();
+
+      const afterRead = await handle.stat({ bigint: true });
+      const afterPath = await fsPromises.lstat(filename, { bigint: true });
+      this.#assertRootIsStable();
+      if (!sameFileSnapshot(opened, afterRead) || !sameFileSnapshot(opened, afterPath)) {
+        throw new LocalStorageError(
+          'LOCAL_STORAGE_ENTRY_CHANGED',
+          'Local storage entry changed during bounded read',
+        );
+      }
+      return content;
+    } catch (error) {
+      if (content) content.fill(0);
+      throw translateIoError(error, 'bounded read');
+    } finally {
+      if (handle) {
+        try {
+          await handle.close();
+        } catch (error) {
+          if (content) content.fill(0);
+          throw translateIoError(error, 'bounded read');
+        }
+      }
     }
   }
 

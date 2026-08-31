@@ -94,7 +94,7 @@ function inspectInput(value) {
     const audio = ['audio/aac', 'audio/flac', 'audio/mpeg', 'audio/wav', 'audio/x-wav']
       .includes(version.mimeType);
     if (version.storageProvider !== 'local' || version.sha256 === null
-      || version.durationMs === null || version.durationMs < 1 || (!video && !audio)
+      || (version.durationMs !== null && version.durationMs < 1) || (!video && !audio)
       || (video && (version.width === null || version.height === null))
       || (audio && (version.width !== null || version.height !== null))) invalid(INPUT_CODE);
     const uid = canonicalUid(input.uid, INPUT_CODE);
@@ -148,10 +148,13 @@ function createLocalMediaProbe(value) {
           ...decodeMaps, '-f', 'null', '-',
         ]);
         await assertLocalMediaFileUnchanged(config, resolved, initialHash);
+        const measuredVersion = input.assetVersion.durationMs === null
+          ? Object.freeze({ ...input.assetVersion, durationMs: measurements.durationMs })
+          : input.assetVersion;
         return trustedEvidence(Object.freeze({
           schemaVersion: '8.0',
           uid: input.uid,
-          assetVersion: input.assetVersion,
+          assetVersion: measuredVersion,
           bytes: initialHash.bytes,
           durationMs: measurements.durationMs,
           formatNames: measurements.formatNames,

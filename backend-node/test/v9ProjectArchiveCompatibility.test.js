@@ -104,6 +104,8 @@ test('project archive catalog classifies every current record table and keeps lo
     'h3_generation_intents',
     'audio_mode_intents',
     'audio_tts_submissions',
+    'audio_tts_outputs',
+    'audio_tts_execution_evidence',
     'schema_migrations',
     '_v2_uid_generation_candidates',
     'global_settings',

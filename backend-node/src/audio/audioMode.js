@@ -68,13 +68,55 @@ const H3_SOURCE_KEYS = Object.freeze([
 const MODEL = /^[a-z0-9][a-z0-9._/-]*$/u;
 const VOICE_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
 const FORBIDDEN_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ud800-\udfff]/u;
+const DEFINE_PROPERTY = Object.defineProperty;
+const MAP_GET = Map.prototype.get;
+const MAP_SET = Map.prototype.set;
+const MAP_SIZE = Object.getOwnPropertyDescriptor(Map.prototype, 'size').get;
+const REGEXP_TEST = RegExp.prototype.test;
+const SET_ADD = Set.prototype.add;
+const SET_HAS = Set.prototype.has;
+const SET_SIZE = Object.getOwnPropertyDescriptor(Set.prototype, 'size').get;
+const STRING_CODE_POINT_AT = String.prototype.codePointAt;
+const STRING_NORMALIZE = String.prototype.normalize;
+const STRING_TO_LOWER_CASE = String.prototype.toLowerCase;
+const STRING_TRIM = String.prototype.trim;
+const WEAK_SET_ADD = WeakSet.prototype.add;
+const WEAK_SET_HAS = WeakSet.prototype.has;
+
+function append(target, value) {
+  Reflect.apply(DEFINE_PROPERTY, Object, [target, String(target.length), {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  }]);
+}
+
+function includes(values, expected) {
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] === expected) return true;
+  }
+  return false;
+}
+
+function mapValues(values, mapper) {
+  const output = [];
+  for (let index = 0; index < values.length; index += 1) {
+    append(output, mapper(values[index], index));
+  }
+  return output;
+}
 
 function safeText(value, code) {
   if (typeof value !== 'string' || value.length < 1 || value.length > 4096
-    || value !== value.trim() || value.normalize('NFC') !== value
-    || FORBIDDEN_TEXT.test(value) || Buffer.byteLength(value, 'utf8') > 4096) fail(code);
+    || value !== Reflect.apply(STRING_TRIM, value, [])
+    || Reflect.apply(STRING_NORMALIZE, value, ['NFC']) !== value
+    || Reflect.apply(REGEXP_TEST, FORBIDDEN_TEXT, [value])
+    || Buffer.byteLength(value, 'utf8') > 4096) fail(code);
   let points = 0;
-  for (const _point of value) {
+  for (let index = 0; index < value.length;) {
+    const point = Reflect.apply(STRING_CODE_POINT_AT, value, [index]);
+    index += point > 0xffff ? 2 : 1;
     points += 1;
     if (points > 1024) fail(code);
   }
@@ -83,9 +125,14 @@ function safeText(value, code) {
 
 function safeProviderText(value, maximum, pattern, code) {
   if (typeof value !== 'string' || value.length < 1 || value.length > maximum
-    || value !== value.trim() || !pattern.test(value)) fail(code);
-  const lowered = value.toLowerCase();
-  if (/^(?:bearer\s|sk-[a-z0-9]{8}|akia[a-z0-9]{12}|-----begin\s)/u.test(lowered)) fail(code);
+    || value !== Reflect.apply(STRING_TRIM, value, [])
+    || !Reflect.apply(REGEXP_TEST, pattern, [value])) fail(code);
+  const lowered = Reflect.apply(STRING_TO_LOWER_CASE, value, []);
+  if (Reflect.apply(
+    REGEXP_TEST,
+    /^(?:bearer\s|sk-[a-z0-9]{8}|akia[a-z0-9]{12}|-----begin\s)/u,
+    [lowered],
+  )) fail(code);
   return value;
 }
 
@@ -139,7 +186,7 @@ function ttsRequest(delivery, profile) {
 
 function parseTtsRequest(value, code) {
   const input = exactObject(value, REQUEST_KEYS, code);
-  if (!['openai-compatible', 'minimax'].includes(input.provider)) fail(code);
+  if (input.provider !== 'openai-compatible' && input.provider !== 'minimax') fail(code);
   let voiceProfile;
   try {
     voiceProfile = parseVoiceProfilePublicRecord(input.voiceProfile);
@@ -292,23 +339,27 @@ function planRecord(input) {
 }
 
 function trustedPlan(value) {
-  TRUSTED_PLANS.add(value);
+  Reflect.apply(WEAK_SET_ADD, TRUSTED_PLANS, [value]);
   return value;
 }
 
 function createAudioModePlan(value) {
   try {
     const input = exactObject(value, PLAN_INPUT_KEYS, INPUT_CODE);
-    if (input.schemaVersion !== '8.0' || !MODES.includes(input.mode)) fail(INPUT_CODE);
+    if (input.schemaVersion !== '8.0' || !includes(MODES, input.mode)) fail(INPUT_CODE);
     const uid = canonicalUid(input.uid, INPUT_CODE);
     const dramaUid = canonicalUid(input.dramaUid, INPUT_CODE);
     const workflowRunUid = canonicalUid(input.workflowRunUid, INPUT_CODE);
-    const deliveries = denseArray(input.dialogueDeliveries, MAX_DIALOGUES, INPUT_CODE)
-      .map((delivery) => parseDialogueDeliveryPlan(delivery));
-    if (deliveries.length < 1 || deliveries.some((delivery) => delivery.dramaUid !== dramaUid)) fail(INPUT_CODE);
-    const deliveryUids = new Set(deliveries.map((delivery) => delivery.uid));
-    if (deliveryUids.size !== deliveries.length) fail(INPUT_CODE);
-    const dialogueBindings = frozenArray(deliveries.map(bindingFromDelivery));
+    const deliveryInputs = denseArray(input.dialogueDeliveries, MAX_DIALOGUES, INPUT_CODE);
+    const deliveries = mapValues(deliveryInputs, (delivery) => parseDialogueDeliveryPlan(delivery));
+    if (deliveries.length < 1) fail(INPUT_CODE);
+    const deliveryUids = new Set();
+    for (let index = 0; index < deliveries.length; index += 1) {
+      if (deliveries[index].dramaUid !== dramaUid
+        || Reflect.apply(SET_HAS, deliveryUids, [deliveries[index].uid])) fail(INPUT_CODE);
+      Reflect.apply(SET_ADD, deliveryUids, [deliveries[index].uid]);
+    }
+    const dialogueBindings = frozenArray(mapValues(deliveries, bindingFromDelivery));
 
     let ttsRequests = frozenArray([]);
     const profileInputs = denseArray(input.voiceProfiles, MAX_DIALOGUES, INPUT_CODE);
@@ -317,16 +368,26 @@ function createAudioModePlan(value) {
     } else {
       const profiles = [];
       try {
-        for (const profile of profileInputs) profiles.push(createVoiceProfileRecord(profile));
+        for (let index = 0; index < profileInputs.length; index += 1) {
+          append(profiles, createVoiceProfileRecord(profileInputs[index]));
+        }
       } catch {
         fail(TTS_CODE);
       }
-      const profileMap = new Map(profiles.map((profile) => [profile.uid, profile]));
-      const referencedProfiles = new Set(deliveries.map((delivery) => delivery.voiceProfileUid));
-      if (profileMap.size !== profiles.length || profileMap.size !== referencedProfiles.size
-        || [...profileMap.keys()].some((profileUid) => !referencedProfiles.has(profileUid))) fail(TTS_CODE);
-      ttsRequests = frozenArray(deliveries.map((delivery) => {
-        const profile = profileMap.get(delivery.voiceProfileUid);
+      const profileMap = new Map();
+      for (let index = 0; index < profiles.length; index += 1) {
+        if (Reflect.apply(MAP_GET, profileMap, [profiles[index].uid]) !== undefined) fail(TTS_CODE);
+        Reflect.apply(MAP_SET, profileMap, [profiles[index].uid, profiles[index]]);
+      }
+      const referencedProfiles = new Set();
+      for (let index = 0; index < deliveries.length; index += 1) {
+        Reflect.apply(SET_ADD, referencedProfiles, [deliveries[index].voiceProfileUid]);
+      }
+      if (Reflect.apply(MAP_SIZE, profileMap, []) !== profiles.length
+        || Reflect.apply(MAP_SIZE, profileMap, [])
+          !== Reflect.apply(SET_SIZE, referencedProfiles, [])) fail(TTS_CODE);
+      ttsRequests = frozenArray(mapValues(deliveries, (delivery) => {
+        const profile = Reflect.apply(MAP_GET, profileMap, [delivery.voiceProfileUid]);
         if (!profile || profile.dramaUid !== dramaUid || profile.characterUid !== delivery.characterUid
           || delivery.speedPermille < profile.minimumSpeedPermille
           || delivery.speedPermille > profile.maximumSpeedPermille) fail(TTS_CODE);
@@ -361,16 +422,20 @@ function createAudioModePlan(value) {
 function parseAudioModePlanRecord(value) {
   try {
     const input = exactObject(value, PLAN_KEYS, DATA_CODE);
-    if (input.schemaVersion !== '8.0' || !MODES.includes(input.mode)) fail(DATA_CODE);
+    if (input.schemaVersion !== '8.0' || !includes(MODES, input.mode)) fail(DATA_CODE);
     const uid = canonicalUid(input.uid, DATA_CODE);
     const dramaUid = canonicalUid(input.dramaUid, DATA_CODE);
     const workflowRunUid = canonicalUid(input.workflowRunUid, DATA_CODE);
-    const bindings = denseArray(input.dialogueBindings, MAX_DIALOGUES, DATA_CODE)
-      .map((binding) => parseBinding(binding, DATA_CODE));
-    if (bindings.length < 1
-      || new Set(bindings.map((binding) => binding.dialogueDeliveryUid)).size !== bindings.length) fail(DATA_CODE);
-    const requests = denseArray(input.ttsRequests, MAX_DIALOGUES, DATA_CODE)
-      .map((request) => parseTtsRequest(request, DATA_CODE));
+    const bindingInputs = denseArray(input.dialogueBindings, MAX_DIALOGUES, DATA_CODE);
+    const bindings = mapValues(bindingInputs, (binding) => parseBinding(binding, DATA_CODE));
+    const bindingUids = new Set();
+    for (let index = 0; index < bindings.length; index += 1) {
+      if (Reflect.apply(SET_HAS, bindingUids, [bindings[index].dialogueDeliveryUid])) fail(DATA_CODE);
+      Reflect.apply(SET_ADD, bindingUids, [bindings[index].dialogueDeliveryUid]);
+    }
+    if (bindings.length < 1) fail(DATA_CODE);
+    const requestInputs = denseArray(input.ttsRequests, MAX_DIALOGUES, DATA_CODE);
+    const requests = mapValues(requestInputs, (request) => parseTtsRequest(request, DATA_CODE));
     const needsTts = input.mode !== 'h3_native';
     const needsH3 = input.mode !== 'independent_tts';
     if ((needsTts && requests.length !== bindings.length) || (!needsTts && requests.length !== 0)) fail(DATA_CODE);
@@ -454,7 +519,7 @@ function createAudioModePlanVerifier(value) {
 
 function requireTrustedAudioModePlan(value) {
   if ((typeof value === 'object' || typeof value === 'function')
-    && value !== null && TRUSTED_PLANS.has(value)) return value;
+    && value !== null && Reflect.apply(WEAK_SET_HAS, TRUSTED_PLANS, [value])) return value;
   return fail(DATA_CODE);
 }
 

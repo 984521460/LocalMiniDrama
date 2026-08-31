@@ -36,9 +36,9 @@ function storeFixture(t, options) {
   return { ...fixture, intent, store, database: fixture.fixture.database };
 }
 
-test('migration eighteen reserves each TTS request before execution and keeps identity immutable', (t) => {
+test('migration nineteen preserves TTS request reservations and immutable identity', (t) => {
   const { database, intent, store } = storeFixture(t);
-  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 18);
+  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 19);
   assert.equal(database.prepare(`
     SELECT count(*) FROM sqlite_schema
     WHERE type='table' AND name='audio_tts_submissions'

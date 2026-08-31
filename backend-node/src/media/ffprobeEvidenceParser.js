@@ -85,14 +85,19 @@ function parseFfprobeEvidence(text, mimeType) {
       displayAspectRatio: aspectRatio(videoStream.display_aspect_ratio),
       frameCount: integerString(videoStream.nb_read_frames ?? videoStream.nb_frames, 1, 10_000_000),
     }) : null;
-    const audio = audioStream ? Object.freeze({
-      codecName: token(audioStream.codec_name, 64),
-      sampleRateHz: integerString(audioStream.sample_rate, 8_000, 384_000),
-      channels: Number.isSafeInteger(audioStream.channels) && audioStream.channels > 0
-        && audioStream.channels <= 32 ? audioStream.channels : invalid(),
-      channelLayout: token(audioStream.channel_layout, 128),
-      sampleFormat: token(audioStream.sample_fmt, 64),
-    }) : null;
+    let audio = null;
+    if (audioStream) {
+      const channels = Number.isSafeInteger(audioStream.channels) && audioStream.channels > 0
+        && audioStream.channels <= 32 ? audioStream.channels : invalid();
+      const inferredLayout = channels === 1 ? 'mono' : channels === 2 ? 'stereo' : null;
+      audio = Object.freeze({
+        codecName: token(audioStream.codec_name, 64),
+        sampleRateHz: integerString(audioStream.sample_rate, 8_000, 384_000),
+        channels,
+        channelLayout: token(audioStream.channel_layout ?? inferredLayout, 128),
+        sampleFormat: token(audioStream.sample_fmt, 64),
+      });
+    }
     return Object.freeze({
       durationMs: decimalMilliseconds(parsed.format.duration),
       formatNames: formatNames(parsed.format.format_name),

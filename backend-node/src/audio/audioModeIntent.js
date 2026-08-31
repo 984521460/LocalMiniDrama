@@ -10,6 +10,7 @@ const {
 } = require('./audioContract');
 const {
   createAudioModePlan,
+  createAudioModePlanVerifier,
   parseAudioModePlanRecord,
 } = require('./audioMode');
 const {
@@ -370,7 +371,7 @@ function resolveAudioModeIntent(value, dependencies) {
         pauseAfterMs: choice.pauseAfterMs,
       }));
     }
-    const plan = createAudioModePlan({
+    const envelope = Object.freeze({
       schemaVersion: '8.0',
       uid: request.uid,
       dramaUid: request.dramaUid,
@@ -381,7 +382,14 @@ function resolveAudioModeIntent(value, dependencies) {
       h3GenerationSource: null,
       createdAtEpochMs: request.createdAtEpochMs,
     });
-    return Object.freeze({ request, plan });
+    const plan = createAudioModePlan(envelope);
+    const trusted = createAudioModePlanVerifier({
+      loadTrustedEnvelope(planUid) {
+        if (planUid !== request.uid) fail(DATA_CODE);
+        return envelope;
+      },
+    }).verify(plan, request.uid);
+    return Object.freeze({ request, plan: trusted });
   } catch (error) {
     if (isAudioModeContractError(error) && error.code === INPUT_CODE) throw error;
     return fail(DATA_CODE);

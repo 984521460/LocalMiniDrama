@@ -10,6 +10,7 @@ const { createProductionRemoteRuntime } = require('./remote/productionRuntime');
 const { createProductionH3Runtime } = require('./h3/productionRuntime');
 const { createProductionMediaExportRuntime } = require('./media/productionRuntime');
 const { createProductionWorkflowRuntime } = require('./workflows/productionRuntime');
+const { createProductionAudioTtsRuntime } = require('./audio/productionRuntime');
 const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
 const { createV2Repositories } = require('./repositories/v2');
 const { createWorkflowRunService } = require('./workflows');
@@ -17,6 +18,7 @@ const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery
 
 function createApp({
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
+  audioTtsDependencies = {},
 } = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
@@ -55,12 +57,18 @@ function createApp({
     dependencies: mediaExportDependencies,
   });
   const workflowRuntime = createProductionWorkflowRuntime({ database: db });
+  const audioTtsRuntime = createProductionAudioTtsRuntime({
+    database: db,
+    localRoot: storageRoot,
+    dependencies: audioTtsDependencies,
+  });
   const runtime = Object.freeze({
     ...remoteRuntime,
     h3: h3Runtime,
     h3Local: h3Runtime.localExecution,
     ...mediaExportRuntime,
     ...workflowRuntime,
+    ...audioTtsRuntime,
   });
   const taskService = require('./services/taskService');
   const { resumeProcessingVideoGenerations } = require('./services/videoService');

@@ -6,6 +6,7 @@ const { createAssetVersionEvidence } = require('../assets/assetVersionEvidence')
 const {
   boundedInteger,
   canonicalHash,
+  canonicalJson,
   canonicalUid,
   denseArray,
   epoch,
@@ -41,22 +42,52 @@ const AUDIO_KEYS = Object.freeze([
 ]);
 const RATIONAL_KEYS = Object.freeze(['numerator', 'denominator']);
 const TRUSTED_EVIDENCE = new WeakSet();
+const DEFINE_PROPERTY = Object.defineProperty;
+const REGEXP_TEST = RegExp.prototype.test;
+const SET_ADD = Set.prototype.add;
+const SET_HAS = Set.prototype.has;
+const STRING_INCLUDES = String.prototype.includes;
+const STRING_TRIM = String.prototype.trim;
+const WEAK_SET_ADD = WeakSet.prototype.add;
+const WEAK_SET_HAS = WeakSet.prototype.has;
+
+function append(target, value) {
+  Reflect.apply(DEFINE_PROPERTY, Object, [target, String(target.length), {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  }]);
+}
+
+function includes(values, expected) {
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] === expected) return true;
+  }
+  return false;
+}
 
 function invalid(code = DATA_CODE) {
   fail(code);
 }
 
 function boundedToken(value, maximumBytes, code) {
-  if (typeof value !== 'string' || value.length < 1 || value !== value.trim()
-    || value.includes('\0') || Buffer.byteLength(value, 'utf8') > maximumBytes
-    || !/^[A-Za-z0-9][A-Za-z0-9._:+-]*$/u.test(value)) invalid(code);
+  if (typeof value !== 'string' || value.length < 1
+    || value !== Reflect.apply(STRING_TRIM, value, [])
+    || Reflect.apply(STRING_INCLUDES, value, ['\0'])
+    || Buffer.byteLength(value, 'utf8') > maximumBytes
+    || !Reflect.apply(REGEXP_TEST, /^[A-Za-z0-9][A-Za-z0-9._:+-]*$/u, [value])) invalid(code);
   return value;
 }
 
 function audioLayout(value, code) {
-  if (typeof value !== 'string' || value.length < 1 || value !== value.trim()
-    || value.includes('\0') || Buffer.byteLength(value, 'utf8') > 128
-    || !/^[A-Za-z0-9][A-Za-z0-9._:+()-]*$/u.test(value)) invalid(code);
+  if (typeof value !== 'string' || value.length < 1
+    || value !== Reflect.apply(STRING_TRIM, value, [])
+    || Reflect.apply(STRING_INCLUDES, value, ['\0'])
+    || Buffer.byteLength(value, 'utf8') > 128
+    || !Reflect.apply(REGEXP_TEST, /^[A-Za-z0-9][A-Za-z0-9._:+()-]*$/u, [value])) {
+    invalid(code);
+  }
   return value;
 }
 
@@ -68,7 +99,8 @@ function rational(value, code, { numeratorMaximum = 1_000_000, denominatorMaximu
 }
 
 function aspectRatio(value, code) {
-  if (typeof value !== 'string' || !/^[1-9][0-9]{0,5}:[1-9][0-9]{0,5}$/u.test(value)) {
+  if (typeof value !== 'string'
+    || !Reflect.apply(REGEXP_TEST, /^[1-9][0-9]{0,5}:[1-9][0-9]{0,5}$/u, [value])) {
     invalid(code);
   }
   return value;
@@ -110,17 +142,39 @@ function audioRecord(value, code) {
 function formatNames(value, code) {
   const values = denseArray(value, 16, code);
   if (values.length < 1) invalid(code);
-  const normalized = values.map((entry) => {
-    if (typeof entry !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,31}$/u.test(entry)) invalid(code);
-    return entry;
-  });
-  if (new Set(normalized).size !== normalized.length) invalid(code);
-  return frozenArray([...normalized].sort());
+  const normalized = [];
+  const unique = new Set();
+  for (let index = 0; index < values.length; index += 1) {
+    const entry = values[index];
+    if (typeof entry !== 'string'
+      || !Reflect.apply(REGEXP_TEST, /^[a-z0-9][a-z0-9_-]{0,31}$/u, [entry])
+      || Reflect.apply(SET_HAS, unique, [entry])) invalid(code);
+    Reflect.apply(SET_ADD, unique, [entry]);
+    let target = normalized.length;
+    while (target > 0 && normalized[target - 1] > entry) target -= 1;
+    append(normalized, undefined);
+    for (let move = normalized.length - 1; move > target; move -= 1) {
+      Reflect.apply(DEFINE_PROPERTY, Object, [normalized, String(move), {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: normalized[move - 1],
+      }]);
+    }
+    Reflect.apply(DEFINE_PROPERTY, Object, [normalized, String(target), {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: entry,
+    }]);
+  }
+  return frozenArray(normalized);
 }
 
 function mediaKindFromMime(value, code) {
   if (value === 'video/mp4') return 'video';
-  if (['audio/aac', 'audio/flac', 'audio/mpeg', 'audio/wav', 'audio/x-wav'].includes(value)) {
+  if (value === 'audio/aac' || value === 'audio/flac' || value === 'audio/mpeg'
+    || value === 'audio/wav' || value === 'audio/x-wav') {
     return 'audio';
   }
   return invalid(code);
@@ -132,7 +186,7 @@ function assertMediaRelations({ version, mediaKind, video, audio, durationMs, na
   if (Math.abs(durationMs - version.durationMs) > toleranceMs) invalid(code);
   if (mediaKind === 'video') {
     if (video === null || video.width !== version.width || video.height !== version.height
-      || (!names.includes('mp4') && !names.includes('mov'))) invalid(code);
+      || (!includes(names, 'mp4') && !includes(names, 'mov'))) invalid(code);
   } else if (video !== null || audio === null) {
     invalid(code);
   }
@@ -223,8 +277,8 @@ function parseMediaProbeEvidenceRecord(value) {
       decoded: true,
       probedAtEpochMs: epoch(input.probedAtEpochMs, DATA_CODE),
     });
-    if (!['video', 'audio'].includes(canonical.mediaKind)
-      || mediaKindFromMime(canonical.mimeType, DATA_CODE) !== canonical.mediaKind
+    if (canonical.mediaKind !== 'video' && canonical.mediaKind !== 'audio') invalid();
+    if (mediaKindFromMime(canonical.mimeType, DATA_CODE) !== canonical.mediaKind
       || (canonical.mediaKind === 'video' && canonical.video === null)
       || (canonical.mediaKind === 'audio' && (canonical.video !== null || canonical.audio === null))) {
       invalid();
@@ -250,8 +304,8 @@ function createMediaProbeEvidenceVerifier(value) {
         const envelope = exactObject(loadTrustedEnvelope(uid), INPUT_KEYS, DATA_CODE);
         if (envelope.uid !== uid) invalid();
         const expected = createMediaProbeEvidence(envelope);
-        if (JSON.stringify(stored) !== JSON.stringify(expected)) invalid();
-        TRUSTED_EVIDENCE.add(expected);
+        if (canonicalJson(stored) !== canonicalJson(expected)) invalid();
+        Reflect.apply(WEAK_SET_ADD, TRUSTED_EVIDENCE, [expected]);
         return expected;
       } catch {
         return invalid();
@@ -262,7 +316,7 @@ function createMediaProbeEvidenceVerifier(value) {
 
 function requireTrustedMediaProbeEvidence(value) {
   if ((typeof value === 'object' || typeof value === 'function')
-    && value !== null && TRUSTED_EVIDENCE.has(value)) return value;
+    && value !== null && Reflect.apply(WEAK_SET_HAS, TRUSTED_EVIDENCE, [value])) return value;
   return invalid();
 }
 

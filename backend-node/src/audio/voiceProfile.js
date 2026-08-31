@@ -21,6 +21,33 @@ const SECRET_SHAPES = Object.freeze([
   /^akia[a-z0-9]{12}/u,
   /^-----begin\s.*private key-----/u,
 ]);
+const ARRAY_IS_ARRAY = Array.isArray;
+const DEFINE_PROPERTY = Object.defineProperty;
+const GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const HAS_OWN = Object.hasOwn;
+const OWN_KEYS = Reflect.ownKeys;
+const REGEXP_TEST = RegExp.prototype.test;
+const STRING_CODE_POINT_AT = String.prototype.codePointAt;
+const STRING_INDEX_OF = String.prototype.indexOf;
+const STRING_TO_LOWER_CASE = String.prototype.toLowerCase;
+const STRING_TRIM = String.prototype.trim;
+
+function includes(values, expected) {
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] === expected) return true;
+  }
+  return false;
+}
+
+function defineValue(target, key, value) {
+  Reflect.apply(DEFINE_PROPERTY, Object, [target, key, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  }]);
+}
 
 function fail() {
   throw new TypeError(ERROR_MESSAGE);
@@ -28,22 +55,21 @@ function fail() {
 
 function ownDataSnapshot(value, expectedKeys) {
   try {
-    if (value === null || typeof value !== 'object' || Array.isArray(value) || isProxy(value)) fail();
-    const prototype = Object.getPrototypeOf(value);
+    if (value === null || typeof value !== 'object' || ARRAY_IS_ARRAY(value) || isProxy(value)) fail();
+    const prototype = Reflect.apply(GET_PROTOTYPE_OF, Object, [value]);
     if (prototype !== Object.prototype && prototype !== null) fail();
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    const keys = Reflect.ownKeys(descriptors);
-    if (keys.some((key) => typeof key !== 'string')) fail();
-    const sorted = keys.sort();
-    const expected = [...expectedKeys].sort();
-    if (sorted.length !== expected.length || sorted.some((key, index) => key !== expected[index])) {
-      fail();
+    const descriptors = Reflect.apply(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    const keys = Reflect.apply(OWN_KEYS, Reflect, [descriptors]);
+    if (keys.length !== expectedKeys.length) fail();
+    for (let index = 0; index < keys.length; index += 1) {
+      if (typeof keys[index] !== 'string') fail();
     }
     const snapshot = Object.create(null);
-    for (const key of sorted) {
+    for (let index = 0; index < expectedKeys.length; index += 1) {
+      const key = expectedKeys[index];
       const descriptor = descriptors[key];
-      if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) fail();
-      snapshot[key] = descriptor.value;
+      if (!descriptor || !descriptor.enumerable || !HAS_OWN(descriptor, 'value')) fail();
+      defineValue(snapshot, key, descriptor.value);
     }
     return snapshot;
   } catch (error) {
@@ -53,19 +79,22 @@ function ownDataSnapshot(value, expectedKeys) {
 }
 
 function boundedString(value, maxLength, pattern) {
-  if (typeof value !== 'string' || value !== value.trim() || value.includes('\0')) fail();
+  if (typeof value !== 'string' || value !== Reflect.apply(STRING_TRIM, value, [])
+    || Reflect.apply(STRING_INDEX_OF, value, ['\0']) !== -1) fail();
   let length = 0;
-  for (const _character of value) {
+  for (let index = 0; index < value.length;) {
+    const codePoint = Reflect.apply(STRING_CODE_POINT_AT, value, [index]);
+    index += codePoint > 0xffff ? 2 : 1;
     length += 1;
     if (length > maxLength) fail();
   }
-  if (length < 1 || (pattern && !pattern.test(value))) fail();
+  if (length < 1 || (pattern && !Reflect.apply(REGEXP_TEST, pattern, [value]))) fail();
   return value;
 }
 
 function canonicalUid(value, nullable = false) {
   if (nullable && value === null) return null;
-  if (typeof value !== 'string' || !UUID_V4.test(value)) fail();
+  if (typeof value !== 'string' || !Reflect.apply(REGEXP_TEST, UUID_V4, [value])) fail();
   return value;
 }
 
@@ -82,8 +111,10 @@ function epoch(value) {
 
 function safeProviderValue(value, maximum, pattern) {
   const result = boundedString(value, maximum, pattern);
-  const lowered = result.toLowerCase();
-  if (SECRET_SHAPES.some((candidate) => candidate.test(lowered))) fail();
+  const lowered = Reflect.apply(STRING_TO_LOWER_CASE, result, []);
+  for (let index = 0; index < SECRET_SHAPES.length; index += 1) {
+    if (Reflect.apply(REGEXP_TEST, SECRET_SHAPES[index], [lowered])) fail();
+  }
   return result;
 }
 
@@ -109,19 +140,21 @@ function voiceVersion(value, expectedUid) {
 
 function emotionMap(value) {
   const input = ownDataSnapshot(value, EMOTIONS);
-  return Object.freeze(Object.fromEntries(EMOTIONS.map((emotion) => [
-    emotion,
-    safeProviderValue(input[emotion], 64, VOICE_KEY),
-  ])));
+  const output = Object.create(null);
+  for (let index = 0; index < EMOTIONS.length; index += 1) {
+    const emotion = EMOTIONS[index];
+    defineValue(output, emotion, safeProviderValue(input[emotion], 64, VOICE_KEY));
+  }
+  return Object.freeze(output);
 }
 
 function profileCore(input) {
   const uid = canonicalUid(input.uid);
   const parentUid = canonicalUid(input.parentUid, true);
   if (parentUid === uid) fail();
-  if (!PROVIDERS.includes(input.provider)) fail();
+  if (!includes(PROVIDERS, input.provider)) fail();
   if (input.sourceKind !== 'provider-preset') fail();
-  if (input.status !== 'ready' || !EMOTIONS.includes(input.defaultEmotion)) fail();
+  if (input.status !== 'ready' || !includes(EMOTIONS, input.defaultEmotion)) fail();
   const minimumSpeedPermille = boundedInteger(input.minimumSpeedPermille, 500);
   const defaultSpeedPermille = boundedInteger(input.defaultSpeedPermille, 500);
   const maximumSpeedPermille = boundedInteger(input.maximumSpeedPermille, 500);

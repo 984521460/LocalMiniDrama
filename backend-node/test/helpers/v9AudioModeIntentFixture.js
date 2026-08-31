@@ -19,7 +19,7 @@ function createAudioModeIntentFixture(t, options = {}) {
   const provider = options.provider ?? 'openai-compatible';
   const model = options.model ?? (provider === 'minimax' ? 'speech-02-hd' : 'gpt-4o-mini-tts');
   const voiceKey = options.voiceKey ?? (provider === 'minimax' ? 'female-shaonv' : 'alloy');
-  const fixture = seedContinuityFixture(t);
+  const fixture = seedContinuityFixture(t, options.database ?? null);
   const prompt = createPromptSemanticFixture(fixture, 97100);
   const repositories = createV2Repositories(fixture.database);
   const voice = repositories.characterVersions.create({

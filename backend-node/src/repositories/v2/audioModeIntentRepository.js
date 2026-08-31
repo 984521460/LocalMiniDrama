@@ -7,7 +7,11 @@ const {
   parseAudioModeIntentRequest,
   resolveAudioModeIntent,
 } = require('../../audio/audioModeIntent');
-const { canonicalUid, isAudioModeContractError } = require('../../audio/audioContract');
+const {
+  canonicalJson: serializeCanonicalJson,
+  canonicalUid,
+  isAudioModeContractError,
+} = require('../../audio/audioContract');
 const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
@@ -19,7 +23,7 @@ function canonicalJson(text, maximumBytes) {
     throw new TypeError();
   }
   const value = JSON.parse(text);
-  if (JSON.stringify(value) !== text) throw new TypeError();
+  if (serializeCanonicalJson(value) !== text) throw new TypeError();
   return value;
 }
 
@@ -76,9 +80,9 @@ function createAudioModeIntentRepository(database, dependencies) {
       });
       if (stored.plan.planSha256 !== row.plan_sha256) throw new TypeError();
       const resolved = expected(stored.request, V2RepositoryDataError);
-      if (JSON.stringify(resolved.request) !== row.request_json
-        || JSON.stringify(resolved.plan) !== row.plan_json) throw new TypeError();
-      return stored;
+      if (serializeCanonicalJson(resolved.request) !== row.request_json
+        || serializeCanonicalJson(resolved.plan) !== row.plan_json) throw new TypeError();
+      return Object.freeze({ ...stored, request: resolved.request, plan: resolved.plan });
     } catch (error) {
       if (error instanceof V2RepositoryDataError) throw error;
       throw new V2RepositoryDataError('audio mode intent', 'persisted record');
@@ -100,12 +104,12 @@ function createAudioModeIntentRepository(database, dependencies) {
     prepare(value) {
       const request = parseAudioModeIntentRequest(value);
       const resolved = expected(request, V2RepositoryConflictError);
-      const requestJson = JSON.stringify(resolved.request);
-      const planJson = JSON.stringify(resolved.plan);
+      const requestJson = serializeCanonicalJson(resolved.request);
+      const planJson = serializeCanonicalJson(resolved.plan);
       const existing = prepared().get.get(request.uid);
       if (existing) {
         const mapped = mapRow(existing);
-        if (JSON.stringify(mapped.request) !== requestJson) {
+        if (serializeCanonicalJson(mapped.request) !== requestJson) {
           throw new V2RepositoryConflictError('audio mode intent', 'prepared');
         }
         return mapped;

@@ -273,6 +273,26 @@ test('readiness fails closed when the version-eighteen TTS submission table is m
   });
 });
 
+test('readiness fails closed when a version-nineteen TTS output contract table is missing', (t) => {
+  const first = createMigratedV2Database(t);
+  const firstRepository = createMvpBenchmarkReadinessRepository(first);
+  assert.equal(firstRepository.inspect().contractsReady, true);
+  first.exec('DROP TABLE audio_tts_outputs');
+  assert.deepEqual(firstRepository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+
+  const second = createMigratedV2Database(t);
+  const secondRepository = createMvpBenchmarkReadinessRepository(second);
+  assert.equal(secondRepository.inspect().contractsReady, true);
+  second.exec('DROP TABLE audio_tts_execution_evidence');
+  assert.deepEqual(secondRepository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness parser binds the whole projection to the current runtime and database', (t) => {
   const database = createMigratedV2Database(t);
   const runtime = productionRuntimeFixture();
@@ -439,7 +459,6 @@ test('actual createApp exposes conservative readiness without external calls', a
       'character-candidate-execution',
       'ready-gpu-connection',
       'h3-local-execution',
-      'tts-execution',
     ]);
     assert.equal(typeof created.runtime.h3Local.execute, 'function');
 
@@ -452,7 +471,6 @@ test('actual createApp exposes conservative readiness without external calls', a
     assert.deepEqual(readyConnectionBody.data.blockedCapabilityIds, [
       'narrative-execution',
       'character-candidate-execution',
-      'tts-execution',
     ]);
     assert.equal(
       readyConnectionBody.data.capabilities.find(

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/audio-tts-execution-record.schema.json",
+  "title": "Local TTS Execution Record v1",
+  "$comment": "Secret-free projection of a completed local TTS execution. Runtime re-reads and decodes every deterministic local audio file before returning this record; repository validation binds the evidence to the current immutable intent, workflow run, node run, assets and versions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "intentUid", "dramaUid", "workflowRunUid", "nodeRunUid", "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "audio-tts-execution-record.v1" },
+    "intentUid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "workflowRunUid": { "$ref": "#/$defs/uid" },
+    "nodeRunUid": { "$ref": "#/$defs/uid" },
+    "evidence": {
+      "$ref": "https://local-mini-drama.invalid/schemas/v8/audio-execution-evidence.schema.json"
+    }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

@@ -35,6 +35,7 @@ const voiceProfileRoutes = require('./v2/voiceProfiles');
 const mediaExportRoutes = require('./v2/mediaExports');
 const mvpBenchmarkRoutes = require('./v2/mvpBenchmark');
 const audioModeIntentRoutes = require('./v2/audioModeIntents');
+const audioTtsExecutionRoutes = require('./v2/audioTtsExecution');
 
 function setupRouter(cfg, db, log, runtime = {}) {
   const r = express.Router();
@@ -87,6 +88,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   const mediaExports = mediaExportRoutes(log, runtime.mediaExports, db);
   const mvpBenchmark = mvpBenchmarkRoutes(log, runtime, db);
   const audioModeIntents = audioModeIntentRoutes(log, runtime.audioModeIntents, db);
+  const audioTtsExecutions = audioTtsExecutionRoutes(log, runtime.audioTts, db);
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
@@ -102,6 +104,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   r.use('/v2', mediaExports);
   r.use('/v2', mvpBenchmark);
   r.use('/v2', audioModeIntents);
+  r.use('/v2', audioTtsExecutions);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

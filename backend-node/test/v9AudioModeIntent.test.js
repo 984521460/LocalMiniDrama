@@ -167,11 +167,11 @@ const INSERT_INTENT_SQL = `
      @scriptResultUid, @requestJson, @planJson, @planSha256, @createdAtEpochMs)
 `;
 
-test('migration eighteen preserves the prepared audio mode intent store', (t) => {
+test('migration nineteen preserves the prepared audio mode intent store', (t) => {
   const database = createMigratedV2Database(t);
   assert.equal(
     database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(),
-    18,
+    19,
   );
   assert.equal(
     database.prepare(`

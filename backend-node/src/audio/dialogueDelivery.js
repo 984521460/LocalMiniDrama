@@ -44,34 +44,65 @@ const BASE_UNITS_PER_MINUTE = 240;
 const MAX_TEXT_CODE_POINTS = 1024;
 const MAX_TEXT_BYTES = 4096;
 const MAX_TOTAL_DURATION_MS = 600_000;
+const ARRAY_IS_ARRAY = Array.isArray;
+const ARRAY_JOIN = Array.prototype.join;
+const DEFINE_PROPERTY = Object.defineProperty;
+const GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const HAS_OWN = Object.hasOwn;
+const OWN_KEYS = Reflect.ownKeys;
+const REGEXP_TEST = RegExp.prototype.test;
+const STRING_CODE_POINT_AT = String.prototype.codePointAt;
+const STRING_NORMALIZE = String.prototype.normalize;
+const STRING_TRIM = String.prototype.trim;
+
+function includes(values, expected) {
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] === expected) return true;
+  }
+  return false;
+}
+
+function defineValue(target, key, value) {
+  Reflect.apply(DEFINE_PROPERTY, Object, [target, key, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  }]);
+}
 
 function invalid(kind) {
   throw new TypeError(`Dialogue delivery ${kind} is invalid`);
 }
 
 function ownDataSnapshot(value, keys, kind) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || isProxy(value)) invalid(kind);
-  const prototype = Object.getPrototypeOf(value);
+  if (!value || typeof value !== 'object' || ARRAY_IS_ARRAY(value) || isProxy(value)) invalid(kind);
+  const prototype = Reflect.apply(GET_PROTOTYPE_OF, Object, [value]);
   if (prototype !== Object.prototype && prototype !== null) invalid(kind);
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  if (Object.getOwnPropertySymbols(value).length !== 0) invalid(kind);
-  if (Object.keys(descriptors).length !== keys.length) invalid(kind);
+  const descriptors = Reflect.apply(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+  const actualKeys = Reflect.apply(OWN_KEYS, Reflect, [descriptors]);
+  if (actualKeys.length !== keys.length) invalid(kind);
+  for (let index = 0; index < actualKeys.length; index += 1) {
+    if (typeof actualKeys[index] !== 'string') invalid(kind);
+  }
   const snapshot = Object.create(null);
-  for (const key of keys) {
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
     const descriptor = descriptors[key];
-    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) invalid(kind);
-    snapshot[key] = descriptor.value;
+    if (!descriptor || !descriptor.enumerable || !HAS_OWN(descriptor, 'value')) invalid(kind);
+    defineValue(snapshot, key, descriptor.value);
   }
   return snapshot;
 }
 
 function canonicalUid(value, kind) {
-  if (typeof value !== 'string' || !UUID_V4.test(value)) invalid(kind);
+  if (typeof value !== 'string' || !Reflect.apply(REGEXP_TEST, UUID_V4, [value])) invalid(kind);
   return value;
 }
 
 function sourceId(value, kind) {
-  if (typeof value !== 'string' || !SOURCE_ID.test(value)) invalid(kind);
+  if (typeof value !== 'string' || !Reflect.apply(REGEXP_TEST, SOURCE_ID, [value])) invalid(kind);
   return value;
 }
 
@@ -88,8 +119,9 @@ function hasInvalidEmojiTagSequence(value) {
   let blackFlagOpen = false;
   let tagSequenceOpen = false;
   let variationSelectorCount = 0;
-  for (const scalar of value) {
-    const codePoint = scalar.codePointAt(0);
+  for (let index = 0; index < value.length;) {
+    const codePoint = Reflect.apply(STRING_CODE_POINT_AT, value, [index]);
+    index += codePoint > 0xffff ? 2 : 1;
     if (inRange(codePoint, 0xe0020, 0xe007e)) {
       if (!blackFlagOpen && !tagSequenceOpen) return true;
       if (blackFlagOpen && variationSelectorCount > 1) return true;
@@ -121,15 +153,21 @@ function canonicalText(value, kind) {
     invalid(kind);
   }
   if (
-    value !== value.trim()
-    || value !== value.normalize('NFC')
-    || FORBIDDEN_CONTROL.test(value)
-    || FORBIDDEN_BIDI.test(value)
-    || UNPAIRED_SURROGATE.test(value)
+    value !== Reflect.apply(STRING_TRIM, value, [])
+    || value !== Reflect.apply(STRING_NORMALIZE, value, ['NFC'])
+    || Reflect.apply(REGEXP_TEST, FORBIDDEN_CONTROL, [value])
+    || Reflect.apply(REGEXP_TEST, FORBIDDEN_BIDI, [value])
+    || Reflect.apply(REGEXP_TEST, UNPAIRED_SURROGATE, [value])
     || hasInvalidEmojiTagSequence(value)
     || Buffer.byteLength(value, 'utf8') > MAX_TEXT_BYTES
-    || Array.from(value).length > MAX_TEXT_CODE_POINTS
   ) invalid(kind);
+  let codePoints = 0;
+  for (let index = 0; index < value.length;) {
+    const codePoint = Reflect.apply(STRING_CODE_POINT_AT, value, [index]);
+    index += codePoint > 0xffff ? 2 : 1;
+    codePoints += 1;
+    if (codePoints > MAX_TEXT_CODE_POINTS) invalid(kind);
+  }
   return value;
 }
 
@@ -140,7 +178,11 @@ function inRange(codePoint, minimum, maximum) {
 // dialogue-timing.v1 owns these numeric ranges. They are deliberately not
 // delegated to Intl, locale data, ICU, or Unicode property escapes.
 function isCjk(codePoint) {
-  return CJK_RANGES_V1.some(([minimum, maximum]) => inRange(codePoint, minimum, maximum));
+  for (let index = 0; index < CJK_RANGES_V1.length; index += 1) {
+    const range = CJK_RANGES_V1[index];
+    if (inRange(codePoint, range[0], range[1])) return true;
+  }
+  return false;
 }
 
 function isExtender(codePoint) {
@@ -187,8 +229,9 @@ function spokenUnitCount(text) {
   let previousBaseWasSymbol = false;
   let joinNextSymbol = false;
   let regionalIndicatorParity = 0;
-  for (const scalar of text) {
-    const codePoint = scalar.codePointAt(0);
+  for (let index = 0; index < text.length;) {
+    const codePoint = Reflect.apply(STRING_CODE_POINT_AT, text, [index]);
+    index += codePoint > 0xffff ? 2 : 1;
     if (isExtender(codePoint) || isEmojiTag(codePoint)) continue;
     if (codePoint === 0x200d) {
       joinNextSymbol = previousBaseWasSymbol;
@@ -236,12 +279,17 @@ function spokenUnitCount(text) {
 function rawPunctuationPauseMs(text) {
   let total = 0;
   let group = 0;
-  for (const scalar of text) {
-    const codePoint = scalar.codePointAt(0);
+  for (let index = 0; index < text.length;) {
+    const codePoint = Reflect.apply(STRING_CODE_POINT_AT, text, [index]);
+    index += codePoint > 0xffff ? 2 : 1;
     if (isExtender(codePoint) || isEmojiTag(codePoint)) continue;
     let pause = 0;
-    if ('.!?。！？…\n'.includes(scalar)) pause = 320;
-    else if (',，、;；:：'.includes(scalar)) pause = 180;
+    if (codePoint === 0x2e || codePoint === 0x21 || codePoint === 0x3f
+      || codePoint === 0x3002 || codePoint === 0xff01 || codePoint === 0xff1f
+      || codePoint === 0x2026 || codePoint === 0x0a) pause = 320;
+    else if (codePoint === 0x2c || codePoint === 0xff0c || codePoint === 0x3001
+      || codePoint === 0x3b || codePoint === 0xff1b || codePoint === 0x3a
+      || codePoint === 0xff1a) pause = 180;
     if (pause > 0) {
       group = Math.max(group, pause);
     } else {
@@ -276,7 +324,7 @@ function createDialogueDeliveryPlan(value) {
   if (
     input.schemaVersion !== '8.0'
     || input.timingAlgorithmVersion !== TIMING_ALGORITHM_VERSION
-    || !EMOTIONS.includes(input.emotion)
+    || !includes(EMOTIONS, input.emotion)
   ) invalid(kind);
   const text = canonicalText(input.text, kind);
   const emotionIntensityPermille = boundedInteger(
@@ -287,7 +335,7 @@ function createDialogueDeliveryPlan(value) {
   const pauseAfterMs = boundedInteger(input.pauseAfterMs, 0, 5000, kind);
   const timing = estimate(text, speedPermille, pauseBeforeMs, pauseAfterMs, kind);
   const textSha256 = createHash('sha256').update(text, 'utf8').digest('hex');
-  const timingSha256 = createHash('sha256').update([
+  const timingParts = [
     TIMING_ALGORITHM_VERSION,
     textSha256,
     speedPermille,
@@ -297,7 +345,10 @@ function createDialogueDeliveryPlan(value) {
     timing.punctuationPauseMs,
     timing.estimatedSpeechDurationMs,
     timing.estimatedTotalDurationMs,
-  ].join('\n'), 'utf8').digest('hex');
+  ];
+  const timingSha256 = createHash('sha256')
+    .update(Reflect.apply(ARRAY_JOIN, timingParts, ['\n']), 'utf8')
+    .digest('hex');
   return Object.freeze({
     schemaVersion: '8.0',
     timingAlgorithmVersion: TIMING_ALGORITHM_VERSION,
@@ -323,10 +374,13 @@ function createDialogueDeliveryPlan(value) {
 function parseDialogueDeliveryPlan(value) {
   try {
     const stored = ownDataSnapshot(value, RECORD_KEYS, 'record');
-    const canonical = createDialogueDeliveryPlan(Object.fromEntries(
-      INPUT_KEYS.map((key) => [key, stored[key]]),
-    ));
-    for (const key of RECORD_KEYS) {
+    const input = Object.create(null);
+    for (let index = 0; index < INPUT_KEYS.length; index += 1) {
+      defineValue(input, INPUT_KEYS[index], stored[INPUT_KEYS[index]]);
+    }
+    const canonical = createDialogueDeliveryPlan(input);
+    for (let index = 0; index < RECORD_KEYS.length; index += 1) {
+      const key = RECORD_KEYS[index];
       if (canonical[key] !== stored[key]) invalid('record');
     }
     return canonical;

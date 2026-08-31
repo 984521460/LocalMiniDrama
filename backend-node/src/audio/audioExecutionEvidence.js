@@ -13,10 +13,17 @@ const {
   sha256,
   assetEvidence,
 } = require('./audioContract');
-const { requireTrustedAudioModePlan, parseH3NativeSourceEvidence } = require('./audioMode');
+const {
+  parseAudioModePlanRecord,
+  requireTrustedAudioModePlan,
+  parseH3NativeSourceEvidence,
+} = require('./audioMode');
 
 const CODE = 'AUDIO_EXECUTION_EVIDENCE_INVALID';
 const MAX_OUTPUTS = 1000;
+const DEFINE_PROPERTY = Object.defineProperty;
+const SET_ADD = Set.prototype.add;
+const SET_HAS = Set.prototype.has;
 const AUDIO_MIME_TYPES = Object.freeze(new Set([
   'audio/aac', 'audio/flac', 'audio/mpeg', 'audio/wav', 'audio/x-wav',
 ]));
@@ -41,7 +48,8 @@ function audioOutput(value, expectedDramaUid) {
       assetType: 'audio',
       currentVersionUid: evidence.uid,
     }, CODE);
-    if (evidence.sha256 === null || !AUDIO_MIME_TYPES.has(evidence.mimeType)
+    if (evidence.sha256 === null
+      || !Reflect.apply(SET_HAS, AUDIO_MIME_TYPES, [evidence.mimeType])
       || evidence.width !== null || evidence.height !== null
       || !Number.isSafeInteger(evidence.durationMs) || evidence.durationMs < 1
       || evidence.durationMs > 600_000
@@ -60,8 +68,16 @@ function audioOutput(value, expectedDramaUid) {
 }
 
 function validateOutputs(values, plan) {
-  const outputs = denseArray(values, MAX_OUTPUTS, CODE)
-    .map((value) => audioOutput(value, plan.dramaUid));
+  const input = denseArray(values, MAX_OUTPUTS, CODE);
+  const outputs = [];
+  for (let index = 0; index < input.length; index += 1) {
+    Reflect.apply(DEFINE_PROPERTY, Object, [outputs, String(index), {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: audioOutput(input[index], plan.dramaUid),
+    }]);
+  }
   if (outputs.length !== plan.ttsRequests.length) fail(CODE);
   const versionUids = new Set();
   const assetUids = new Set();
@@ -70,14 +86,14 @@ function validateOutputs(values, plan) {
     const request = plan.ttsRequests[index];
     if (output.dialogueDeliveryUid !== request.dialogueDeliveryUid
       || output.requestSha256 !== request.requestSha256
-      || versionUids.has(output.audioVersionEvidence.uid)
-      || assetUids.has(output.audioVersionEvidence.assetUid)) fail(CODE);
-    versionUids.add(output.audioVersionEvidence.uid);
-    assetUids.add(output.audioVersionEvidence.assetUid);
+      || Reflect.apply(SET_HAS, versionUids, [output.audioVersionEvidence.uid])
+      || Reflect.apply(SET_HAS, assetUids, [output.audioVersionEvidence.assetUid])) fail(CODE);
+    Reflect.apply(SET_ADD, versionUids, [output.audioVersionEvidence.uid]);
+    Reflect.apply(SET_ADD, assetUids, [output.audioVersionEvidence.assetUid]);
   }
   if (plan.h3NativeSource !== null
-    && (versionUids.has(plan.h3NativeSource.videoVersionEvidence.uid)
-      || assetUids.has(plan.h3NativeSource.videoAsset.uid))) fail(CODE);
+    && (Reflect.apply(SET_HAS, versionUids, [plan.h3NativeSource.videoVersionEvidence.uid])
+      || Reflect.apply(SET_HAS, assetUids, [plan.h3NativeSource.videoAsset.uid]))) fail(CODE);
   return frozenArray(outputs);
 }
 
@@ -162,7 +178,28 @@ function parseAudioExecutionEvidence(value, expectedPlan) {
   }
 }
 
+function parsePersistedAudioExecutionEvidence(value, expectedPlan) {
+  try {
+    const plan = parseAudioModePlanRecord(expectedPlan);
+    const input = exactObject(value, RECORD_KEYS, CODE);
+    if (input.schemaVersion !== '8.0' || input.planUid !== plan.uid
+      || input.planSha256 !== plan.planSha256 || input.mode !== plan.mode) fail(CODE);
+    const canonical = record({
+      uid: canonicalUid(input.uid, CODE),
+      plan,
+      ttsOutputs: validateOutputs(input.ttsOutputs, plan),
+      createdAtEpochMs: epoch(input.createdAtEpochMs, CODE),
+    });
+    if (canonical.executionSha256 !== input.executionSha256) fail(CODE);
+    return canonical;
+  } catch (error) {
+    if (isAudioModeContractError(error) && error.code === CODE) throw error;
+    return fail(CODE);
+  }
+}
+
 module.exports = Object.freeze({
   createAudioExecutionEvidence,
   parseAudioExecutionEvidence,
+  parsePersistedAudioExecutionEvidence,
 });

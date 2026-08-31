@@ -15,6 +15,12 @@ const {
   audioModeNarrativeEmotion,
 } = require('../../audio/audioModeIntent');
 const {
+  audioTtsExecutionRecordValid,
+  audioTtsProbeRecordValid,
+  deterministicUid,
+  executionUid,
+} = require('../../repositories/v2/audioTtsOutputRepository');
+const {
   parseMediaExportExecutionPlanRecord,
 } = require('../../media/mediaExportExecutionPlan');
 const { parseMediaExportReceiptRecord } = require('../../media/mediaExportReceipt');
@@ -364,6 +370,39 @@ function registerV2SqlFunctions(database) {
     'audio_mode_intent_record_valid',
     { deterministic: true },
     audioModeIntentRecordValid,
+  );
+  database.function(
+    'audio_tts_asset_uid',
+    { deterministic: true },
+    (intentUid, dialogueDeliveryUid) => {
+      try { return deterministicUid('audio-tts-asset.v1', intentUid, dialogueDeliveryUid); } catch { return null; }
+    },
+  );
+  database.function(
+    'audio_tts_asset_version_uid',
+    { deterministic: true },
+    (intentUid, dialogueDeliveryUid) => {
+      try {
+        return deterministicUid('audio-tts-asset-version.v1', intentUid, dialogueDeliveryUid);
+      } catch { return null; }
+    },
+  );
+  database.function(
+    'audio_tts_execution_uid',
+    { deterministic: true },
+    (intentUid) => {
+      try { return executionUid(intentUid); } catch { return null; }
+    },
+  );
+  database.function(
+    'audio_tts_probe_record_valid',
+    { deterministic: true },
+    audioTtsProbeRecordValid,
+  );
+  database.function(
+    'audio_tts_execution_record_valid',
+    { deterministic: true },
+    audioTtsExecutionRecordValid,
   );
   database.function(
     'media_export_execution_plan_sha256',

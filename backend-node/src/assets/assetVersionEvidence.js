@@ -8,6 +8,29 @@ const FIELDS = Object.freeze([
   'uid', 'assetUid', 'storageProvider', 'logicalUri', 'relativePath', 'sha256',
   'mimeType', 'width', 'height', 'durationMs', 'parentUid', 'status', 'createdAt',
 ]);
+const DEFINE_PROPERTY = Object.defineProperty;
+const GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const HAS_OWN = Object.hasOwn;
+const JSON_STRINGIFY = JSON.stringify;
+const OWN_KEYS = Reflect.ownKeys;
+const REGEXP_TEST = RegExp.prototype.test;
+const SET_HAS = Set.prototype.has;
+const STRING_ENDS_WITH = String.prototype.endsWith;
+const STRING_INCLUDES = String.prototype.includes;
+const STRING_REPLACE = String.prototype.replace;
+const STRING_SPLIT = String.prototype.split;
+const STRING_STARTS_WITH = String.prototype.startsWith;
+const STRING_TRIM = String.prototype.trim;
+
+function defineValue(target, key, value) {
+  Reflect.apply(DEFINE_PROPERTY, Object, [target, key, {
+    configurable: true,
+    enumerable: true,
+    writable: true,
+    value,
+  }]);
+}
 
 class AssetVersionEvidenceError extends Error {
   constructor() {
@@ -25,32 +48,29 @@ function exactSnapshot(value) {
   let descriptors;
   let prototype;
   try {
-    descriptors = Object.getOwnPropertyDescriptors(value);
-    prototype = Object.getPrototypeOf(value);
+    descriptors = Reflect.apply(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    prototype = Reflect.apply(GET_PROTOTYPE_OF, Object, [value]);
   } catch {
     return fail();
   }
   if (prototype !== Object.prototype && prototype !== null) fail();
-  const keys = Reflect.ownKeys(descriptors);
+  const keys = Reflect.apply(OWN_KEYS, Reflect, [descriptors]);
   if (keys.length !== FIELDS.length) fail();
-  const actual = [];
   const snapshot = Object.create(null);
-  for (const key of keys) {
-    const descriptor = descriptors[key];
-    if (typeof key !== 'string'
-      || !descriptor.enumerable
-      || !Object.hasOwn(descriptor, 'value')) fail();
-    actual.push(key);
-    snapshot[key] = descriptor.value;
+  for (let index = 0; index < keys.length; index += 1) {
+    if (typeof keys[index] !== 'string') fail();
   }
-  actual.sort();
-  const expected = [...FIELDS].sort();
-  if (actual.some((field, index) => field !== expected[index])) fail();
+  for (let index = 0; index < FIELDS.length; index += 1) {
+    const key = FIELDS[index];
+    const descriptor = descriptors[key];
+    if (!descriptor || !descriptor.enumerable || !HAS_OWN(descriptor, 'value')) fail();
+    defineValue(snapshot, key, descriptor.value);
+  }
   return snapshot;
 }
 
 function canonicalUid(value) {
-  if (typeof value !== 'string' || !UUID_V4.test(value)) fail();
+  if (typeof value !== 'string' || !Reflect.apply(REGEXP_TEST, UUID_V4, [value])) fail();
   return value;
 }
 
@@ -59,7 +79,8 @@ function optionalUid(value) {
 }
 
 function optionalHash(value) {
-  if (value !== null && (typeof value !== 'string' || !SHA256.test(value))) fail();
+  if (value !== null && (typeof value !== 'string'
+    || !Reflect.apply(REGEXP_TEST, SHA256, [value]))) fail();
   return value;
 }
 
@@ -77,27 +98,31 @@ function boundedText(value, maximumBytes, { nullable = false } = {}) {
   if (value === null && nullable) return null;
   if (typeof value !== 'string'
     || value.length === 0
-    || value !== value.trim()
-    || value.includes('\0')
+    || value !== Reflect.apply(STRING_TRIM, value, [])
+    || Reflect.apply(STRING_INCLUDES, value, ['\0'])
     || Buffer.byteLength(value, 'utf8') > maximumBytes) fail();
   return value;
 }
 
 function logicalUri(value) {
   const uri = boundedText(value, 2048);
-  if (!/^asset:\/\/[A-Za-z0-9]/u.test(uri) || /[\u0000-\u0020\u007f\\]/u.test(uri)) fail();
+  if (!Reflect.apply(REGEXP_TEST, /^asset:\/\/[A-Za-z0-9]/u, [uri])
+    || Reflect.apply(REGEXP_TEST, /[\u0000-\u0020\u007f\\]/u, [uri])) fail();
   return uri;
 }
 
 function relativePath(value) {
   const path = boundedText(value, 1024);
-  const portable = path.replace(/\\/gu, '/');
-  if (portable.startsWith('/')
-    || /^[A-Za-z]:/u.test(portable)
-    || portable.includes(':')
-    || portable.includes('//')
-    || portable.endsWith('/')
-    || portable.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')) fail();
+  const portable = Reflect.apply(STRING_REPLACE, path, [/\\/gu, '/']);
+  if (Reflect.apply(STRING_STARTS_WITH, portable, ['/'])
+    || Reflect.apply(REGEXP_TEST, /^[A-Za-z]:/u, [portable])
+    || Reflect.apply(STRING_INCLUDES, portable, [':'])
+    || Reflect.apply(STRING_INCLUDES, portable, ['//'])
+    || Reflect.apply(STRING_ENDS_WITH, portable, ['/'])) fail();
+  const segments = Reflect.apply(STRING_SPLIT, portable, ['/']);
+  for (let index = 0; index < segments.length; index += 1) {
+    if (segments[index] === '' || segments[index] === '.' || segments[index] === '..') fail();
+  }
   return path;
 }
 
@@ -110,7 +135,8 @@ function canonicalTimestamp(value) {
 
 function createAssetVersionEvidence(value) {
   const input = exactSnapshot(value);
-  if (!STORAGE_PROVIDERS.has(input.storageProvider) || input.status !== 'ready') fail();
+  if (!Reflect.apply(SET_HAS, STORAGE_PROVIDERS, [input.storageProvider])
+    || input.status !== 'ready') fail();
   const output = {
     uid: canonicalUid(input.uid),
     assetUid: canonicalUid(input.assetUid),
@@ -152,7 +178,10 @@ function assetVersionEvidenceMatches(left, right) {
   try {
     const first = createAssetVersionEvidence(left);
     const second = createAssetVersionEvidence(right);
-    return FIELDS.every((field) => first[field] === second[field]);
+    for (let index = 0; index < FIELDS.length; index += 1) {
+      if (first[FIELDS[index]] !== second[FIELDS[index]]) return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -168,7 +197,11 @@ function parseCanonicalAssetVersionEvidenceJson(value) {
     return fail();
   }
   const evidence = createAssetVersionEvidence(parsed);
-  if (JSON.stringify(evidence) !== value) fail();
+  const serializable = Object.create(null);
+  for (let index = 0; index < FIELDS.length; index += 1) {
+    defineValue(serializable, FIELDS[index], evidence[FIELDS[index]]);
+  }
+  if (Reflect.apply(JSON_STRINGIFY, JSON, [serializable]) !== value) fail();
   return evidence;
 }
 
