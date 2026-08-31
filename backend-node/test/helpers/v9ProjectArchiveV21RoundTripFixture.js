@@ -500,10 +500,11 @@ function addPortableWorkflow(fixture, voiceProfile) {
   });
 }
 
-function addMediaExportSeal(fixture, executionPlan) {
+function addMediaExportSeal(fixture, executionPlan, storageRoot) {
   const { repositories } = fixture;
   const workflowUid = uid(29100);
   const sourceAssetUid = uid(29101);
+  const sourceVersionUid = uid(29107);
   const sourceNodeUid = uid(29102);
   const exportNodeUid = uid(29103);
   const sourceNodeRunUid = uid(29104);
@@ -515,6 +516,22 @@ function addMediaExportSeal(fixture, executionPlan) {
     assetType: 'video',
     status: 'draft',
   });
+  const sourceRelativePath = `projects/${fixture.dramaUid}/assets/video/${sourceAssetUid}/${sourceVersionUid}.mp4`;
+  const sourceMedia = writeMedia(storageRoot, sourceRelativePath, 'media-export-source');
+  repositories.assets.addVersion({
+    uid: sourceVersionUid,
+    assetUid: sourceAssetUid,
+    storageProvider: 'local',
+    logicalUri: `asset://dramas/${fixture.dramaUid}/video/${sourceAssetUid}/${sourceVersionUid}`,
+    relativePath: sourceRelativePath,
+    sha256: sourceMedia.sha256,
+    mimeType: 'video/mp4',
+    width: 1920,
+    height: 1080,
+    durationMs: 1500,
+    parentUid: null,
+    status: 'ready',
+  }, { makeCurrent: true });
   repositories.workflows.createGraph({
     definition: {
       uid: workflowUid,
@@ -633,7 +650,7 @@ async function seedProjectArchiveV21RoundTripFixture(t, database, storageRoot) {
   const { voiceProfile } = addVoiceAndBgm(fixture, storageRoot);
   addGenerationHistory(fixture, promptFixture, storageRoot);
   addPortableWorkflow(fixture, voiceProfile);
-  addMediaExportSeal(fixture, localExport.fixture.executionPlan);
+  addMediaExportSeal(fixture, localExport.fixture.executionPlan, storageRoot);
   const selectionUid = database.prepare(`
     SELECT uid FROM source_selections
     WHERE document_uid IN (SELECT uid FROM source_documents WHERE drama_uid=?)

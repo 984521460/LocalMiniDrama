@@ -30,6 +30,7 @@ const WORKFLOW_UID = uid(9937);
 const NODE_UID = uid(9938);
 const ASSET_UID = uid(9939);
 const VERSION_UID = uid(9940);
+const SOURCE_VERSION_UID = uid(9942);
 const PROMPT = Object.freeze({ 1: Object.freeze({ class_type: 'PromptNode' }) });
 const PROVIDER_DETAIL = 'synthetic CUDA out of memory provider detail';
 const WORKFLOW = Object.freeze({
@@ -219,6 +220,20 @@ async function createCoordinatorTransferFailureFixture(t, fault) {
     assetType: 'video',
     status: 'draft',
   });
+  repositories.assets.addVersion({
+    uid: SOURCE_VERSION_UID,
+    assetUid: ASSET_UID,
+    storageProvider: 'local',
+    logicalUri: `asset://drama/p9-remote-failure/${SOURCE_VERSION_UID}`,
+    relativePath: `projects/p9-remote-failure/${SOURCE_VERSION_UID}.mp4`,
+    sha256: sha256('p9-remote-failure-source-video'),
+    mimeType: 'video/mp4',
+    width: 608,
+    height: 352,
+    durationMs: 1625,
+    parentUid: null,
+    status: 'ready',
+  }, { makeCurrent: true });
   const workflowService = createWorkflowService({
     repositories,
     createUid: () => WORKFLOW_UID,
@@ -346,6 +361,7 @@ async function createCoordinatorTransferFailureFixture(t, fault) {
     }),
     localOutputRelativePath: `projects/${DRAMA_UID}/assets/${VERSION_UID}.mp4`,
     repositories,
+    sourceVersionUid: SOURCE_VERSION_UID,
     runService,
     runUid: run.run.uid,
     nodeRunUid: run.nodes[0].uid,

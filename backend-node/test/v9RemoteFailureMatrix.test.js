@@ -48,7 +48,10 @@ test('P9-03 disk exhaustion during download removes the partial file and require
   assert.equal(task.outputAssetVersionUid, null);
   assert.equal(fixture.submitCalls(), 1);
   assert.equal(fixture.repositories.assets.listVersions(fixture.assetUid).length, beforeVersions);
-  assert.equal(fixture.repositories.assets.get(fixture.assetUid).currentVersionUid, null);
+  assert.equal(
+    fixture.repositories.assets.get(fixture.assetUid).currentVersionUid,
+    fixture.sourceVersionUid,
+  );
   assert.equal(aggregate.run.status, 'failed');
   assert.equal(fixture.runService.getNode(fixture.nodeRunUid).status, 'failed');
   assert.equal(createRemoteTaskRetryClassification(task).disposition, 'manual_reconcile');
@@ -81,7 +84,10 @@ test('P9-03 interrupted upload removes its remote partial and permits only safe 
   assert.equal(task.outputAssetVersionUid, null);
   assert.equal(fixture.submitCalls(), 0);
   assert.equal(fixture.repositories.assets.listVersions(fixture.assetUid).length, beforeVersions);
-  assert.equal(fixture.repositories.assets.get(fixture.assetUid).currentVersionUid, null);
+  assert.equal(
+    fixture.repositories.assets.get(fixture.assetUid).currentVersionUid,
+    fixture.sourceVersionUid,
+  );
   assert.equal(aggregate.run.status, 'failed');
   assert.equal(fixture.runService.getNode(fixture.nodeRunUid).status, 'failed');
   assert.deepEqual(

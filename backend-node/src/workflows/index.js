@@ -3,6 +3,10 @@ const { createWorkflowService } = require('./service');
 const { createWorkflowRunService } = require('./runService');
 const { createWorkflowScheduler } = require('./scheduler');
 const {
+  SUPPORTED_MATERIALIZED_NODE_TYPES,
+  createMaterializedNodeExecutor,
+} = require('./materializedNodeExecutor');
+const {
   WorkflowNodeExecutionError,
   createNodeExecutionError,
   isNodeExecutionError,
@@ -14,8 +18,10 @@ module.exports = {
   createWorkflowRunService,
   createWorkflowScheduler,
   createWorkflowService,
+  createMaterializedNodeExecutor,
   createNodeExecutionError,
   isNodeExecutionError,
   isWorkflowError,
+  SUPPORTED_MATERIALIZED_NODE_TYPES,
   WorkflowNodeExecutionError,
 };

@@ -9,6 +9,7 @@ const { setupRouter } = require('./routes/index.js');
 const { createProductionRemoteRuntime } = require('./remote/productionRuntime');
 const { createProductionH3Runtime } = require('./h3/productionRuntime');
 const { createProductionMediaExportRuntime } = require('./media/productionRuntime');
+const { createProductionWorkflowRuntime } = require('./workflows/productionRuntime');
 const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
 const { createV2Repositories } = require('./repositories/v2');
 const { createWorkflowRunService } = require('./workflows');
@@ -52,10 +53,12 @@ function createApp({
     workspaceRoot: mediaExportWorkspaceRoot,
     dependencies: mediaExportDependencies,
   });
+  const workflowRuntime = createProductionWorkflowRuntime({ database: db });
   const runtime = Object.freeze({
     ...remoteRuntime,
     h3: h3Runtime,
     ...mediaExportRuntime,
+    ...workflowRuntime,
   });
   const taskService = require('./services/taskService');
   const { resumeProcessingVideoGenerations } = require('./services/videoService');

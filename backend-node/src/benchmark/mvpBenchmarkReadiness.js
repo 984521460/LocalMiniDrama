@@ -11,6 +11,9 @@ const {
   is: OBJECT_IS,
 } = Object;
 const { ownKeys: OWN_KEYS } = Reflect;
+const {
+  SUPPORTED_MATERIALIZED_NODE_TYPES,
+} = require('../workflows/materializedNodeExecutor');
 
 const SCHEMA_VERSION = 'mvp-benchmark-readiness.v1';
 const CHECKLIST_VERSION = 'mvp-section-19.v1';
@@ -170,6 +173,21 @@ function hasFunction(root, path) {
   return typeof dataValue(current, path[path.length - 1]) === 'function';
 }
 
+function hasProductionWorkflowExecutor(runtime) {
+  if (!hasFunction(runtime, ['workflows', 'executeNode'])) return false;
+  const workflows = dataValue(runtime, 'workflows');
+  const supported = dataValue(workflows, 'supportedNodeTypes');
+  try {
+    const values = denseArraySnapshot(supported, SUPPORTED_MATERIALIZED_NODE_TYPES.length);
+    for (let index = 0; index < SUPPORTED_MATERIALIZED_NODE_TYPES.length; index += 1) {
+      if (values[index] !== SUPPORTED_MATERIALIZED_NODE_TYPES[index]) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function databaseState(readinessRepository) {
   if (!readinessRepository || typeof readinessRepository !== 'object'
     || isProxy(readinessRepository)) {
@@ -203,7 +221,7 @@ function capabilityStates(runtime, readinessRepository) {
     'database-contracts': stored.contractsReady,
     'narrative-execution': hasFunction(runtime, ['narrativeTasks', 'execute']),
     'character-candidate-execution': hasFunction(runtime, ['characterCandidates', 'complete']),
-    'workflow-execution': hasFunction(runtime, ['workflows', 'executeNode']),
+    'workflow-execution': hasProductionWorkflowExecutor(runtime),
     'remote-execution': remoteReady,
     'ready-gpu-connection': stored.readyConnection,
     'h3-local-execution': hasFunction(runtime, ['h3Local', 'execute'])

@@ -18,6 +18,9 @@ const {
 const {
   createMvpBenchmarkReadinessRepository,
 } = require('../src/repositories/v2');
+const {
+  SUPPORTED_MATERIALIZED_NODE_TYPES,
+} = require('../src/workflows/materializedNodeExecutor');
 const { createMigratedV2Database, uid } = require('./helpers/v2RepositoryDatabase');
 
 function productionRuntimeFixture({ full = false } = {}) {
@@ -32,7 +35,10 @@ function productionRuntimeFixture({ full = false } = {}) {
   if (full) {
     runtime.narrativeTasks = { execute() {} };
     runtime.characterCandidates = { complete() {} };
-    runtime.workflows = { executeNode() {} };
+    runtime.workflows = {
+      executeNode() {},
+      supportedNodeTypes: SUPPORTED_MATERIALIZED_NODE_TYPES,
+    };
     runtime.h3Local = { execute() {} };
     runtime.audio = { tts: { execute() {} } };
   }
@@ -141,6 +147,63 @@ test('readiness fails closed when a production component is only partially assem
     'blocked',
   );
   assert.equal(proxyReads, 0);
+
+  const executeOnly = createMvpBenchmarkReadiness(readinessOptions({
+    workflows: { executeNode() {} },
+  }, database));
+  assert.equal(
+    executeOnly.capabilities.find((item) => item.id === 'workflow-execution').status,
+    'blocked',
+  );
+
+  const reordered = createMvpBenchmarkReadiness(readinessOptions({
+    workflows: {
+      executeNode() {},
+      supportedNodeTypes: [...SUPPORTED_MATERIALIZED_NODE_TYPES].reverse(),
+    },
+  }, database));
+  assert.equal(
+    reordered.capabilities.find((item) => item.id === 'workflow-execution').status,
+    'blocked',
+  );
+
+  let supportedProxyReads = 0;
+  const supportedProxy = new Proxy([], {
+    get() {
+      supportedProxyReads += 1;
+      throw new Error('synthetic-supported-types-sentinel');
+    },
+    getOwnPropertyDescriptor() {
+      supportedProxyReads += 1;
+      throw new Error('synthetic-supported-types-sentinel');
+    },
+  });
+  const hostileSupported = createMvpBenchmarkReadiness(readinessOptions({
+    workflows: { executeNode() {}, supportedNodeTypes: supportedProxy },
+  }, database));
+  assert.equal(
+    hostileSupported.capabilities.find((item) => item.id === 'workflow-execution').status,
+    'blocked',
+  );
+  assert.equal(supportedProxyReads, 0);
+
+  let supportedAccessorReads = 0;
+  const workflowWithAccessor = { executeNode() {} };
+  Object.defineProperty(workflowWithAccessor, 'supportedNodeTypes', {
+    enumerable: true,
+    get() {
+      supportedAccessorReads += 1;
+      throw new Error('synthetic-supported-types-sentinel');
+    },
+  });
+  const accessorSupported = createMvpBenchmarkReadiness(readinessOptions({
+    workflows: workflowWithAccessor,
+  }, database));
+  assert.equal(
+    accessorSupported.capabilities.find((item) => item.id === 'workflow-execution').status,
+    'blocked',
+  );
+  assert.equal(supportedAccessorReads, 0);
 });
 
 test('readiness repository reports missing database contracts without mutating the database', () => {
@@ -348,7 +411,6 @@ test('actual createApp exposes conservative readiness without external calls', a
     assert.deepEqual(body.data.blockedCapabilityIds, [
       'narrative-execution',
       'character-candidate-execution',
-      'workflow-execution',
       'ready-gpu-connection',
       'h3-local-execution',
       'tts-execution',

@@ -62,7 +62,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   const promptOverrides = promptOverridesRoutes.routes(db, log);
   const sourceDocuments = sourceDocumentRoutes(db, log);
   const narrativeReviews = narrativeReviewRoutes(db, log);
-  const workflows = workflowRoutes(db, log);
+  const workflows = workflowRoutes(db, log, runtime.workflows);
   const characterCandidates = characterCandidateRoutes(log, runtime.characterCandidates, db);
   const characterReferencePackages = characterReferencePackageRoutes(
     log,

@@ -36,6 +36,7 @@ const SOURCE_NODE_RUN_UID = uid(90009);
 const NODE_UID = uid(90010);
 const NODE_RUN_UID = uid(90011);
 const SOURCE_ASSET_UID = uid(90012);
+const SOURCE_ASSET_VERSION_UID = uid(90013);
 
 function canonicalJson(value) {
   if (value === null || typeof value === 'boolean' || typeof value === 'number') {
@@ -66,6 +67,20 @@ function seedSucceededExportNode(database, executionPlan) {
     assetType: 'video',
     status: 'draft',
   });
+  repositories.assets.addVersion({
+    uid: SOURCE_ASSET_VERSION_UID,
+    assetUid: SOURCE_ASSET_UID,
+    storageProvider: 'local',
+    logicalUri: `asset://drama/media-export/${SOURCE_ASSET_VERSION_UID}`,
+    relativePath: `projects/media-export/${SOURCE_ASSET_VERSION_UID}.mp4`,
+    sha256: createHash('sha256').update('media-export-source-video').digest('hex'),
+    mimeType: 'video/mp4',
+    width: 1920,
+    height: 1080,
+    durationMs: 1500,
+    parentUid: null,
+    status: 'ready',
+  }, { makeCurrent: true });
   database.prepare(`
     INSERT INTO canvas_nodes (
       uid,workflow_uid,node_type,position_json,config_json,
@@ -527,7 +542,12 @@ test('P8-10 records failed export without creating an output AssetVersion', asyn
   assert.equal(result.status, 'failed');
   assert.equal(result.errorCode, 'MEDIA_EXPORT_FAILED');
   assert.equal(database.prepare('SELECT count(*) FROM assets WHERE asset_type=?').pluck().get('final_video'), 0);
-  assert.equal(database.prepare('SELECT count(*) FROM asset_versions WHERE mime_type=?').pluck().get('video/mp4'), 0);
+  assert.equal(database.prepare(`
+    SELECT count(*)
+    FROM asset_versions versions
+    JOIN assets asset ON asset.uid=versions.asset_uid
+    WHERE asset.asset_type='final_video'
+  `).pluck().get(), 0);
 
   const snapshot = repositories.projectArchives.exportSnapshot(1);
   const manifest = createProjectManifest({
@@ -638,5 +658,10 @@ test('P8-10 rolls back completion when final persisted evidence validation fails
     sha256: receipt.output.sha256,
   });
   assert.equal(database.prepare('SELECT count(*) FROM assets WHERE asset_type=?').pluck().get('final_video'), 0);
-  assert.equal(database.prepare('SELECT count(*) FROM asset_versions WHERE mime_type=?').pluck().get('video/mp4'), 0);
+  assert.equal(database.prepare(`
+    SELECT count(*)
+    FROM asset_versions versions
+    JOIN assets asset ON asset.uid=versions.asset_uid
+    WHERE asset.asset_type='final_video'
+  `).pluck().get(), 0);
 });
