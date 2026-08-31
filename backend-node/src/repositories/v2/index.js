@@ -15,6 +15,9 @@ const {
   createMvpBenchmarkReadinessRepository,
 } = require('./mvpBenchmarkReadinessRepository');
 const {
+  createMvpBenchmarkSessionRepository,
+} = require('./mvpBenchmarkSessionRepository');
+const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
   V2RepositoryError,
@@ -93,6 +96,22 @@ function createLazyMediaExportRunRepository(database) {
   });
 }
 
+function createLazyMvpBenchmarkSessionRepository(database, dependencies) {
+  let target;
+  function getTarget() {
+    if (!target) target = createMvpBenchmarkSessionRepository(database, dependencies);
+    return target;
+  }
+  return Object.freeze({
+    get(...args) {
+      return getTarget().get(...args);
+    },
+    prepare(...args) {
+      return getTarget().prepare(...args);
+    },
+  });
+}
+
 function createTransactionScope(repositories) {
   let active = true;
 
@@ -166,6 +185,14 @@ function createV2Repositories(database) {
     workflows,
   });
   const audioTtsSubmissions = createAudioTtsSubmissionStore(database, { audioModeIntents });
+  const mvpBenchmarkSessions = createLazyMvpBenchmarkSessionRepository(database, {
+    assets,
+    audioModeIntents,
+    h3GenerationIntents,
+    remote,
+    runs,
+    workflows,
+  });
   const aggregates = {
     assets,
     audioModeIntents,
@@ -179,6 +206,7 @@ function createV2Repositories(database) {
     h3GenerationIntents,
     mediaExportRuns: createLazyMediaExportRunRepository(database),
     mvpBenchmarkReadiness: createMvpBenchmarkReadinessRepository(database),
+    mvpBenchmarkSessions,
     narrativeReviews,
     projectArchives: createLazyProjectArchiveRepository(database),
     remote,

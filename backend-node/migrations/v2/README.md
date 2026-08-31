@@ -224,3 +224,12 @@ can complete only from the deterministic file already present and is never
 sent to the Provider again. These two tables are local execution seals and are
 excluded from project archives; the resulting portable Audio Asset and
 AssetVersion remain part of the ordinary project media closure.
+
+Migration `0020_mvp_benchmark_sessions.sql` freezes one secret-free execution
+plan for a single drama and workflow run before any real benchmark side effect.
+The plan must cover exactly every enabled `shot.video` node with 4–6 official
+prepared H3 tasks and every enabled `audio.tts` node with its current prepared
+audio intent. SQLite and runtime bind the graph revision/hash, node runs,
+manifest identities, assets, generation-spec hashes and audio-plan hashes. The
+session is append-only local operation evidence; it is deliberately excluded
+from project archives and is not external execution or human-review evidence.

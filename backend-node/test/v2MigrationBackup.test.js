@@ -40,7 +40,7 @@ test('startup creates and verifies a recoverable pre-v2 database backup before m
   assert.equal(backup.prepare('SELECT value FROM legacy_probe').pluck().get(), 'before-v2');
   assert.equal(backup.prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations'").pluck().get(), 0);
   backup.close();
-  assert.equal(database.prepare('SELECT count(*) FROM schema_migrations').pluck().get(), 19);
+  assert.equal(database.prepare('SELECT count(*) FROM schema_migrations').pluck().get(), 20);
 
   const firstBackupStat = fs.statSync(paths.database);
   runMigrationsAndEnsure(database);

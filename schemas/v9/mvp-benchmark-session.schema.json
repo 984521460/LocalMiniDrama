@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-session.schema.json",
+  "title": "MVP benchmark execution session plan",
+  "$comment": "This immutable, secret-free plan only binds one prepared workflow to its complete H3 and TTS execution set. It is not external execution evidence, human audiovisual approval, or an MVP completion receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "uid",
+    "dramaUid",
+    "workflowRunUid",
+    "workflowUid",
+    "graphHash",
+    "graphRevision",
+    "h3Tasks",
+    "audioIntents",
+    "planSha256",
+    "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-session-plan.v1" },
+    "uid": { "$ref": "#/$defs/uuid" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "workflowRunUid": { "$ref": "#/$defs/uuid" },
+    "workflowUid": { "$ref": "#/$defs/uuid" },
+    "graphHash": { "$ref": "#/$defs/sha256" },
+    "graphRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "h3Tasks": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/h3Task" }
+    },
+    "audioIntents": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/audioIntent" }
+    },
+    "planSha256": { "$ref": "#/$defs/sha256" },
+    "createdAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "h3Task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskUid",
+        "intentUid",
+        "nodeRunUid",
+        "nodeUid",
+        "assetUid",
+        "manifestUid",
+        "generationSpecSha256",
+        "planEvidenceSha256"
+      ],
+      "properties": {
+        "taskUid": { "$ref": "#/$defs/uuid" },
+        "intentUid": { "$ref": "#/$defs/uuid" },
+        "nodeRunUid": { "$ref": "#/$defs/uuid" },
+        "nodeUid": { "$ref": "#/$defs/uuid" },
+        "assetUid": { "$ref": "#/$defs/uuid" },
+        "manifestUid": { "$ref": "#/$defs/uuid" },
+        "generationSpecSha256": { "$ref": "#/$defs/sha256" },
+        "planEvidenceSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "audioIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intentUid", "nodeRunUid", "nodeUid", "planSha256"],
+      "properties": {
+        "intentUid": { "$ref": "#/$defs/uuid" },
+        "nodeRunUid": { "$ref": "#/$defs/uuid" },
+        "nodeUid": { "$ref": "#/$defs/uuid" },
+        "planSha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

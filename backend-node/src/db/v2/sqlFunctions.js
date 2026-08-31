@@ -25,11 +25,72 @@ const {
 } = require('../../media/mediaExportExecutionPlan');
 const { parseMediaExportReceiptRecord } = require('../../media/mediaExportReceipt');
 const { validateWorkflowExecutionPlan } = require('../../workflows/executionPlan');
+const {
+  parseMvpBenchmarkSessionPlan,
+  parseMvpBenchmarkSessionRequest,
+  serializeMvpBenchmarkSessionJson,
+} = require('../../benchmark/mvpBenchmarkSession');
 
 const MAXIMUM_SPEC_BYTES = 1024 * 1024;
 const MAXIMUM_SEMANTIC_BYTES = 1024 * 1024;
 const MAXIMUM_MANIFEST_JSON_BYTES = 1024 * 1024;
 const OFFICIAL_H3_MANIFEST = createH3TextToVideoWorkflowBundle().manifest;
+const ARRAY_IS_ARRAY = Array.isArray;
+const JSON_STRINGIFY = JSON.stringify;
+const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const OBJECT_HAS_OWN = Object.hasOwn;
+const REFLECT_APPLY = Reflect.apply;
+const REFLECT_OWN_KEYS = Reflect.ownKeys;
+
+function serializeParsedJson(value, depth = 0) {
+  if (depth > 128) throw new TypeError('JSON depth is invalid');
+  if (value === null) return 'null';
+  if (typeof value === 'string') return REFLECT_APPLY(JSON_STRINGIFY, JSON, [value]);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return REFLECT_APPLY(JSON_STRINGIFY, JSON, [value]);
+  }
+  if (ARRAY_IS_ARRAY(value)) {
+    if (OBJECT_GET_PROTOTYPE_OF(value) !== Array.prototype) throw new TypeError('JSON array is invalid');
+    const descriptors = OBJECT_GET_OWN_PROPERTY_DESCRIPTORS(value);
+    const length = descriptors.length?.value;
+    if (!Number.isSafeInteger(length) || length < 0
+      || REFLECT_OWN_KEYS(descriptors).length !== length + 1) {
+      throw new TypeError('JSON array is invalid');
+    }
+    let output = '[';
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (!descriptor?.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
+        throw new TypeError('JSON array is invalid');
+      }
+      if (index > 0) output += ',';
+      output += serializeParsedJson(descriptor.value, depth + 1);
+    }
+    return `${output}]`;
+  }
+  if (!value || typeof value !== 'object') throw new TypeError('JSON value is invalid');
+  const prototype = OBJECT_GET_PROTOTYPE_OF(value);
+  if (prototype !== Object.prototype && prototype !== null) throw new TypeError('JSON object is invalid');
+  const descriptors = OBJECT_GET_OWN_PROPERTY_DESCRIPTORS(value);
+  const keys = REFLECT_OWN_KEYS(descriptors);
+  let output = '{';
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    const descriptor = descriptors[key];
+    if (typeof key !== 'string' || !descriptor?.enumerable
+      || !OBJECT_HAS_OWN(descriptor, 'value')) {
+      throw new TypeError('JSON object is invalid');
+    }
+    if (index > 0) output += ',';
+    output += `${REFLECT_APPLY(JSON_STRINGIFY, JSON, [key])}:${serializeParsedJson(
+      descriptor.value,
+      depth + 1,
+    )}`;
+  }
+  return `${output}}`;
+}
 
 function canonicalJson(value, maximumBytes = MAXIMUM_MANIFEST_JSON_BYTES) {
   if (typeof value !== 'string'
@@ -360,6 +421,112 @@ function bgmLicenseValid(
   }
 }
 
+function mvpBenchmarkSessionRecordValid(
+  uid,
+  dramaUid,
+  workflowRunUid,
+  requestJson,
+  planJson,
+  planSha256,
+  createdAtEpochMs,
+) {
+  try {
+    if (typeof requestJson !== 'string' || Buffer.byteLength(requestJson, 'utf8') > 64 * 1024
+      || typeof planJson !== 'string' || Buffer.byteLength(planJson, 'utf8') > 1024 * 1024) {
+      return 0;
+    }
+    const requestValue = JSON.parse(requestJson);
+    const planValue = JSON.parse(planJson);
+    const request = parseMvpBenchmarkSessionRequest(
+      requestValue,
+      'MVP_BENCHMARK_SESSION_DATA_INVALID',
+    );
+    const plan = parseMvpBenchmarkSessionPlan(planValue);
+    if (serializeMvpBenchmarkSessionJson(request) !== requestJson
+      || serializeMvpBenchmarkSessionJson(plan) !== planJson
+      || request.uid !== uid || plan.uid !== uid
+      || request.dramaUid !== dramaUid || plan.dramaUid !== dramaUid
+      || request.workflowRunUid !== workflowRunUid || plan.workflowRunUid !== workflowRunUid
+      || request.createdAtEpochMs !== createdAtEpochMs
+      || plan.createdAtEpochMs !== createdAtEpochMs || plan.planSha256 !== planSha256
+      || request.h3TaskUids.length !== plan.h3Tasks.length
+      || request.audioIntentUids.length !== plan.audioIntents.length) return 0;
+    const h3 = [];
+    const audio = [];
+    for (let index = 0; index < plan.h3Tasks.length; index += 1) h3[index] = plan.h3Tasks[index].taskUid;
+    for (let index = 0; index < plan.audioIntents.length; index += 1) {
+      audio[index] = plan.audioIntents[index].intentUid;
+    }
+    for (let index = 1; index < h3.length; index += 1) {
+      const current = h3[index];
+      let position = index;
+      while (position > 0 && h3[position - 1] > current) {
+        h3[position] = h3[position - 1];
+        position -= 1;
+      }
+      h3[position] = current;
+    }
+    for (let index = 1; index < audio.length; index += 1) {
+      const current = audio[index];
+      let position = index;
+      while (position > 0 && audio[position - 1] > current) {
+        audio[position] = audio[position - 1];
+        position -= 1;
+      }
+      audio[position] = current;
+    }
+    for (let index = 0; index < h3.length; index += 1) {
+      if (h3[index] !== request.h3TaskUids[index]) return 0;
+    }
+    for (let index = 0; index < audio.length; index += 1) {
+      if (audio[index] !== request.audioIntentUids[index]) return 0;
+    }
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
+function mvpBenchmarkSessionSourceGraphValid(graphJson, planJson) {
+  try {
+    if (typeof graphJson !== 'string' || Buffer.byteLength(graphJson, 'utf8') > 16 * 1024 * 1024
+      || typeof planJson !== 'string' || Buffer.byteLength(planJson, 'utf8') > 1024 * 1024) return 0;
+    const graphValue = JSON.parse(graphJson);
+    const planValue = JSON.parse(planJson);
+    const graph = validateWorkflowExecutionPlan(graphValue);
+    const plan = parseMvpBenchmarkSessionPlan(planValue);
+    if (serializeParsedJson(graphValue) !== graphJson
+      || serializeMvpBenchmarkSessionJson(plan) !== planJson
+      || graph.workflowUid !== plan.workflowUid || graph.graphHash !== plan.graphHash
+      || graph.graphRevision !== plan.graphRevision) return 0;
+    const videoNodeUids = [];
+    const audioNodeUids = [];
+    for (let order = 0; order < graph.topologicalOrder.length; order += 1) {
+      const nodeUid = graph.topologicalOrder[order];
+      let node = null;
+      for (let index = 0; index < graph.snapshot.nodes.length; index += 1) {
+        if (graph.snapshot.nodes[index].uid !== nodeUid) continue;
+        if (node !== null) return 0;
+        node = graph.snapshot.nodes[index];
+      }
+      if (node?.enabled !== true) continue;
+      if (node.nodeType === 'shot.video') videoNodeUids[videoNodeUids.length] = node.uid;
+      if (node.nodeType === 'audio.tts') audioNodeUids[audioNodeUids.length] = node.uid;
+    }
+    if (videoNodeUids.length !== plan.h3Tasks.length
+      || audioNodeUids.length !== plan.audioIntents.length) return 0;
+    for (let index = 0; index < videoNodeUids.length; index += 1) {
+      if (videoNodeUids[index] !== plan.h3Tasks[index].nodeUid) return 0;
+    }
+    for (let index = 0; index < audioNodeUids.length; index += 1) {
+      if (audioNodeUids[index] !== plan.audioIntents[index].nodeUid) return 0;
+    }
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
 function registerV2SqlFunctions(database) {
   database.function(
     'audio_mode_narrative_emotion',
@@ -476,6 +643,16 @@ function registerV2SqlFunctions(database) {
       })
     ),
   );
+  database.function(
+    'mvp_benchmark_session_record_valid',
+    { deterministic: true },
+    mvpBenchmarkSessionRecordValid,
+  );
+  database.function(
+    'mvp_benchmark_session_source_graph_valid',
+    { deterministic: true },
+    mvpBenchmarkSessionSourceGraphValid,
+  );
 }
 
 module.exports = Object.freeze({
@@ -493,5 +670,7 @@ module.exports = Object.freeze({
   mediaExportIsoTimestampValid,
   mediaExportReceiptCompletedIso,
   mediaExportReceiptMatchesPlan,
+  mvpBenchmarkSessionRecordValid,
+  mvpBenchmarkSessionSourceGraphValid,
   registerV2SqlFunctions,
 });

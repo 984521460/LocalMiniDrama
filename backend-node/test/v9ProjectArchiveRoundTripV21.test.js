@@ -276,4 +276,5 @@ test('a complete migrated project round-trips through a clean database as normal
   assert.equal(target.prepare('SELECT count(*) FROM remote_tasks').pluck().get(), 0);
   assert.equal(target.prepare('SELECT count(*) FROM h3_api_submissions').pluck().get(), 0);
   assert.equal(target.prepare('SELECT count(*) FROM h3_generation_intents').pluck().get(), 0);
+  assert.equal(target.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
 });
