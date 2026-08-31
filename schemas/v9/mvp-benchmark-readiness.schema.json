@@ -1,0 +1,1673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-readiness.schema.json",
+  "title": "MVP benchmark production-readiness projection v1",
+  "$comment": "This is a readiness projection, never an MVP completion receipt. Runtime derives and then revalidates every capability against the current controlled production composition and migrated database; P9-09C/D must provide project, external, and human evidence before any completion contract can exist.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "checklistVersion",
+    "readyForBenchmark",
+    "mvpComplete",
+    "capabilities",
+    "blockedCapabilityIds",
+    "pendingCapabilityIds",
+    "checklist"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "mvp-benchmark-readiness.v1"
+    },
+    "checklistVersion": {
+      "const": "mvp-section-19.v1"
+    },
+    "readyForBenchmark": {
+      "type": "boolean"
+    },
+    "mvpComplete": {
+      "const": false
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "prefixItems": [
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "database-contracts",
+                "kind": "local",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "database-contracts",
+                "kind": "local",
+                "status": "blocked",
+                "blockerCode": "MVP_DATABASE_CONTRACTS_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "narrative-execution",
+                "kind": "local",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "narrative-execution",
+                "kind": "local",
+                "status": "blocked",
+                "blockerCode": "MVP_NARRATIVE_EXECUTOR_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "character-candidate-execution",
+                "kind": "local",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "character-candidate-execution",
+                "kind": "local",
+                "status": "blocked",
+                "blockerCode": "MVP_CHARACTER_CANDIDATE_EXECUTOR_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "workflow-execution",
+                "kind": "local",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "workflow-execution",
+                "kind": "local",
+                "status": "blocked",
+                "blockerCode": "MVP_WORKFLOW_EXECUTOR_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "remote-execution",
+                "kind": "local",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "remote-execution",
+                "kind": "local",
+                "status": "blocked",
+                "blockerCode": "MVP_REMOTE_EXECUTION_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "ready-gpu-connection",
+                "kind": "external",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "ready-gpu-connection",
+                "kind": "external",
+                "status": "blocked",
+                "blockerCode": "MVP_READY_GPU_CONNECTION_REQUIRED"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "h3-local-execution",
+                "kind": "external",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "h3-local-execution",
+                "kind": "external",
+                "status": "blocked",
+                "blockerCode": "MVP_H3_LOCAL_EXECUTION_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "tts-execution",
+                "kind": "external",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "tts-execution",
+                "kind": "external",
+                "status": "blocked",
+                "blockerCode": "MVP_TTS_EXECUTION_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "media-export",
+                "kind": "local",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "media-export",
+                "kind": "local",
+                "status": "blocked",
+                "blockerCode": "MVP_MEDIA_EXPORT_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "const": {
+                "id": "project-archive-v21",
+                "kind": "local",
+                "status": "ready",
+                "blockerCode": null
+              }
+            },
+            {
+              "const": {
+                "id": "project-archive-v21",
+                "kind": "local",
+                "status": "blocked",
+                "blockerCode": "MVP_PROJECT_ARCHIVE_V21_UNAVAILABLE"
+              }
+            }
+          ]
+        },
+        {
+          "const": {
+            "id": "windows-release-evidence",
+            "kind": "release",
+            "status": "pending",
+            "blockerCode": "MVP_WINDOWS_RELEASE_EVIDENCE_PENDING"
+          }
+        },
+        {
+          "const": {
+            "id": "human-av-review",
+            "kind": "human",
+            "status": "pending",
+            "blockerCode": "MVP_HUMAN_AV_REVIEW_PENDING"
+          }
+        }
+      ],
+      "items": false
+    },
+    "blockedCapabilityIds": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "database-contracts",
+          "narrative-execution",
+          "character-candidate-execution",
+          "workflow-execution",
+          "remote-execution",
+          "ready-gpu-connection",
+          "h3-local-execution",
+          "tts-execution",
+          "media-export",
+          "project-archive-v21"
+        ]
+      }
+    },
+    "pendingCapabilityIds": {
+      "const": [
+        "windows-release-evidence",
+        "human-av-review"
+      ]
+    },
+    "checklist": {
+      "type": "array",
+      "minItems": 34,
+      "maxItems": 34,
+      "prefixItems": [
+        {
+          "const": {
+            "id": "windows-package-start",
+            "section": "function",
+            "evidenceKind": "system-test",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "source-import-encoding",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "source-selection",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "source-evidence-trace",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "facts-decision-separation",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "narrative-sixty-seconds",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "script-shot-schema",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "character-four-candidates",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "character-lock-reference-pack",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "scene-prop-version-bindings",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "workflow-canvas-roundtrip-execution",
+            "section": "function",
+            "evidenceKind": "localhost-and-project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "remote-ssh-sftp-tunnel",
+            "section": "function",
+            "evidenceKind": "external-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "comfy-health-dependencies",
+            "section": "function",
+            "evidenceKind": "external-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "storyboard-image-generation",
+            "section": "function",
+            "evidenceKind": "project-media-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "h3-local-video-generation",
+            "section": "function",
+            "evidenceKind": "project-media-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "character-voice-tts",
+            "section": "function",
+            "evidenceKind": "project-media-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "subtitle-final-audio",
+            "section": "function",
+            "evidenceKind": "project-media-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "bgm-replace-ducking",
+            "section": "function",
+            "evidenceKind": "project-media-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "shot-reordering",
+            "section": "function",
+            "evidenceKind": "project-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "final-1080p-export",
+            "section": "function",
+            "evidenceKind": "project-media-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "uuid-entities",
+            "section": "reliability",
+            "evidenceKind": "database-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "asset-logical-uri-version",
+            "section": "reliability",
+            "evidenceKind": "database-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "immutable-generation-results",
+            "section": "reliability",
+            "evidenceKind": "database-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "archive-v21-roundtrip",
+            "section": "reliability",
+            "evidenceKind": "roundtrip-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "secret-free-persistence",
+            "section": "reliability",
+            "evidenceKind": "scan-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "remote-prompt-stage",
+            "section": "reliability",
+            "evidenceKind": "database-evidence",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "startup-recovery",
+            "section": "reliability",
+            "evidenceKind": "restart-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "failure-not-complete",
+            "section": "reliability",
+            "evidenceKind": "fault-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "engineering-gates",
+            "section": "quality",
+            "evidenceKind": "test-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "same-project-full-run",
+            "section": "quality",
+            "evidenceKind": "benchmark-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "final-video-decode",
+            "section": "quality",
+            "evidenceKind": "media-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "human-subtitle-sync-bgm",
+            "section": "quality",
+            "evidenceKind": "human-review",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "licenses-and-sources",
+            "section": "quality",
+            "evidenceKind": "license-receipt",
+            "status": "pending"
+          }
+        },
+        {
+          "const": {
+            "id": "accepted-residual-risks",
+            "section": "quality",
+            "evidenceKind": "approval",
+            "status": "pending"
+          }
+        }
+      ],
+      "items": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "readyForBenchmark": {
+            "const": true
+          }
+        },
+        "required": [
+          "readyForBenchmark"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      },
+      "then": {
+        "properties": {
+          "readyForBenchmark": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "database-contracts"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "database-contracts"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "narrative-execution"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "narrative-execution"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "character-candidate-execution"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "character-candidate-execution"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "workflow-execution"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "workflow-execution"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "remote-execution"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "remote-execution"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "ready-gpu-connection"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "ready-gpu-connection"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "h3-local-execution"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "h3-local-execution"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "tts-execution"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "tts-execution"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "media-export"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "media-export"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "contains": {
+              "const": "project-archive-v21"
+            },
+            "minContains": 1
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "prefixItems": [
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {},
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "ready"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              {},
+              {}
+            ],
+            "items": false
+          }
+        },
+        "required": [
+          "capabilities"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockedCapabilityIds": {
+            "type": "array",
+            "not": {
+              "contains": {
+                "const": "project-archive-v21"
+              }
+            }
+          }
+        },
+        "required": [
+          "blockedCapabilityIds"
+        ]
+      }
+    }
+  ]
+}

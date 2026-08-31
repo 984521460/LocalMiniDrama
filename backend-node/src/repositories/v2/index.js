@@ -10,6 +10,9 @@ const { createGenerationHistoryRepository } = require('./generationHistoryReposi
 const { createH3GenerationIntentRepository } = require('./h3GenerationIntentRepository');
 const { createMediaExportRunRepository } = require('./mediaExportRunRepository');
 const {
+  createMvpBenchmarkReadinessRepository,
+} = require('./mvpBenchmarkReadinessRepository');
+const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
   V2RepositoryError,
@@ -154,6 +157,7 @@ function createV2Repositories(database) {
     generationHistory,
     h3GenerationIntents,
     mediaExportRuns: createLazyMediaExportRunRepository(database),
+    mvpBenchmarkReadiness: createMvpBenchmarkReadinessRepository(database),
     narrativeReviews,
     projectArchives: createLazyProjectArchiveRepository(database),
     remote,
@@ -204,5 +208,6 @@ module.exports = {
   V2RepositoryDataError,
   V2RepositoryError,
   V2RepositoryNotFoundError,
+  createMvpBenchmarkReadinessRepository,
   createV2Repositories,
 };
