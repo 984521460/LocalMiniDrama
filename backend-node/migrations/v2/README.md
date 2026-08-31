@@ -233,3 +233,17 @@ audio intent. SQLite and runtime bind the graph revision/hash, node runs,
 manifest identities, assets, generation-spec hashes and audio-plan hashes. The
 session is append-only local operation evidence; it is deliberately excluded
 from project archives and is not external execution or human-review evidence.
+
+Migration `0021_mvp_benchmark_external_authorizations.sql` stores at most one
+immutable, secret-free external authorization for a frozen benchmark session.
+It binds the current ready connection evidence used by every prepared H3 task,
+a CNY-fen cost ceiling, a one-attempt-per-item limit, a maximum 24-hour window,
+session-only data scope, and mandatory instance return after terminal state or
+expiry. The trusted RTX 4090 class and Phase 7 environment digest are recorded
+as requirements: the authorization explicitly requires a separate live
+environment check before any external execution and does not claim that such a
+check, a Provider call, media generation, or human review has happened. This
+local authorization is excluded from project archives. Until a later stage
+adds and verifies live-environment, atomic cost, and one-attempt reservation,
+all H3 tasks and audio intents reserved by a benchmark session remain blocked
+at the production remote/H3/TTS execution boundaries before side effects.

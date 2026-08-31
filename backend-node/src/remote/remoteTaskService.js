@@ -3,6 +3,9 @@
 const crypto = require('node:crypto');
 const { types: { isProxy } } = require('node:util');
 
+const {
+  isMvpBenchmarkExternalAuthorizationError,
+} = require('../benchmark/mvpBenchmarkExternalAuthorization');
 const { raceNativePromise } = require('../integrations/comfyui/asyncControl');
 const {
   V2RepositoryConflictError,
@@ -62,7 +65,10 @@ function exactObject(value, required, optional = []) {
 function configuration(value) {
   const input = exactObject(value, [
     'repository', 'manifestRepository',
-  ], ['client', 'dependencyChecker', 'remoteClient', 'createUid', 'now', 'timeoutMs']);
+  ], [
+    'client', 'dependencyChecker', 'remoteClient', 'executionGate',
+    'createUid', 'now', 'timeoutMs',
+  ]);
   const timeoutMs = input.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : input.timeoutMs;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
     throw new TypeError('Remote task service configuration is invalid');
@@ -91,6 +97,9 @@ function configuration(value) {
       [input.client, ['submitPrompt', 'getPromptState', 'queueSnapshot']],
       [input.dependencyChecker, ['requireReady']],
     );
+  }
+  if (input.executionGate !== undefined) {
+    methods.push([input.executionGate, ['assertH3TaskExecutionOpen']]);
   }
   const captured = [];
   for (const [target, names] of methods) {
@@ -121,6 +130,9 @@ function configuration(value) {
     client: connectionAware ? null : captured[2],
     dependencyChecker: connectionAware ? null : captured[3],
     remoteClient: connectionAware ? captured[2] : null,
+    executionGate: input.executionGate === undefined
+      ? null
+      : captured[connectionAware ? 3 : 4],
     createUid,
     now,
     timeoutMs,
@@ -358,7 +370,7 @@ function createRemoteTaskService(options) {
   const configured = configuration(options);
   const {
     repository, manifestRepository, client, dependencyChecker, remoteClient,
-    createUid, now, timeoutMs,
+    executionGate, createUid, now, timeoutMs,
   } = configured;
   const activeSubmissions = new Set();
 
@@ -380,8 +392,16 @@ function createRemoteTaskService(options) {
     return callSync(repository, 'getFormalTask', [taskUid(uid)]);
   }
 
+  function assertExecutionOpen(uid) {
+    const parsedUid = taskUid(uid);
+    if (executionGate) {
+      callSync(executionGate, 'assertH3TaskExecutionOpen', [parsedUid]);
+    }
+    return parsedUid;
+  }
+
   function transition(uidValue, value, allowedStages, nextStage, nextStatus, extra = {}) {
-    const uid = taskUid(uidValue);
+    const uid = assertExecutionOpen(uidValue);
     const request = expectedVersionRequest(value);
     const current = get(uid);
     if (current.stateVersion !== request.expectedStateVersion
@@ -413,7 +433,7 @@ function createRemoteTaskService(options) {
   }
 
   function complete(uidValue, value) {
-    const uid = taskUid(uidValue);
+    const uid = assertExecutionOpen(uidValue);
     const request = outputCompletionRequest(value);
     const current = get(uid);
     if (current.stateVersion !== request.expectedStateVersion || current.stage !== 'verifying') {
@@ -464,7 +484,7 @@ function createRemoteTaskService(options) {
   }
 
   async function submit(uidValue, value) {
-    const uid = taskUid(uidValue);
+    const uid = assertExecutionOpen(uidValue);
     const submission = promptSubmission(value);
     const current = get(uid);
     if (hashRemoteTaskPrompt(submission.prompt) !== current.promptSha256) {
@@ -561,11 +581,12 @@ function createRemoteTaskService(options) {
   }
 
   function heartbeat(uidValue, value) {
+    const uid = assertExecutionOpen(uidValue);
     const input = exactObject(value, ['expectedStateVersion']);
     let heartbeatAt;
     try { heartbeatAt = now(); } catch { fail('REMOTE_TASK_UNEXPECTED'); }
     return callSync(repository, 'heartbeatFormalTask', [{
-      uid: taskUid(uidValue),
+      uid,
       expectedStateVersion: stateVersion(input.expectedStateVersion),
       heartbeatAt,
     }]);
@@ -589,7 +610,7 @@ function createRemoteTaskService(options) {
   }
 
   async function recover(uidValue) {
-    const task = get(uidValue);
+    const task = get(assertExecutionOpen(uidValue));
     if (['succeeded', 'failed', 'cancelled'].includes(task.status)) return task;
     if (activeSubmissions.has(task.uid)) return task;
     if (['prepared', 'uploading'].includes(task.stage)) {
@@ -663,7 +684,8 @@ function createRemoteTaskService(options) {
           await recover(task.uid);
           recoveredCount += 1;
         } catch (error) {
-          if (!isRemoteTaskError(error)) throw error;
+          if (!isRemoteTaskError(error)
+            && !isMvpBenchmarkExternalAuthorizationError(error)) throw error;
           failedCount += 1;
         }
         if (!Number.isSafeInteger(recoveredCount + failedCount)) {

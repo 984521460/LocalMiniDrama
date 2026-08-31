@@ -3,6 +3,9 @@
 const express = require('express');
 
 const response = require('../../response');
+const {
+  isMvpBenchmarkExternalAuthorizationError,
+} = require('../../benchmark/mvpBenchmarkExternalAuthorization');
 const { createV2Repositories } = require('../../repositories/v2');
 const {
   H3_PROFILE,
@@ -55,11 +58,17 @@ function h3Routes(log, database, runtime = {}) {
   const apiService = runtime?.apiService || null;
   const localExecution = runtime?.localExecution || null;
   const provisioned = database ? provisionH3TextToVideoManifest(database) : null;
-  const intentService = database
-    ? createH3ExecutionIntentService({ repositories: createV2Repositories(database) })
+  const repositories = database ? createV2Repositories(database) : null;
+  const intentService = repositories
+    ? createH3ExecutionIntentService({ repositories })
     : null;
+  const benchmarkExecutionGate = repositories?.mvpBenchmarkExternalAuthorizations ?? null;
 
   function handleError(res, error) {
+    if (isMvpBenchmarkExternalAuthorizationError(error)
+      && error.code === 'MVP_BENCHMARK_EXTERNAL_EXECUTION_UNAVAILABLE') {
+      return response.error(res, 409, error.code, error.message);
+    }
     if (isH3ContractError(error) || isRemoteTaskError(error)) {
       const status = STATUS_BY_CODE[error.code] || 500;
       if (status >= 500) log?.error?.('h3-operation', { code: error.code });
@@ -113,6 +122,7 @@ function h3Routes(log, database, runtime = {}) {
       );
     }
     try {
+      benchmarkExecutionGate?.assertH3TaskExecutionOpen(req.params.taskUid);
       return response.success(
         res,
         await localExecution.execute(req.params.taskUid, req.body),

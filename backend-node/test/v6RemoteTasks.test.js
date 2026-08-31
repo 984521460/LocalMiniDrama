@@ -10,6 +10,9 @@ const Ajv2020 = require('ajv/dist/2020');
 const express = require('express');
 
 const {
+  MvpBenchmarkExternalAuthorizationError,
+} = require('../src/benchmark/mvpBenchmarkExternalAuthorization');
+const {
   createRemoteTaskRequest,
   createRemoteTaskRecord,
   hashRemoteTaskPrompt,
@@ -802,6 +805,16 @@ test('remote recovery paginates a bounded snapshot and returns only aggregate co
   const service = createRemoteTaskService({
     repository,
     manifestRepository: { get() { return Object.freeze({ uid: MANIFEST_UID }); } },
+    executionGate: Object.freeze({
+      assertH3TaskExecutionOpen(taskUid) {
+        if (taskUid === tasks[0].uid) {
+          throw new MvpBenchmarkExternalAuthorizationError(
+            'MVP_BENCHMARK_EXTERNAL_EXECUTION_UNAVAILABLE',
+          );
+        }
+        return true;
+      },
+    }),
     client: {
       async submitPrompt() { throw new Error('not used'); },
       async getPromptState() { throw new Error('not used'); },
@@ -810,7 +823,7 @@ test('remote recovery paginates a bounded snapshot and returns only aggregate co
     dependencyChecker: { async requireReady() { throw new Error('not used'); } },
   });
 
-  assert.deepEqual(await service.recoverAll(), { recoveredCount: 101, failedCount: 0 });
+  assert.deepEqual(await service.recoverAll(), { recoveredCount: 100, failedCount: 1 });
   assert.deepEqual(pages.map((page) => page.limit), [100, 100]);
   assert.equal(pages[0].afterUid, null);
   assert.equal(pages[1].afterUid, tasks[99].uid);

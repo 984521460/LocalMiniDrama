@@ -306,6 +306,15 @@ test('readiness fails closed when the version-twenty benchmark session table is 
   });
 });
 
+test('readiness fails closed when the version-twenty-one external authorization table is missing', (t) => {
+  const database = createMigratedV2Database(t);
+  database.exec('DROP TABLE mvp_benchmark_external_authorizations');
+  assert.deepEqual(createMvpBenchmarkReadinessRepository(database).inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness parser binds the whole projection to the current runtime and database', (t) => {
   const database = createMigratedV2Database(t);
   const runtime = productionRuntimeFixture();

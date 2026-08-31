@@ -84,6 +84,7 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
     repository: repositories.remote,
     manifestRepository: repositories.comfyManifests,
     remoteClient,
+    executionGate: repositories.mvpBenchmarkExternalAuthorizations,
     ...(configured.remoteTimeoutMs !== undefined
       ? { timeoutMs: configured.remoteTimeoutMs }
       : {}),
@@ -96,6 +97,7 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
   const remoteCoordinator = createRemoteExecutionCoordinator({
     repositories,
     taskService: remoteTasks,
+    executionGate: repositories.mvpBenchmarkExternalAuthorizations,
     sessionService: remoteSessionService,
     transfer,
     remoteClient,

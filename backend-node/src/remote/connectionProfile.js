@@ -9,6 +9,12 @@ const HOST_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/u;
 const USERNAME = /^[A-Za-z0-9._-]{1,64}$/u;
 const WORK_DIR_SEGMENT = /^[A-Za-z0-9._-]{1,96}$/u;
 const CONNECTION_STATUSES = new Set(['unverified', 'ready', 'changed', 'disabled', 'error']);
+const JSON_STRINGIFY = JSON.stringify;
+const REFLECT_APPLY = Reflect.apply;
+
+function jsonString(value) {
+  return REFLECT_APPLY(JSON_STRINGIFY, JSON, [value]);
+}
 
 function fail() {
   throw new TypeError('Remote connection value is invalid');
@@ -237,21 +243,22 @@ function createRemoteConnectionRecord(value) {
 
 function remoteConnectionEvidenceSha256(value) {
   const persisted = createRemoteConnectionRecord(value);
-  return crypto.createHash('sha256').update(JSON.stringify({
-    contractVersion: 'remote-connection-evidence.v1',
-    uid: persisted.uid,
-    stateVersion: persisted.stateVersion,
-    status: persisted.status,
-    host: persisted.host,
-    port: persisted.port,
-    username: persisted.username,
-    hostFingerprint: persisted.hostFingerprint,
-    authMethod: persisted.authMethod,
-    comfyHost: persisted.comfyHost,
-    comfyPort: persisted.comfyPort,
-    remoteWorkDir: persisted.remoteWorkDir,
-    credentialRef: persisted.credentialRef,
-  }), 'utf8').digest('hex');
+  const evidence = '{'
+    + `"contractVersion":"remote-connection-evidence.v1",`
+    + `"uid":${jsonString(persisted.uid)},`
+    + `"stateVersion":${persisted.stateVersion},`
+    + `"status":${jsonString(persisted.status)},`
+    + `"host":${jsonString(persisted.host)},`
+    + `"port":${persisted.port},`
+    + `"username":${jsonString(persisted.username)},`
+    + `"hostFingerprint":${persisted.hostFingerprint === null ? 'null' : jsonString(persisted.hostFingerprint)},`
+    + `"authMethod":${jsonString(persisted.authMethod)},`
+    + `"comfyHost":${jsonString(persisted.comfyHost)},`
+    + `"comfyPort":${persisted.comfyPort},`
+    + `"remoteWorkDir":${jsonString(persisted.remoteWorkDir)},`
+    + `"credentialRef":${jsonString(persisted.credentialRef)}`
+    + '}';
+  return crypto.createHash('sha256').update(evidence, 'utf8').digest('hex');
 }
 
 function publicRemoteConnection(record, credentialDescriptor) {

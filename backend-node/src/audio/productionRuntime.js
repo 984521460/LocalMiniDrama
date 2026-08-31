@@ -80,9 +80,19 @@ function createProductionAudioTtsRuntime({ database, localRoot, dependencies: va
     timeoutMs,
     nowEpochMs: configured.nowEpochMs ?? Date.now,
   });
+  const guardedService = Object.freeze({
+    execute(intentUid, dramaUid) {
+      repositories.mvpBenchmarkExternalAuthorizations
+        .assertAudioIntentExecutionOpen(intentUid);
+      return service.execute(intentUid, dramaUid);
+    },
+    get(intentUid, dramaUid) {
+      return service.get(intentUid, dramaUid);
+    },
+  });
   return Object.freeze({
-    audioTts: Object.freeze({ outputs, service }),
-    audio: Object.freeze({ tts: service }),
+    audioTts: Object.freeze({ outputs, service: guardedService }),
+    audio: Object.freeze({ tts: guardedService }),
   });
 }
 

@@ -46,7 +46,7 @@ function configuration(value) {
     'repositories', 'taskService', 'sessionService', 'transfer', 'remoteClient', 'outputVerifier',
     'h3HistoryService', 'localRoot',
   ];
-  const optional = ['createUid', 'timeoutMs', 'heartbeatIntervalMs'];
+  const optional = ['executionGate', 'createUid', 'timeoutMs', 'heartbeatIntervalMs'];
   const allowed = new Set([...required, ...optional]);
   if (Reflect.ownKeys(descriptors).some((key) => typeof key !== 'string' || !allowed.has(key))
     || required.some((key) => !Object.hasOwn(descriptors, key))) {
@@ -76,6 +76,26 @@ function configuration(value) {
       throw new TypeError('Remote execution coordinator configuration is invalid');
     }
   }
+  let executionGate = null;
+  if (input.executionGate !== undefined) {
+    if (!input.executionGate || typeof input.executionGate !== 'object'
+      || isProxy(input.executionGate)) {
+      throw new TypeError('Remote execution coordinator configuration is invalid');
+    }
+    let descriptors;
+    try { descriptors = Object.getOwnPropertyDescriptors(input.executionGate); } catch {
+      throw new TypeError('Remote execution coordinator configuration is invalid');
+    }
+    const descriptor = descriptors.assertH3TaskExecutionOpen;
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')
+      || typeof descriptor.value !== 'function' || isProxy(descriptor.value)) {
+      throw new TypeError('Remote execution coordinator configuration is invalid');
+    }
+    executionGate = Object.freeze({
+      target: input.executionGate,
+      method: descriptor.value,
+    });
+  }
   const repositories = input.repositories;
   if (!repositories || typeof repositories !== 'object' || isProxy(repositories)
     || !repositories.assets || !repositories.comfyManifests || !repositories.h3GenerationIntents
@@ -98,7 +118,7 @@ function configuration(value) {
   }
   const localRoot = path.resolve(input.localRoot);
   return Object.freeze({
-    ...input, createUid, localRoot, timeoutMs, heartbeatIntervalMs,
+    ...input, executionGate, createUid, localRoot, timeoutMs, heartbeatIntervalMs,
   });
 }
 
@@ -213,6 +233,16 @@ function createRemoteExecutionCoordinator(options) {
   const configured = configuration(options);
   const runService = createWorkflowRunService({ repositories: configured.repositories });
   const active = new Map();
+
+  function assertExecutionOpen(taskUid) {
+    if (configured.executionGate) {
+      Reflect.apply(
+        configured.executionGate.method,
+        configured.executionGate.target,
+        [taskUid],
+      );
+    }
+  }
 
   async function withSession(connectionUid, connectionEvidenceSha256, operation) {
     let opened;
@@ -346,6 +376,7 @@ function createRemoteExecutionCoordinator(options) {
   }
 
   async function executeOperation(taskUid, request) {
+    assertExecutionOpen(taskUid);
     let task = configured.taskService.get(taskUid);
     if (task.stage !== 'prepared' || task.stateVersion !== request.expectedStateVersion) {
       fail('REMOTE_TASK_CONFLICT');
@@ -558,6 +589,7 @@ function createRemoteExecutionCoordinator(options) {
   }
 
   async function retryOperation(taskUid, request) {
+    assertExecutionOpen(taskUid);
     const failedTask = configured.taskService.get(taskUid);
     const classification = createRemoteTaskRetryClassification(failedTask);
     if (failedTask.stateVersion !== request.expectedStateVersion
@@ -601,6 +633,7 @@ function createRemoteExecutionCoordinator(options) {
   }
 
   function execute(taskUid, value) {
+    assertExecutionOpen(taskUid);
     const request = remoteExecutionRequest(value);
     const identity = executionIdentity(request);
     const current = active.get(taskUid);
@@ -616,6 +649,7 @@ function createRemoteExecutionCoordinator(options) {
   }
 
   function retry(taskUid, value) {
+    assertExecutionOpen(taskUid);
     const request = remoteExecutionRequest(value);
     const identity = executionIdentity(request);
     const current = active.get(taskUid);

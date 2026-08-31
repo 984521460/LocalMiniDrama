@@ -100,7 +100,7 @@ test('migration twelve installs append-only voice profile and selection tables',
     ORDER BY name
   `).pluck().all();
   assert.deepEqual(tables, ['voice_profile_selection_events', 'voice_profiles']);
-  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 20);
+  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 21);
 });
 
 test('voice profiles bind immutable character voice evidence without exposing credential refs', (t) => {

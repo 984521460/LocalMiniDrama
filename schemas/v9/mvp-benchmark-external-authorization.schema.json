@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-external-authorization.schema.json",
+  "title": "MVP Benchmark External Authorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "sessionUid", "dramaUid", "sessionPlanSha256",
+    "connectionUid", "connectionEvidenceSha256", "requiredGpuClass",
+    "requiredEnvironmentSha256", "liveEnvironmentCheck",
+    "maximumCostCnyFen", "dataScope", "h3SubmissionLimit", "ttsSubmissionLimit",
+    "perItemAttemptLimit", "instanceDisposition", "authorizedAtEpochMs",
+    "expiresAtEpochMs", "authorizationSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-external-authorization.v1" },
+    "uid": { "$ref": "#/$defs/uuidV4" },
+    "sessionUid": { "$ref": "#/$defs/uuidV4" },
+    "dramaUid": { "$ref": "#/$defs/uuidV4" },
+    "sessionPlanSha256": { "$ref": "#/$defs/sha256" },
+    "connectionUid": { "$ref": "#/$defs/uuidV4" },
+    "connectionEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "requiredGpuClass": { "const": "rtx4090-24gb" },
+    "requiredEnvironmentSha256": {
+      "const": "541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8"
+    },
+    "liveEnvironmentCheck": { "const": "required-before-execution" },
+    "maximumCostCnyFen": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "dataScope": { "const": "single-benchmark-session" },
+    "h3SubmissionLimit": { "type": "integer", "minimum": 4, "maximum": 6 },
+    "ttsSubmissionLimit": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "perItemAttemptLimit": { "const": 1 },
+    "instanceDisposition": { "const": "return-after-terminal-or-expiry" },
+    "authorizedAtEpochMs": { "$ref": "#/$defs/epochMs" },
+    "expiresAtEpochMs": { "$ref": "#/$defs/epochMs" },
+    "authorizationSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$comment": "This is an authorization requirement, not proof that the current remote environment was inspected. Runtime additionally recomputes authorizationSha256, enforces a validity duration of 1 minute through 24 hours, revalidates the immutable session plus current ready connection evidence, and requires a separate live environment check before execution.",
+  "$defs": {
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "epochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }
+  }
+}

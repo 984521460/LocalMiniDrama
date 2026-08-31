@@ -3,15 +3,22 @@
 const express = require('express');
 
 const { isAudioModeContractError } = require('../../audio/audioContract');
+const {
+  isMvpBenchmarkExternalAuthorizationError,
+} = require('../../benchmark/mvpBenchmarkExternalAuthorization');
 const response = require('../../response');
 const {
   V2RepositoryDataError,
   V2RepositoryNotFoundError,
+  createV2Repositories,
 } = require('../../repositories/v2');
 
-function audioTtsExecutionRoutes(log, runtime = {}) {
+function audioTtsExecutionRoutes(log, runtime = {}, database) {
   const router = express.Router();
   const service = runtime.service ?? null;
+  const benchmarkExecutionGate = database
+    ? createV2Repositories(database).mvpBenchmarkExternalAuthorizations
+    : null;
 
   function unavailable(res) {
     return response.error(
@@ -20,6 +27,10 @@ function audioTtsExecutionRoutes(log, runtime = {}) {
   }
 
   function handleError(res, error, event) {
+    if (isMvpBenchmarkExternalAuthorizationError(error)
+      && error.code === 'MVP_BENCHMARK_EXTERNAL_EXECUTION_UNAVAILABLE') {
+      return response.error(res, 409, error.code, error.message);
+    }
     if (error instanceof V2RepositoryNotFoundError) {
       return response.error(res, 404, 'AUDIO_TTS_EXECUTION_NOT_FOUND', 'Audio TTS execution was not found');
     }
@@ -45,6 +56,7 @@ function audioTtsExecutionRoutes(log, runtime = {}) {
   router.post('/dramas/:dramaUid/audio-tts-executions/:intentUid/execute', async (req, res) => {
     if (!service) return unavailable(res);
     try {
+      benchmarkExecutionGate?.assertAudioIntentExecutionOpen(req.params.intentUid);
       const record = await service.execute(req.params.intentUid, req.params.dramaUid);
       return response.success(res, record);
     } catch (error) {

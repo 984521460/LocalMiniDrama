@@ -189,7 +189,7 @@ function manifestFixture(workflowBytes) {
   }, workflowBytes);
 }
 
-async function createCoordinatorTransferFailureFixture(t, fault) {
+async function createCoordinatorTransferFailureFixture(t, fault, options = {}) {
   const transferFixture = createTransferFailureFixture(t, fault);
   const database = createMigratedV2Database(t);
   insertDrama(database, DRAMA_UID, 'P9 remote failure drama');
@@ -309,6 +309,7 @@ async function createCoordinatorTransferFailureFixture(t, fault) {
     async sftp() { return transferFixture.sftp; },
     async close() {},
   });
+  let sessionOpenCalls = 0;
   const inspector = createH3LocalVideoInspector({
     localRoot: transferFixture.localRoot,
     ffprobePath: 'synthetic-ffprobe',
@@ -319,8 +320,14 @@ async function createCoordinatorTransferFailureFixture(t, fault) {
   const coordinator = createRemoteExecutionCoordinator({
     repositories,
     taskService,
+    ...(options.executionGate === undefined
+      ? {}
+      : { executionGate: options.executionGate }),
     sessionService: {
-      async openSession() { return Object.freeze({ connection, session }); },
+      async openSession() {
+        sessionOpenCalls += 1;
+        return Object.freeze({ connection, session });
+      },
     },
     transfer: transferFixture.transfer,
     remoteClient: {
@@ -365,6 +372,7 @@ async function createCoordinatorTransferFailureFixture(t, fault) {
     runService,
     runUid: run.run.uid,
     nodeRunUid: run.nodes[0].uid,
+    sessionOpenCalls() { return sessionOpenCalls; },
     submitCalls() { return submitCalls; },
     taskService,
   });

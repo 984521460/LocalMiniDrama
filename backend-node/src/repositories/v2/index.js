@@ -15,6 +15,9 @@ const {
   createMvpBenchmarkReadinessRepository,
 } = require('./mvpBenchmarkReadinessRepository');
 const {
+  createMvpBenchmarkExternalAuthorizationRepository,
+} = require('./mvpBenchmarkExternalAuthorizationRepository');
+const {
   createMvpBenchmarkSessionRepository,
 } = require('./mvpBenchmarkSessionRepository');
 const {
@@ -112,6 +115,31 @@ function createLazyMvpBenchmarkSessionRepository(database, dependencies) {
   });
 }
 
+function createLazyMvpBenchmarkExternalAuthorizationRepository(database, dependencies) {
+  let target;
+  function getTarget() {
+    if (!target) target = createMvpBenchmarkExternalAuthorizationRepository(database, dependencies);
+    return target;
+  }
+  return Object.freeze({
+    assertAudioIntentExecutionOpen(...args) {
+      return getTarget().assertAudioIntentExecutionOpen(...args);
+    },
+    assertH3TaskExecutionOpen(...args) {
+      return getTarget().assertH3TaskExecutionOpen(...args);
+    },
+    get(...args) {
+      return getTarget().get(...args);
+    },
+    prepare(...args) {
+      return getTarget().prepare(...args);
+    },
+    requireActive(...args) {
+      return getTarget().requireActive(...args);
+    },
+  });
+}
+
 function createTransactionScope(repositories) {
   let active = true;
 
@@ -193,6 +221,11 @@ function createV2Repositories(database) {
     runs,
     workflows,
   });
+  const mvpBenchmarkExternalAuthorizations =
+    createLazyMvpBenchmarkExternalAuthorizationRepository(database, {
+      mvpBenchmarkSessions,
+      remote,
+    });
   const aggregates = {
     assets,
     audioModeIntents,
@@ -205,6 +238,7 @@ function createV2Repositories(database) {
     generationHistory,
     h3GenerationIntents,
     mediaExportRuns: createLazyMediaExportRunRepository(database),
+    mvpBenchmarkExternalAuthorizations,
     mvpBenchmarkReadiness: createMvpBenchmarkReadinessRepository(database),
     mvpBenchmarkSessions,
     narrativeReviews,

@@ -3,6 +3,9 @@
 const express = require('express');
 
 const response = require('../../response');
+const {
+  isMvpBenchmarkExternalAuthorizationError,
+} = require('../../benchmark/mvpBenchmarkExternalAuthorization');
 const { createRemoteTaskService } = require('../../remote/remoteTaskService');
 const { isRemoteTaskError } = require('../../remote/remoteTask');
 const { createV2Repositories } = require('../../repositories/v2');
@@ -20,13 +23,15 @@ const STATUS_BY_CODE = Object.freeze({
 
 function remoteTaskRoutes(log, runtime = {}, database) {
   const router = express.Router();
+  const repositories = database ? createV2Repositories(database) : null;
+  const benchmarkExecutionGate = repositories?.mvpBenchmarkExternalAuthorizations ?? null;
   let service = runtime.remoteTasks || null;
   const coordinator = runtime.remoteCoordinator || null;
   if (!service && database && runtime.comfyClient && runtime.comfyDependencyChecker) {
-    const repositories = createV2Repositories(database);
     service = createRemoteTaskService({
       repository: repositories.remote,
       manifestRepository: repositories.comfyManifests,
+      executionGate: repositories.mvpBenchmarkExternalAuthorizations,
       client: runtime.comfyClient,
       dependencyChecker: runtime.comfyDependencyChecker,
       ...(typeof runtime.createUid === 'function' ? { createUid: runtime.createUid } : {}),
@@ -43,6 +48,10 @@ function remoteTaskRoutes(log, runtime = {}, database) {
   }
 
   function handleError(res, error, event) {
+    if (isMvpBenchmarkExternalAuthorizationError(error)
+      && error.code === 'MVP_BENCHMARK_EXTERNAL_EXECUTION_UNAVAILABLE') {
+      return response.error(res, 409, error.code, error.message);
+    }
     if (isRemoteTaskError(error)) {
       const status = STATUS_BY_CODE[error.code] || 500;
       if (status >= 500) log?.error?.(event, { code: error.code });
@@ -88,6 +97,7 @@ function remoteTaskRoutes(log, runtime = {}, database) {
   router.post('/remote-tasks/:taskUid/submit', async (req, res) => {
     if (!service) return unavailable(res);
     try {
+      benchmarkExecutionGate?.assertH3TaskExecutionOpen(req.params.taskUid);
       return response.success(res, await service.submit(req.params.taskUid, req.body));
     } catch (error) {
       return handleError(res, error, 'remote-task-submit');
@@ -97,6 +107,7 @@ function remoteTaskRoutes(log, runtime = {}, database) {
   router.post('/remote-tasks/:taskUid/execute', async (req, res) => {
     if (!coordinator) return unavailable(res);
     try {
+      benchmarkExecutionGate?.assertH3TaskExecutionOpen(req.params.taskUid);
       return response.success(res, await coordinator.execute(req.params.taskUid, req.body));
     } catch (error) {
       return handleError(res, error, 'remote-task-execute');
@@ -106,6 +117,7 @@ function remoteTaskRoutes(log, runtime = {}, database) {
   router.post('/remote-tasks/:taskUid/heartbeat', async (req, res) => {
     if (!service) return unavailable(res);
     try {
+      benchmarkExecutionGate?.assertH3TaskExecutionOpen(req.params.taskUid);
       return response.success(res, await service.heartbeat(req.params.taskUid, req.body));
     } catch (error) {
       return handleError(res, error, 'remote-task-heartbeat');
@@ -124,6 +136,7 @@ function remoteTaskRoutes(log, runtime = {}, database) {
   router.post('/remote-tasks/:taskUid/retry', async (req, res) => {
     if (!coordinator || typeof coordinator.retry !== 'function') return unavailable(res);
     try {
+      benchmarkExecutionGate?.assertH3TaskExecutionOpen(req.params.taskUid);
       return response.success(res, await coordinator.retry(req.params.taskUid, req.body));
     } catch (error) {
       return handleError(res, error, 'remote-task-retry');
@@ -133,6 +146,7 @@ function remoteTaskRoutes(log, runtime = {}, database) {
   router.post('/remote-tasks/:taskUid/recover', async (req, res) => {
     if (!service) return unavailable(res);
     try {
+      benchmarkExecutionGate?.assertH3TaskExecutionOpen(req.params.taskUid);
       return response.success(res, await service.recover(req.params.taskUid));
     } catch (error) {
       return handleError(res, error, 'remote-task-recover');

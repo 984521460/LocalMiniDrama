@@ -6,7 +6,10 @@ const { createPromptSemanticVersionRecord } = require('../../assets/generationHi
 const { createH3TextToVideoWorkflowBundle } = require('../../h3/workflowBundle');
 const { createH3ExecutionBinding } = require('../../h3/executionBinding');
 const { h3HistoryMatchesIntent } = require('../../h3/historyCompletion');
-const { createRemoteConnectionRecord } = require('../../remote/connectionProfile');
+const {
+  createRemoteConnectionRecord,
+  remoteConnectionEvidenceSha256,
+} = require('../../remote/connectionProfile');
 const { canonicalUid } = require('../../audio/audioContract');
 const { createBgmLicense } = require('../../audio/bgmLicense');
 const { createBgmTrack } = require('../../audio/bgmTrack');
@@ -30,6 +33,11 @@ const {
   parseMvpBenchmarkSessionRequest,
   serializeMvpBenchmarkSessionJson,
 } = require('../../benchmark/mvpBenchmarkSession');
+const {
+  parseMvpBenchmarkExternalAuthorization,
+  parseMvpBenchmarkExternalAuthorizationRequest,
+  serializeMvpBenchmarkExternalAuthorizationJson,
+} = require('../../benchmark/mvpBenchmarkExternalAuthorization');
 
 const MAXIMUM_SPEC_BYTES = 1024 * 1024;
 const MAXIMUM_SEMANTIC_BYTES = 1024 * 1024;
@@ -527,6 +535,90 @@ function mvpBenchmarkSessionSourceGraphValid(graphJson, planJson) {
   }
 }
 
+function mvpBenchmarkExternalAuthorizationRecordValid(
+  uid,
+  sessionUid,
+  dramaUid,
+  requestJson,
+  authorizationJson,
+  authorizationSha256,
+  authorizedAtEpochMs,
+  expiresAtEpochMs,
+) {
+  try {
+    if (typeof requestJson !== 'string' || Buffer.byteLength(requestJson, 'utf8') > 64 * 1024
+      || typeof authorizationJson !== 'string'
+      || Buffer.byteLength(authorizationJson, 'utf8') > 64 * 1024) return 0;
+    const request = parseMvpBenchmarkExternalAuthorizationRequest(
+      JSON.parse(requestJson),
+      'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_DATA_INVALID',
+    );
+    const authorization = parseMvpBenchmarkExternalAuthorization(JSON.parse(authorizationJson));
+    return serializeMvpBenchmarkExternalAuthorizationJson(request) === requestJson
+      && serializeMvpBenchmarkExternalAuthorizationJson(authorization) === authorizationJson
+      && request.uid === uid && authorization.uid === uid
+      && request.sessionUid === sessionUid && authorization.sessionUid === sessionUid
+      && request.dramaUid === dramaUid && authorization.dramaUid === dramaUid
+      && request.sessionPlanSha256 === authorization.sessionPlanSha256
+      && request.connectionUid === authorization.connectionUid
+      && request.connectionEvidenceSha256 === authorization.connectionEvidenceSha256
+      && request.maximumCostCnyFen === authorization.maximumCostCnyFen
+      && authorization.authorizationSha256 === authorizationSha256
+      && authorization.authorizedAtEpochMs === authorizedAtEpochMs
+      && authorization.expiresAtEpochMs === expiresAtEpochMs
+      && authorization.expiresAtEpochMs - authorization.authorizedAtEpochMs
+        === request.validityDurationMs
+      ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function mvpBenchmarkConnectionEvidenceSha256(
+  uid,
+  name,
+  host,
+  port,
+  username,
+  hostFingerprint,
+  credentialRef,
+  status,
+  createdAt,
+  updatedAt,
+  authMethod,
+  comfyHost,
+  comfyPort,
+  remoteWorkDir,
+  environmentReportJson,
+  environmentCheckedAtEpochMs,
+  stateVersion,
+) {
+  try {
+    if (environmentReportJson !== null || environmentCheckedAtEpochMs !== null) return null;
+    return remoteConnectionEvidenceSha256(createRemoteConnectionRecord({
+      uid,
+      name,
+      host,
+      port,
+      username,
+      hostFingerprint,
+      credentialRef,
+      status,
+      createdAt,
+      updatedAt,
+      authMethod,
+      comfyHost,
+      comfyPort,
+      remoteWorkDir,
+      environmentReport: null,
+      environmentCheckedAtEpochMs: null,
+      stateVersion,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 function registerV2SqlFunctions(database) {
   database.function(
     'audio_mode_narrative_emotion',
@@ -653,6 +745,16 @@ function registerV2SqlFunctions(database) {
     { deterministic: true },
     mvpBenchmarkSessionSourceGraphValid,
   );
+  database.function(
+    'mvp_benchmark_external_authorization_record_valid',
+    { deterministic: true },
+    mvpBenchmarkExternalAuthorizationRecordValid,
+  );
+  database.function(
+    'mvp_benchmark_connection_evidence_sha256',
+    { deterministic: true },
+    mvpBenchmarkConnectionEvidenceSha256,
+  );
 }
 
 module.exports = Object.freeze({
@@ -670,6 +772,8 @@ module.exports = Object.freeze({
   mediaExportIsoTimestampValid,
   mediaExportReceiptCompletedIso,
   mediaExportReceiptMatchesPlan,
+  mvpBenchmarkConnectionEvidenceSha256,
+  mvpBenchmarkExternalAuthorizationRecordValid,
   mvpBenchmarkSessionRecordValid,
   mvpBenchmarkSessionSourceGraphValid,
   registerV2SqlFunctions,

@@ -52,7 +52,7 @@ test('migration v6 adds a registry binding and monotonic graph revision', (t) =>
   const columns = database.prepare('PRAGMA table_info(workflow_definitions)').all();
   assert.ok(columns.some((column) => column.name === 'registry_version'));
   assert.ok(columns.some((column) => column.name === 'graph_revision'));
-  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 20);
+  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 21);
 
   insertDrama(database, uid(4000));
   database.prepare(`
