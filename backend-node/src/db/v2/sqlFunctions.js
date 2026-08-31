@@ -11,6 +11,10 @@ const { canonicalUid } = require('../../audio/audioContract');
 const { createBgmLicense } = require('../../audio/bgmLicense');
 const { createBgmTrack } = require('../../audio/bgmTrack');
 const {
+  audioModeIntentRecordValid,
+  audioModeNarrativeEmotion,
+} = require('../../audio/audioModeIntent');
+const {
   parseMediaExportExecutionPlanRecord,
 } = require('../../media/mediaExportExecutionPlan');
 const { parseMediaExportReceiptRecord } = require('../../media/mediaExportReceipt');
@@ -352,6 +356,16 @@ function bgmLicenseValid(
 
 function registerV2SqlFunctions(database) {
   database.function(
+    'audio_mode_narrative_emotion',
+    { deterministic: true },
+    audioModeNarrativeEmotion,
+  );
+  database.function(
+    'audio_mode_intent_record_valid',
+    { deterministic: true },
+    audioModeIntentRecordValid,
+  );
+  database.function(
     'media_export_execution_plan_sha256',
     { deterministic: true },
     mediaExportExecutionPlanSha256,
@@ -426,6 +440,8 @@ function registerV2SqlFunctions(database) {
 }
 
 module.exports = Object.freeze({
+  audioModeIntentRecordValid,
+  audioModeNarrativeEmotion,
   bgmLicenseValid,
   bgmTrackValid,
   h3GenerationSpecSha256,

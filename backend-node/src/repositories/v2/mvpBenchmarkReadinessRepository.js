@@ -3,13 +3,13 @@
 const { assertDatabase } = require('./repositorySupport');
 
 const REQUIRED_TABLES = Object.freeze([
-  'asset_versions', 'bgm_tracks', 'canvas_edges', 'canvas_nodes', 'export_runs',
+  'asset_versions', 'audio_mode_intents', 'bgm_tracks', 'canvas_edges', 'canvas_nodes', 'export_runs',
   'media_export_run_seals', 'narrative_results', 'remote_connections', 'source_documents',
   'voice_profiles', 'workflow_definitions', 'workflow_runs',
 ]);
-const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?';
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 16;
+const EXPECTED_MIGRATION_VERSION = 17;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -53,6 +53,7 @@ function createMvpBenchmarkReadinessRepository(database) {
         REQUIRED_TABLES[9],
         REQUIRED_TABLES[10],
         REQUIRED_TABLES[11],
+        REQUIRED_TABLES[12],
       );
       const readyConnection = current.readyConnection.get();
       const migrationSummary = current.migrationSummary.get();

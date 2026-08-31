@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/audio-mode-intent.schema.json",
+  "title": "Prepared AudioModeIntent v1",
+  "$comment": "Secret-free projection of a locally persisted prepared independent-TTS intent. Runtime and repository revalidate the current narrative approval chain, continuity snapshot, active VoiceProfile and workflow audio.tts node before returning it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "dramaUid", "workflowRunUid", "nodeRunUid",
+    "shotResultUid", "scriptResultUid", "plan", "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "audio-mode-intent.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "workflowRunUid": { "$ref": "#/$defs/uid" },
+    "nodeRunUid": { "$ref": "#/$defs/uid" },
+    "shotResultUid": { "$ref": "#/$defs/uid" },
+    "scriptResultUid": { "$ref": "#/$defs/uid" },
+    "plan": { "$ref": "https://local-mini-drama.invalid/schemas/v8/audio-mode-plan.schema.json" },
+    "createdAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

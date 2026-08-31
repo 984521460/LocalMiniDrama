@@ -18,6 +18,7 @@ const NARRATIVE_RESULT_TYPES = Object.freeze({
   'episode.adaptation': 'adaptation',
   'script.structured': 'script',
   'shot.plan': 'shot',
+  'audio.tts': 'shot',
 });
 const REMOTE_ASSET_TYPES = Object.freeze({
   'shot.image': 'image',

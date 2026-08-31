@@ -93,6 +93,7 @@ const EXCLUDED_TABLES = Object.freeze([
   'remote_tasks',
   'h3_api_submissions',
   'h3_generation_intents',
+  'audio_mode_intents',
   'async_tasks',
   'schema_migrations',
   '_v2_uid_generation_candidates',

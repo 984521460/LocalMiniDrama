@@ -102,6 +102,7 @@ test('project archive catalog classifies every current record table and keeps lo
     'remote_tasks',
     'h3_api_submissions',
     'h3_generation_intents',
+    'audio_mode_intents',
     'schema_migrations',
     '_v2_uid_generation_candidates',
     'global_settings',

@@ -483,6 +483,7 @@ module.exports = Object.freeze({
   assertAudioModeExecutionReady,
   createAudioModePlan,
   createAudioModePlanVerifier,
+  parseAudioModePlanRecord,
   parseH3NativeSourceEvidence,
   requireTrustedAudioModePlan,
 });

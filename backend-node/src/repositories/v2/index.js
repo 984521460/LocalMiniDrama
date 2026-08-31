@@ -1,6 +1,7 @@
 const { types: { isPromise } } = require('node:util');
 
 const { createAssetRepository } = require('./assetRepository');
+const { createAudioModeIntentRepository } = require('./audioModeIntentRepository');
 const { createBgmTrackRepository } = require('./bgmTrackRepository');
 const { createCharacterCandidateRepository } = require('./characterCandidateRepository');
 const { createCharacterReferencePackageRepository } = require('./characterReferencePackageRepository');
@@ -137,6 +138,15 @@ function createV2Repositories(database) {
   const scenePropVersions = createScenePropVersionRepository(database);
   const sources = createSourceRepository(database);
   const narrativeApprovalGate = createNarrativeApprovalGate({ narrativeReviews, sources });
+  const runs = createRunRepository(database);
+  const workflows = createWorkflowRepository(database);
+  const voiceProfiles = createVoiceProfileRepository(database);
+  const shotContinuitySnapshots = createShotContinuitySnapshotRepository(database, {
+    characterReferencePackages,
+    characterVersions,
+    requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
+    scenePropVersions,
+  });
   const generationHistory = createGenerationHistoryRepository(database, {
     requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
   });
@@ -147,8 +157,16 @@ function createV2Repositories(database) {
     remote,
     requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
   });
+  const audioModeIntents = createAudioModeIntentRepository(database, {
+    requireApprovedNarrative: narrativeApprovalGate.requireApprovedNarrative,
+    runs,
+    shotContinuitySnapshots,
+    voiceProfiles,
+    workflows,
+  });
   const aggregates = {
     assets,
+    audioModeIntents,
     bgmTracks: createBgmTrackRepository(database),
     characterCandidates: createCharacterCandidateRepository(database),
     characterReferencePackages,
@@ -161,17 +179,12 @@ function createV2Repositories(database) {
     narrativeReviews,
     projectArchives: createLazyProjectArchiveRepository(database),
     remote,
-    runs: createRunRepository(database),
+    runs,
     scenePropVersions,
-    shotContinuitySnapshots: createShotContinuitySnapshotRepository(database, {
-      characterReferencePackages,
-      characterVersions,
-      requireApprovedShot: narrativeApprovalGate.requireApprovedShot,
-      scenePropVersions,
-    }),
+    shotContinuitySnapshots,
     sources,
-    voiceProfiles: createVoiceProfileRepository(database),
-    workflows: createWorkflowRepository(database),
+    voiceProfiles,
+    workflows,
   };
   let repositories;
 

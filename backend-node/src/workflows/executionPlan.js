@@ -19,6 +19,7 @@ const DOMAIN_REF_TYPES = Object.freeze({
   'shot.plan': 'narrative_result',
   'shot.image': 'asset',
   'shot.video': 'asset',
+  'audio.tts': 'narrative_result',
 });
 const MAX_POSITION = 1_000_000;
 

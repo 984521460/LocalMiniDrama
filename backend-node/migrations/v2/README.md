@@ -188,3 +188,16 @@ whether a fresh local binding is required. Direct VoiceProfile credential
 bindings never contain a Vault reference or secret in this sidecar; imported
 profiles remain non-executable until an explicit local rebind flow replaces
 the import placeholder under the later production activation gate.
+
+Migration `0017_audio_mode_intents.sql` stores local prepared independent-TTS
+intent records before any credential or Provider side effect. Each row binds
+one queued `audio.tts` NodeRun whose frozen execution plan is enabled and bound
+to the current approved Shot result, the Shot's directly approved Script
+upstream, exact continuity snapshots and speaker-fact Character mappings, and
+the currently active VoiceProfile selected by the node's secret-free opaque
+credential reference. Canonical request and AudioModePlan JSON plus the plan
+hash are revalidated by the SQLite UDF, insert trigger, repository write
+readback, and every later read. Public projections omit both the request and
+credential reference. These prepared operations are local execution state and
+are deliberately excluded from project archives; they create no audio file,
+AssetVersion, Vault read, Provider call, or readiness claim.
