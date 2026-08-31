@@ -6,12 +6,16 @@ const REQUIRED_TABLES = Object.freeze([
   'asset_versions', 'audio_mode_intents', 'audio_tts_execution_evidence', 'audio_tts_outputs',
   'audio_tts_submissions', 'bgm_tracks', 'canvas_edges', 'canvas_nodes', 'export_runs',
   'media_export_run_seals', 'mvp_benchmark_external_authorizations', 'mvp_benchmark_sessions',
+  'mvp_benchmark_execution_reservations', 'mvp_benchmark_live_environment_attestations',
+  'mvp_benchmark_execution_reservation_seals',
+  'mvp_benchmark_live_environment_attestation_seals',
   'narrative_results', 'remote_connections', 'source_documents',
   'voice_profiles', 'workflow_definitions', 'workflow_runs',
 ]);
-const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 21;
+const EXPECTED_MIGRATION_VERSION = 22;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -23,6 +27,10 @@ function createMvpBenchmarkReadinessRepository(database) {
         tableCount: database.prepare(`
           SELECT count(*) AS count FROM sqlite_schema
           WHERE type='table' AND name IN (${REQUIRED_TABLE_PLACEHOLDERS})
+        `).pluck(),
+        viewCount: database.prepare(`
+          SELECT count(*) AS count FROM sqlite_schema
+          WHERE type='view' AND name=?
         `).pluck(),
         readyConnection: database.prepare(`
           SELECT EXISTS(
@@ -61,11 +69,17 @@ function createMvpBenchmarkReadinessRepository(database) {
         REQUIRED_TABLES[15],
         REQUIRED_TABLES[16],
         REQUIRED_TABLES[17],
+        REQUIRED_TABLES[18],
+        REQUIRED_TABLES[19],
+        REQUIRED_TABLES[20],
+        REQUIRED_TABLES[21],
       );
       const readyConnection = current.readyConnection.get();
+      const viewCount = current.viewCount.get(REQUIRED_VIEW);
       const migrationSummary = current.migrationSummary.get();
       return Object.freeze({
         contractsReady: tableCount === REQUIRED_TABLES.length
+          && viewCount === 1
           && migrationSummary.count === EXPECTED_MIGRATION_VERSION
           && migrationSummary.min_version === EXPECTED_FIRST_MIGRATION_VERSION
           && migrationSummary.max_version === EXPECTED_MIGRATION_VERSION,

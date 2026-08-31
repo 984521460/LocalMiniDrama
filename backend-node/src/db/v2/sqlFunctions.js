@@ -38,6 +38,12 @@ const {
   parseMvpBenchmarkExternalAuthorizationRequest,
   serializeMvpBenchmarkExternalAuthorizationJson,
 } = require('../../benchmark/mvpBenchmarkExternalAuthorization');
+const {
+  parseMvpBenchmarkExecutionReservation,
+  parseMvpBenchmarkLiveEnvironmentAttestation,
+  parseMvpBenchmarkLiveEnvironmentObservation,
+  serializeMvpBenchmarkExecutionPreflightJson,
+} = require('../../benchmark/mvpBenchmarkExecutionPreflight');
 
 const MAXIMUM_SPEC_BYTES = 1024 * 1024;
 const MAXIMUM_SEMANTIC_BYTES = 1024 * 1024;
@@ -574,6 +580,86 @@ function mvpBenchmarkExternalAuthorizationRecordValid(
   }
 }
 
+function mvpBenchmarkLiveEnvironmentAttestationRecordValid(
+  uid,
+  authorizationUid,
+  sessionUid,
+  dramaUid,
+  connectionUid,
+  connectionEvidenceSha256,
+  observationJson,
+  observationSha256,
+  attestationJson,
+  attestationSha256,
+  attestedAtEpochMs,
+  expiresAtEpochMs,
+) {
+  try {
+    if (typeof observationJson !== 'string'
+      || Buffer.byteLength(observationJson, 'utf8') > 64 * 1024
+      || typeof attestationJson !== 'string'
+      || Buffer.byteLength(attestationJson, 'utf8') > 128 * 1024) return 0;
+    const observation = parseMvpBenchmarkLiveEnvironmentObservation(JSON.parse(observationJson));
+    const attestation = parseMvpBenchmarkLiveEnvironmentAttestation(JSON.parse(attestationJson));
+    return serializeMvpBenchmarkExecutionPreflightJson(observation) === observationJson
+      && serializeMvpBenchmarkExecutionPreflightJson(attestation) === attestationJson
+      && attestation.uid === uid
+      && attestation.authorizationUid === authorizationUid
+      && attestation.sessionUid === sessionUid
+      && attestation.dramaUid === dramaUid
+      && attestation.connectionUid === connectionUid
+      && attestation.connectionEvidenceSha256 === connectionEvidenceSha256
+      && observation.observationSha256 === observationSha256
+      && attestation.observation.observationSha256 === observationSha256
+      && attestation.attestationSha256 === attestationSha256
+      && attestation.attestedAtEpochMs === attestedAtEpochMs
+      && attestation.expiresAtEpochMs === expiresAtEpochMs ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function mvpBenchmarkExecutionReservationRecordValid(
+  uid,
+  authorizationUid,
+  attestationUid,
+  sessionUid,
+  dramaUid,
+  itemKind,
+  itemUid,
+  requestSha256,
+  estimateJson,
+  estimateSha256,
+  estimatedCostCnyFen,
+  reservationJson,
+  reservationSha256,
+  reservedAtEpochMs,
+) {
+  try {
+    if (typeof estimateJson !== 'string'
+      || Buffer.byteLength(estimateJson, 'utf8') > 64 * 1024
+      || typeof reservationJson !== 'string'
+      || Buffer.byteLength(reservationJson, 'utf8') > 128 * 1024) return 0;
+    const reservation = parseMvpBenchmarkExecutionReservation(JSON.parse(reservationJson));
+    return serializeMvpBenchmarkExecutionPreflightJson(reservation.estimate) === estimateJson
+      && serializeMvpBenchmarkExecutionPreflightJson(reservation) === reservationJson
+      && reservation.uid === uid
+      && reservation.authorizationUid === authorizationUid
+      && reservation.attestationUid === attestationUid
+      && reservation.sessionUid === sessionUid
+      && reservation.dramaUid === dramaUid
+      && reservation.itemKind === itemKind
+      && reservation.itemUid === itemUid
+      && reservation.requestSha256 === requestSha256
+      && reservation.estimate.estimateSha256 === estimateSha256
+      && reservation.estimatedCostCnyFen === estimatedCostCnyFen
+      && reservation.reservationSha256 === reservationSha256
+      && reservation.reservedAtEpochMs === reservedAtEpochMs ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function mvpBenchmarkConnectionEvidenceSha256(
   uid,
   name,
@@ -755,6 +841,16 @@ function registerV2SqlFunctions(database) {
     { deterministic: true },
     mvpBenchmarkConnectionEvidenceSha256,
   );
+  database.function(
+    'mvp_benchmark_live_environment_attestation_record_valid',
+    { deterministic: true },
+    mvpBenchmarkLiveEnvironmentAttestationRecordValid,
+  );
+  database.function(
+    'mvp_benchmark_execution_reservation_record_valid',
+    { deterministic: true },
+    mvpBenchmarkExecutionReservationRecordValid,
+  );
 }
 
 module.exports = Object.freeze({
@@ -773,7 +869,9 @@ module.exports = Object.freeze({
   mediaExportReceiptCompletedIso,
   mediaExportReceiptMatchesPlan,
   mvpBenchmarkConnectionEvidenceSha256,
+  mvpBenchmarkExecutionReservationRecordValid,
   mvpBenchmarkExternalAuthorizationRecordValid,
+  mvpBenchmarkLiveEnvironmentAttestationRecordValid,
   mvpBenchmarkSessionRecordValid,
   mvpBenchmarkSessionSourceGraphValid,
   registerV2SqlFunctions,

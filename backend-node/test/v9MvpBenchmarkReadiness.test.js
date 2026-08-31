@@ -315,6 +315,34 @@ test('readiness fails closed when the version-twenty-one external authorization 
   });
 });
 
+test('readiness fails closed when any version-twenty-two preflight table is missing', (t) => {
+  const tables = [
+    'mvp_benchmark_live_environment_attestations',
+    'mvp_benchmark_execution_reservations',
+    'mvp_benchmark_live_environment_attestation_seals',
+    'mvp_benchmark_execution_reservation_seals',
+  ];
+  for (let index = 0; index < tables.length; index += 1) {
+    const database = createMigratedV2Database(t);
+    database.exec(`DROP TABLE ${tables[index]}`);
+    assert.deepEqual(createMvpBenchmarkReadinessRepository(database).inspect(), {
+      contractsReady: false,
+      readyConnection: false,
+    });
+  }
+});
+
+test('readiness fails closed when the version-twenty-two source closure view is missing', (t) => {
+  const database = createMigratedV2Database(t);
+  const repository = createMvpBenchmarkReadinessRepository(database);
+  assert.equal(repository.inspect().contractsReady, true);
+  database.exec('DROP VIEW mvp_benchmark_execution_ready_sessions');
+  assert.deepEqual(repository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness parser binds the whole projection to the current runtime and database', (t) => {
   const database = createMigratedV2Database(t);
   const runtime = productionRuntimeFixture();

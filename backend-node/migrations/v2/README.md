@@ -247,3 +247,27 @@ local authorization is excluded from project archives. Until a later stage
 adds and verifies live-environment, atomic cost, and one-attempt reservation,
 all H3 tasks and audio intents reserved by a benchmark session remain blocked
 at the production remote/H3/TTS execution boundaries before side effects.
+
+Migration `0022_mvp_benchmark_execution_preflights.sql` adds two local-only
+pre-execution evidence layers without enabling external work. A short-lived
+attestation binds the current authorization and connection evidence to the
+reviewed RTX 4090 operational projection (GPU, ComfyUI/runtime, and all seven
+model content hashes). An immutable reservation then consumes exactly one
+attempt for one frozen H3 task or TTS intent and a CNY-fen estimate from a
+captured local cost-policy adapter. SQLite rejects cross-session items,
+expired proofs, non-prepared sources, duplicates, and aggregate reservations
+above the authorization ceiling. Independent seal tables make coordinated row
+rewrites fail closed if a primary-row update guard is missing. All four tables
+are excluded from project archives and contain no endpoint, path, credential,
+Provider response, or media. Production execution remains blocked until a
+later stage wires a real live verifier, trusted estimator, terminal accounting,
+and instance return through the same gate.
+
+Both evidence INSERT gates also require the
+`mvp_benchmark_execution_ready_sessions` view. The view reconstructs the
+current D3A source closure instead of trusting the older authorization alone:
+queued workflow/node/task state, full graph identity, current RemoteConnection
+evidence, approved H3 prompt semantics, video assets, dialogue continuity, and
+the active VoiceProfile must still match the frozen session. A later approval,
+profile, connection, asset, or execution-state change therefore prevents any
+new attestation or reservation before an append-only row can be written.
