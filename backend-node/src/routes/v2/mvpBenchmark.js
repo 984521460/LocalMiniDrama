@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { types: { isProxy } } = require('node:util');
 
 const {
   createMvpBenchmarkReadiness,
@@ -20,6 +21,9 @@ const {
   isMvpBenchmarkExternalAuthorizationError,
   parseMvpBenchmarkExternalAuthorizationUid,
 } = require('../../benchmark/mvpBenchmarkExternalAuthorization');
+const {
+  isMvpBenchmarkExecutionPreflightError,
+} = require('../../benchmark/mvpBenchmarkExecutionPreflight');
 const response = require('../../response');
 
 function mvpBenchmarkRoutes(log, runtime, database) {
@@ -28,6 +32,25 @@ function mvpBenchmarkRoutes(log, runtime, database) {
   const repositories = createV2Repositories(database);
   const sessionRepository = repositories.mvpBenchmarkSessions;
   const authorizationRepository = repositories.mvpBenchmarkExternalAuthorizations;
+  const preflightRepository = repositories.mvpBenchmarkExecutionPreflights;
+
+  function preflightService() {
+    try {
+      if (!runtime || typeof runtime !== 'object' || isProxy(runtime)) return null;
+      const benchmarkRuntime = Object.getOwnPropertyDescriptor(runtime, 'mvpBenchmark')?.value;
+      if (!benchmarkRuntime || typeof benchmarkRuntime !== 'object'
+        || isProxy(benchmarkRuntime)) return null;
+      const service = benchmarkRuntime
+        && Object.getOwnPropertyDescriptor(benchmarkRuntime, 'preflight')?.value;
+      if (!service || typeof service !== 'object' || isProxy(service)) return null;
+      const prepareBatch = service
+        && Object.getOwnPropertyDescriptor(service, 'prepareBatch')?.value;
+      if (typeof prepareBatch !== 'function' || isProxy(prepareBatch)) return null;
+      return Object.freeze({ service, prepareBatch });
+    } catch {
+      return null;
+    }
+  }
 
   function sessionError(res, error) {
     if (error instanceof V2RepositoryNotFoundError) {
@@ -65,6 +88,56 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       code: 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_UNEXPECTED',
     });
     return response.error(res, 500, 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_UNEXPECTED', 'MVP benchmark external authorization operation failed');
+  }
+
+  function preflightError(res, error) {
+    if (error instanceof V2RepositoryNotFoundError) {
+      return response.error(res, 404, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_NOT_FOUND', 'MVP benchmark execution preflight was not found');
+    }
+    if (error instanceof V2RepositoryConflictError) {
+      return response.error(res, 409, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_CONFLICT', 'MVP benchmark execution preflight source state conflicts with the request');
+    }
+    if (error instanceof V2RepositoryDataError) {
+      return response.error(res, 409, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_DATA_INVALID', 'MVP benchmark execution preflight state is invalid');
+    }
+    if (isMvpBenchmarkExecutionPreflightError(error)) {
+      if (error.code === 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNAVAILABLE') {
+        return response.error(res, 503, error.code, 'MVP benchmark execution preflight is unavailable');
+      }
+      if (error.code === 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_EXPIRED') {
+        return response.error(res, 409, error.code, 'MVP benchmark execution preflight has expired');
+      }
+      return response.error(res, 400, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_INPUT_INVALID', 'MVP benchmark execution preflight request is invalid');
+    }
+    if (isMvpBenchmarkExternalAuthorizationError(error)) {
+      if (error.code === 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_EXPIRED') {
+        return response.error(res, 409, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_EXPIRED', 'MVP benchmark execution preflight has expired');
+      }
+      if (error.code === 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_DATA_INVALID') {
+        return response.error(res, 409, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_DATA_INVALID', 'MVP benchmark execution preflight state is invalid');
+      }
+      return response.error(res, 400, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_INPUT_INVALID', 'MVP benchmark execution preflight request is invalid');
+    }
+    if (error instanceof TypeError) {
+      return response.error(res, 400, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_INPUT_INVALID', 'MVP benchmark execution preflight request is invalid');
+    }
+    log?.error?.('mvp-benchmark-execution-preflight-unexpected', {
+      code: 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNEXPECTED',
+    });
+    return response.error(res, 500, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNEXPECTED', 'MVP benchmark execution preflight operation failed');
+  }
+
+  function pathAuthorization(parameters) {
+    const dramaUid = parseMvpBenchmarkExternalAuthorizationUid(parameters.dramaUid);
+    const sessionUid = parseMvpBenchmarkExternalAuthorizationUid(parameters.sessionUid);
+    const authorizationUid = parseMvpBenchmarkExternalAuthorizationUid(
+      parameters.authorizationUid,
+    );
+    const authorization = authorizationRepository.get(authorizationUid);
+    if (authorization.dramaUid !== dramaUid || authorization.sessionUid !== sessionUid) {
+      throw new V2RepositoryNotFoundError('MVP benchmark execution preflight');
+    }
+    return authorization;
   }
 
   router.get('/mvp-benchmark/readiness', (_req, res) => {
@@ -142,6 +215,43 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         return response.success(res, authorization);
       } catch (error) {
         return authorizationError(res, error);
+      }
+    },
+  );
+
+  router.post(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/preflight',
+    async (req, res) => {
+      try {
+        const authorization = pathAuthorization(req.params);
+        if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)
+          || Reflect.ownKeys(req.body).length !== 0) {
+          return response.error(res, 400, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_INPUT_INVALID', 'MVP benchmark execution preflight request is invalid');
+        }
+        const configured = preflightService();
+        if (!configured) {
+          return response.error(res, 503, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNAVAILABLE', 'MVP benchmark execution preflight is unavailable');
+        }
+        const result = await Reflect.apply(
+          configured.prepareBatch, configured.service, [authorization.uid],
+        );
+        return response.created(res, result);
+      } catch (error) {
+        return preflightError(res, error);
+      }
+    },
+  );
+
+  router.get(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/preflight',
+    (req, res) => {
+      try {
+        const authorization = pathAuthorization(req.params);
+        const batch = preflightRepository.getBatchByAuthorization(authorization.uid);
+        if (!batch) throw new V2RepositoryNotFoundError('MVP benchmark execution preflight');
+        return response.success(res, batch);
+      } catch (error) {
+        return preflightError(res, error);
       }
     },
   );

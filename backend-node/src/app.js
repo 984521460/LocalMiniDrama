@@ -11,6 +11,7 @@ const { createProductionH3Runtime } = require('./h3/productionRuntime');
 const { createProductionMediaExportRuntime } = require('./media/productionRuntime');
 const { createProductionWorkflowRuntime } = require('./workflows/productionRuntime');
 const { createProductionAudioTtsRuntime } = require('./audio/productionRuntime');
+const { createProductionMvpBenchmarkRuntime } = require('./benchmark/productionRuntime');
 const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
 const { createV2Repositories } = require('./repositories/v2');
 const { createWorkflowRunService } = require('./workflows');
@@ -18,7 +19,7 @@ const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery
 
 function createApp({
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
-  audioTtsDependencies = {},
+  audioTtsDependencies = {}, benchmarkDependencies = {},
 } = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
@@ -62,6 +63,11 @@ function createApp({
     localRoot: storageRoot,
     dependencies: audioTtsDependencies,
   });
+  const mvpBenchmarkRuntime = createProductionMvpBenchmarkRuntime({
+    database: db,
+    sessionService: remoteRuntime.remoteConnections.remoteSessionService,
+    dependencies: benchmarkDependencies,
+  });
   const runtime = Object.freeze({
     ...remoteRuntime,
     h3: h3Runtime,
@@ -69,6 +75,7 @@ function createApp({
     ...mediaExportRuntime,
     ...workflowRuntime,
     ...audioTtsRuntime,
+    mvpBenchmark: mvpBenchmarkRuntime,
   });
   const taskService = require('./services/taskService');
   const { resumeProcessingVideoGenerations } = require('./services/videoService');

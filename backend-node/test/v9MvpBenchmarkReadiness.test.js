@@ -530,6 +530,7 @@ test('actual createApp exposes conservative readiness without external calls', a
       'h3-local-execution',
     ]);
     assert.equal(typeof created.runtime.h3Local.execute, 'function');
+    assert.equal(typeof created.runtime.mvpBenchmark.preflight.prepareBatch, 'function');
 
     insertReadyConnection(created.db);
     const readyConnectionResponse = await fetch(
