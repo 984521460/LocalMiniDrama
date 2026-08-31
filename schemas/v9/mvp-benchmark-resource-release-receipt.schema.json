@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-resource-release-receipt.schema.json",
+  "title": "MVP Benchmark Resource Release Receipt",
+  "$comment": "The cross-field invariants releasedAtEpochMs >= obligation.requiredAtEpochMs and exact obligation binding are enforced by the canonical runtime validator and SQLite insert/read gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "authorizationUid", "connectionUid", "connectionEvidenceSha256",
+    "obligationSha256", "releaseEvidenceSha256", "releasedAtEpochMs", "receiptSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-resource-release-receipt.v1" },
+    "authorizationUid": { "$ref": "#/$defs/uid" },
+    "connectionUid": { "$ref": "#/$defs/uid" },
+    "connectionEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "obligationSha256": { "$ref": "#/$defs/sha256" },
+    "releaseEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "releasedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "receiptSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

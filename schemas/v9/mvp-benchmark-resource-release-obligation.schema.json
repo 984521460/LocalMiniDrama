@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-resource-release-obligation.schema.json",
+  "title": "MVP Benchmark Resource Release Obligation",
+  "$comment": "The cross-field and source invariants requiredAtEpochMs < expiresAtEpochMs and exact authorization/attestation binding are enforced by the canonical runtime validator and SQLite insert/read gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "authorizationUid", "sessionUid", "dramaUid", "connectionUid",
+    "connectionEvidenceSha256", "authorizationSha256", "firstAttestationUid",
+    "attestationSha256", "requiredAtEpochMs", "expiresAtEpochMs", "obligationSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-resource-release-obligation.v1" },
+    "authorizationUid": { "$ref": "#/$defs/uid" },
+    "sessionUid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "connectionUid": { "$ref": "#/$defs/uid" },
+    "connectionEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "authorizationSha256": { "$ref": "#/$defs/sha256" },
+    "firstAttestationUid": { "$ref": "#/$defs/uid" },
+    "attestationSha256": { "$ref": "#/$defs/sha256" },
+    "requiredAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "expiresAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "obligationSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -14,6 +14,7 @@ const { createMigratedV2Database, uid } = require('./helpers/v2RepositoryDatabas
 function coordinatorForBoundary({
   localResult = { recoveredCount: 0 },
   remoteResult = { recoveredCount: 0, failedCount: 0 },
+  benchmarkResult = { recoveredCount: 0, failedCount: 0 },
 } = {}) {
   return createStartupRecoveryCoordinator({
     legacyAsyncTasks: { recover() { return localResult; } },
@@ -22,6 +23,7 @@ function coordinatorForBoundary({
     mediaExports: { recoverInterrupted() { return { recoveredCount: 0 }; } },
     h3ApiSubmissions: { recoverInterrupted() { return { recoveredCount: 0 }; } },
     audioTtsSubmissions: { recoverInterrupted() { return { recoveredCount: 0 }; } },
+    benchmarkReleases: { recoverOpen() { return benchmarkResult; } },
     remoteTasks: { async recoverAll() { return remoteResult; } },
     log: { info() {}, warn() {} },
   });
@@ -36,6 +38,12 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
     mediaExports: { recoverInterrupted() { calls.push('media'); throw new Error('secret-path-C:/private'); } },
     h3ApiSubmissions: { recoverInterrupted() { calls.push('h3'); return { recoveredCount: 4 }; } },
     audioTtsSubmissions: { recoverInterrupted() { calls.push('tts'); return { recoveredCount: 5 }; } },
+    benchmarkReleases: {
+      recoverOpen() {
+        calls.push('benchmark-release');
+        return { recoveredCount: 0, failedCount: 1 };
+      },
+    },
     remoteTasks: {
       async recoverAll() {
         calls.push('remote');
@@ -48,15 +56,22 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
   const first = await coordinator.run();
   const second = await coordinator.run();
   assert.strictEqual(second, first);
-  assert.deepEqual(calls, ['legacy-async', 'legacy-video', 'workflow', 'media', 'h3', 'tts', 'remote']);
+  assert.deepEqual(calls, [
+    'legacy-async', 'legacy-video', 'workflow', 'media', 'h3', 'tts',
+    'benchmark-release', 'remote',
+  ]);
   assert.equal(first.schemaVersion, 'startup-recovery.v1');
   assert.equal(first.status, 'partial_failure');
   assert.deepEqual(first.families.map((family) => family.name), [
     'legacy_async_tasks', 'legacy_video_generations', 'workflow_runs',
-    'media_exports', 'h3_api_submissions', 'audio_tts_submissions', 'remote_tasks',
+    'media_exports', 'h3_api_submissions', 'audio_tts_submissions',
+    'benchmark_releases', 'remote_tasks',
   ]);
   assert.deepEqual(first.families.at(-1), {
     name: 'remote_tasks', status: 'partial_failure', recoveredCount: 1, failedCount: 1,
+  });
+  assert.deepEqual(first.families.find((family) => family.name === 'benchmark_releases'), {
+    name: 'benchmark_releases', status: 'partial_failure', recoveredCount: 0, failedCount: 1,
   });
   assert.equal(JSON.stringify(first).includes(uid(9910)), false);
   assert.doesNotMatch(JSON.stringify(first), /secret|private|taskUid|errorCode/iu);

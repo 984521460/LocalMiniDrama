@@ -9,6 +9,7 @@ const FAMILY_SPECS = Object.freeze([
   Object.freeze({ name: 'media_exports', dependency: 'mediaExports', method: 'recoverInterrupted' }),
   Object.freeze({ name: 'h3_api_submissions', dependency: 'h3ApiSubmissions', method: 'recoverInterrupted' }),
   Object.freeze({ name: 'audio_tts_submissions', dependency: 'audioTtsSubmissions', method: 'recoverInterrupted' }),
+  Object.freeze({ name: 'benchmark_releases', dependency: 'benchmarkReleases', method: 'recoverOpen', remote: true }),
   Object.freeze({ name: 'remote_tasks', dependency: 'remoteTasks', method: 'recoverAll', remote: true }),
 ]);
 const CONFIG_KEYS = Object.freeze([...FAMILY_SPECS.map((item) => item.dependency), 'log']);

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-execution-settlement.schema.json",
+  "title": "MVP Benchmark Execution Settlement",
+  "$comment": "The cross-field invariant actualCostCnyFen <= estimatedCostCnyFen is enforced by the canonical runtime validator and SQLite insert gate; JSON Schema 2020-12 cannot express this comparison.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "reservationUid", "authorizationUid", "sessionUid",
+    "dramaUid", "itemKind", "itemUid", "requestSha256", "outcome",
+    "terminalEvidenceSha256", "estimatedCostCnyFen", "actualCostCnyFen",
+    "billingEvidenceSha256", "settledAtEpochMs", "settlementSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-execution-settlement.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "reservationUid": { "$ref": "#/$defs/uid" },
+    "authorizationUid": { "$ref": "#/$defs/uid" },
+    "sessionUid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "itemKind": { "enum": ["h3", "tts"] },
+    "itemUid": { "$ref": "#/$defs/uid" },
+    "requestSha256": { "$ref": "#/$defs/sha256" },
+    "outcome": { "enum": ["succeeded", "failed", "cancelled"] },
+    "terminalEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "estimatedCostCnyFen": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "actualCostCnyFen": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "billingEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "settledAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "settlementSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "itemKind": { "const": "tts" } }, "required": ["itemKind"] },
+      "then": { "properties": { "outcome": { "const": "succeeded" } } }
+    }
+  ],
+  "$defs": {
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

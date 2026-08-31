@@ -44,6 +44,13 @@ const {
   parseMvpBenchmarkLiveEnvironmentObservation,
   serializeMvpBenchmarkExecutionPreflightJson,
 } = require('../../benchmark/mvpBenchmarkExecutionPreflight');
+const {
+  createMvpBenchmarkResourceReleaseObligation,
+  mvpBenchmarkH3TerminalEvidenceSha256,
+  parseMvpBenchmarkExecutionSettlement,
+  parseMvpBenchmarkResourceReleaseObligation,
+  parseMvpBenchmarkResourceReleaseReceipt,
+} = require('../../benchmark/mvpBenchmarkExecutionAccounting');
 
 const MAXIMUM_SPEC_BYTES = 1024 * 1024;
 const MAXIMUM_SEMANTIC_BYTES = 1024 * 1024;
@@ -705,6 +712,177 @@ function mvpBenchmarkConnectionEvidenceSha256(
   }
 }
 
+function mvpBenchmarkExecutionSettlementRecordValid(
+  uid,
+  reservationUid,
+  authorizationUid,
+  sessionUid,
+  dramaUid,
+  itemKind,
+  itemUid,
+  requestSha256,
+  outcome,
+  terminalEvidenceSha256,
+  estimatedCostCnyFen,
+  actualCostCnyFen,
+  billingEvidenceSha256,
+  settledAtEpochMs,
+  settlementJson,
+  settlementSha256,
+) {
+  try {
+    if (typeof settlementJson !== 'string'
+      || Buffer.byteLength(settlementJson, 'utf8') > 128 * 1024) return 0;
+    const settlement = parseMvpBenchmarkExecutionSettlement(JSON.parse(settlementJson));
+    return serializeMvpBenchmarkExecutionPreflightJson(settlement) === settlementJson
+      && settlement.uid === uid
+      && settlement.reservationUid === reservationUid
+      && settlement.authorizationUid === authorizationUid
+      && settlement.sessionUid === sessionUid
+      && settlement.dramaUid === dramaUid
+      && settlement.itemKind === itemKind
+      && settlement.itemUid === itemUid
+      && settlement.requestSha256 === requestSha256
+      && settlement.outcome === outcome
+      && settlement.terminalEvidenceSha256 === terminalEvidenceSha256
+      && settlement.estimatedCostCnyFen === estimatedCostCnyFen
+      && settlement.actualCostCnyFen === actualCostCnyFen
+      && settlement.billingEvidenceSha256 === billingEvidenceSha256
+      && settlement.settledAtEpochMs === settledAtEpochMs
+      && settlement.settlementSha256 === settlementSha256 ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function releaseObligationFromJson(authorizationJson, attestationJson) {
+  const authorization = parseMvpBenchmarkExternalAuthorization(JSON.parse(authorizationJson));
+  const attestation = parseMvpBenchmarkLiveEnvironmentAttestation(JSON.parse(attestationJson));
+  return createMvpBenchmarkResourceReleaseObligation({
+    authorization,
+    attestation: {
+      uid: attestation.uid,
+      authorizationUid: attestation.authorizationUid,
+      sessionUid: attestation.sessionUid,
+      dramaUid: attestation.dramaUid,
+      connectionUid: attestation.connectionUid,
+      connectionEvidenceSha256: attestation.connectionEvidenceSha256,
+      attestedAtEpochMs: attestation.attestedAtEpochMs,
+      attestationSha256: attestation.attestationSha256,
+    },
+  });
+}
+
+function mvpBenchmarkReleaseObligationJson(authorizationJson, attestationJson) {
+  try {
+    return serializeMvpBenchmarkExecutionPreflightJson(
+      releaseObligationFromJson(authorizationJson, attestationJson),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function mvpBenchmarkReleaseObligationSha256(authorizationJson, attestationJson) {
+  try { return releaseObligationFromJson(authorizationJson, attestationJson).obligationSha256; } catch {
+    return null;
+  }
+}
+
+function mvpBenchmarkReleaseObligationRecordValid(
+  authorizationUid,
+  sessionUid,
+  dramaUid,
+  connectionUid,
+  connectionEvidenceSha256,
+  authorizationSha256,
+  firstAttestationUid,
+  attestationSha256,
+  requiredAtEpochMs,
+  expiresAtEpochMs,
+  obligationJson,
+  obligationSha256,
+) {
+  try {
+    const obligation = parseMvpBenchmarkResourceReleaseObligation(JSON.parse(obligationJson));
+    return serializeMvpBenchmarkExecutionPreflightJson(obligation) === obligationJson
+      && obligation.authorizationUid === authorizationUid
+      && obligation.sessionUid === sessionUid
+      && obligation.dramaUid === dramaUid
+      && obligation.connectionUid === connectionUid
+      && obligation.connectionEvidenceSha256 === connectionEvidenceSha256
+      && obligation.authorizationSha256 === authorizationSha256
+      && obligation.firstAttestationUid === firstAttestationUid
+      && obligation.attestationSha256 === attestationSha256
+      && obligation.requiredAtEpochMs === requiredAtEpochMs
+      && obligation.expiresAtEpochMs === expiresAtEpochMs
+      && obligation.obligationSha256 === obligationSha256 ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function mvpBenchmarkReleaseReceiptRecordValid(
+  authorizationUid,
+  connectionUid,
+  connectionEvidenceSha256,
+  obligationSha256,
+  releaseEvidenceSha256,
+  releasedAtEpochMs,
+  receiptJson,
+  receiptSha256,
+) {
+  try {
+    const receipt = parseMvpBenchmarkResourceReleaseReceipt(JSON.parse(receiptJson));
+    return serializeMvpBenchmarkExecutionPreflightJson(receipt) === receiptJson
+      && receipt.authorizationUid === authorizationUid
+      && receipt.connectionUid === connectionUid
+      && receipt.connectionEvidenceSha256 === connectionEvidenceSha256
+      && receipt.obligationSha256 === obligationSha256
+      && receipt.releaseEvidenceSha256 === releaseEvidenceSha256
+      && receipt.releasedAtEpochMs === releasedAtEpochMs
+      && receipt.receiptSha256 === receiptSha256 ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function mvpBenchmarkH3TerminalEvidence(
+  uid,
+  connectionEvidenceSha256,
+  requestSha256,
+  stage,
+  status,
+  promptId,
+  outputAssetVersionUid,
+  errorCode,
+  errorPhase,
+  errorRetryable,
+  recoveryState,
+  stateVersion,
+  completedAt,
+) {
+  try {
+    return mvpBenchmarkH3TerminalEvidenceSha256({
+      uid,
+      connectionEvidenceSha256,
+      requestSha256,
+      stage,
+      status,
+      promptId,
+      outputAssetVersionUid,
+      errorCode,
+      errorPhase,
+      errorRetryable,
+      recoveryState,
+      stateVersion,
+      completedAt,
+    });
+  } catch {
+    return null;
+  }
+}
+
 function registerV2SqlFunctions(database) {
   database.function(
     'audio_mode_narrative_emotion',
@@ -851,6 +1029,36 @@ function registerV2SqlFunctions(database) {
     { deterministic: true },
     mvpBenchmarkExecutionReservationRecordValid,
   );
+  database.function(
+    'mvp_benchmark_execution_settlement_record_valid',
+    { deterministic: true },
+    mvpBenchmarkExecutionSettlementRecordValid,
+  );
+  database.function(
+    'mvp_benchmark_release_obligation_json',
+    { deterministic: true },
+    mvpBenchmarkReleaseObligationJson,
+  );
+  database.function(
+    'mvp_benchmark_release_obligation_sha256',
+    { deterministic: true },
+    mvpBenchmarkReleaseObligationSha256,
+  );
+  database.function(
+    'mvp_benchmark_release_obligation_record_valid',
+    { deterministic: true },
+    mvpBenchmarkReleaseObligationRecordValid,
+  );
+  database.function(
+    'mvp_benchmark_release_receipt_record_valid',
+    { deterministic: true },
+    mvpBenchmarkReleaseReceiptRecordValid,
+  );
+  database.function(
+    'mvp_benchmark_h3_terminal_evidence_sha256',
+    { deterministic: true },
+    mvpBenchmarkH3TerminalEvidence,
+  );
 }
 
 module.exports = Object.freeze({
@@ -870,8 +1078,13 @@ module.exports = Object.freeze({
   mediaExportReceiptMatchesPlan,
   mvpBenchmarkConnectionEvidenceSha256,
   mvpBenchmarkExecutionReservationRecordValid,
+  mvpBenchmarkExecutionSettlementRecordValid,
   mvpBenchmarkExternalAuthorizationRecordValid,
   mvpBenchmarkLiveEnvironmentAttestationRecordValid,
+  mvpBenchmarkReleaseObligationJson,
+  mvpBenchmarkReleaseObligationRecordValid,
+  mvpBenchmarkReleaseObligationSha256,
+  mvpBenchmarkReleaseReceiptRecordValid,
   mvpBenchmarkSessionRecordValid,
   mvpBenchmarkSessionSourceGraphValid,
   registerV2SqlFunctions,

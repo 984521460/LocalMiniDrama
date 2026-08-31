@@ -271,3 +271,15 @@ evidence, approved H3 prompt semantics, video assets, dialogue continuity, and
 the active VoiceProfile must still match the frozen session. A later approval,
 profile, connection, asset, or execution-state change therefore prevents any
 new attestation or reservation before an append-only row can be written.
+
+Migration `0023_mvp_benchmark_execution_accounting.sql` keeps terminal
+accounting separate from execution. Each reservation can receive at most one
+immutable settlement after its H3 task or TTS evidence is durably terminal;
+the actual CNY-fen amount is bounded by the reserved estimate and the original
+authorization ceiling. The first live attestation also creates a durable
+resource-release obligation for the original connection evidence. That
+obligation survives authorization expiry and source drift and can be closed
+only by one secret-free release receipt from a separately trusted verifier.
+Settlements, obligations, receipts, and their independent seals remain local
+operational evidence and are excluded from project archives. The migration
+does not contact, stop, or claim to have stopped a remote instance.

@@ -92,6 +92,7 @@ function createApp({
     mediaExports: mediaExportRuntime.mediaExports.service,
     h3ApiSubmissions: createH3ApiSubmissionStore(db),
     audioTtsSubmissions: recoveryRepositories.audioTtsSubmissions,
+    benchmarkReleases: recoveryRepositories.mvpBenchmarkExecutionAccounting,
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,
   });

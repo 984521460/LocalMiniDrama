@@ -343,6 +343,25 @@ test('readiness fails closed when the version-twenty-two source closure view is 
   });
 });
 
+test('readiness fails closed when any version-twenty-three accounting table is missing', (t) => {
+  const tables = [
+    'mvp_benchmark_execution_settlements',
+    'mvp_benchmark_execution_settlement_seals',
+    'mvp_benchmark_resource_release_obligations',
+    'mvp_benchmark_resource_release_obligation_seals',
+    'mvp_benchmark_resource_release_receipts',
+    'mvp_benchmark_resource_release_receipt_seals',
+  ];
+  for (let index = 0; index < tables.length; index += 1) {
+    const database = createMigratedV2Database(t);
+    database.exec(`DROP TABLE ${tables[index]}`);
+    assert.deepEqual(createMvpBenchmarkReadinessRepository(database).inspect(), {
+      contractsReady: false,
+      readyConnection: false,
+    });
+  }
+});
+
 test('readiness parser binds the whole projection to the current runtime and database', (t) => {
   const database = createMigratedV2Database(t);
   const runtime = productionRuntimeFixture();

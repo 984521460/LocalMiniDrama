@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
 const {
@@ -464,6 +465,43 @@ test('late rejections are absorbed and custom thenables are never assimilated', 
   } finally {
     process.off('unhandledRejection', onUnhandled);
   }
+});
+
+test('native Promise observation does not execute inherited constructor or species accessors', () => {
+  const modulePath = require.resolve('../src/integrations/comfyui/asyncControl');
+  const script = `
+    'use strict';
+    const { raceNativePromise } = require(${JSON.stringify(modulePath)});
+    (async () => {
+      let constructorReads = 0;
+      let speciesReads = 0;
+      const pending = Promise.resolve(1);
+      const constructorDescriptor = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor');
+      const speciesDescriptor = Object.getOwnPropertyDescriptor(Promise, Symbol.species);
+      Object.defineProperty(Promise.prototype, 'constructor', {
+        configurable: true,
+        get() { constructorReads += 1; return Promise; },
+      });
+      Object.defineProperty(Promise, Symbol.species, {
+        configurable: true,
+        get() { speciesReads += 1; return Promise; },
+      });
+      try {
+        const value = await raceNativePromise(pending, { timeoutMs: 50 });
+        process.stdout.write(JSON.stringify({ value, constructorReads, speciesReads }));
+      } finally {
+        Object.defineProperty(Promise.prototype, 'constructor', constructorDescriptor);
+        Object.defineProperty(Promise, Symbol.species, speciesDescriptor);
+      }
+    })();
+  `;
+  const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    value: 1,
+    constructorReads: 0,
+    speciesReads: 0,
+  });
 });
 
 test('input upload uses an exact safe multipart contract', async () => {

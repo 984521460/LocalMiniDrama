@@ -9,13 +9,18 @@ const REQUIRED_TABLES = Object.freeze([
   'mvp_benchmark_execution_reservations', 'mvp_benchmark_live_environment_attestations',
   'mvp_benchmark_execution_reservation_seals',
   'mvp_benchmark_live_environment_attestation_seals',
+  'mvp_benchmark_execution_settlements', 'mvp_benchmark_execution_settlement_seals',
+  'mvp_benchmark_resource_release_obligations',
+  'mvp_benchmark_resource_release_obligation_seals',
+  'mvp_benchmark_resource_release_receipts',
+  'mvp_benchmark_resource_release_receipt_seals',
   'narrative_results', 'remote_connections', 'source_documents',
   'voice_profiles', 'workflow_definitions', 'workflow_runs',
 ]);
-const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
 const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 22;
+const EXPECTED_MIGRATION_VERSION = 23;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -73,6 +78,12 @@ function createMvpBenchmarkReadinessRepository(database) {
         REQUIRED_TABLES[19],
         REQUIRED_TABLES[20],
         REQUIRED_TABLES[21],
+        REQUIRED_TABLES[22],
+        REQUIRED_TABLES[23],
+        REQUIRED_TABLES[24],
+        REQUIRED_TABLES[25],
+        REQUIRED_TABLES[26],
+        REQUIRED_TABLES[27],
       );
       const readyConnection = current.readyConnection.get();
       const viewCount = current.viewCount.get(REQUIRED_VIEW);

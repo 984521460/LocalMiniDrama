@@ -21,6 +21,9 @@ const {
   createMvpBenchmarkExecutionPreflightRepository,
 } = require('./mvpBenchmarkExecutionPreflightRepository');
 const {
+  createMvpBenchmarkExecutionAccountingRepository,
+} = require('./mvpBenchmarkExecutionAccountingRepository');
+const {
   createMvpBenchmarkSessionRepository,
 } = require('./mvpBenchmarkSessionRepository');
 const {
@@ -168,6 +171,31 @@ function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependenci
   });
 }
 
+function createLazyMvpBenchmarkExecutionAccountingRepository(database) {
+  let target;
+  function getTarget() {
+    if (!target) target = createMvpBenchmarkExecutionAccountingRepository(database);
+    return target;
+  }
+  return Object.freeze({
+    confirmRelease(...args) { return getTarget().confirmRelease(...args); },
+    getActualCostCnyFen(...args) { return getTarget().getActualCostCnyFen(...args); },
+    getReleaseObligation(...args) { return getTarget().getReleaseObligation(...args); },
+    getSettlement(...args) { return getTarget().getSettlement(...args); },
+    getSettlementByReservation(...args) {
+      return getTarget().getSettlementByReservation(...args);
+    },
+    inspectTerminalReservation(...args) {
+      return getTarget().inspectTerminalReservation(...args);
+    },
+    listOpenReleaseObligations(...args) {
+      return getTarget().listOpenReleaseObligations(...args);
+    },
+    recoverOpen(...args) { return getTarget().recoverOpen(...args); },
+    settle(...args) { return getTarget().settle(...args); },
+  });
+}
+
 function createTransactionScope(repositories) {
   let active = true;
 
@@ -259,6 +287,8 @@ function createV2Repositories(database) {
       authorizations: mvpBenchmarkExternalAuthorizations,
       sessions: mvpBenchmarkSessions,
     });
+  const mvpBenchmarkExecutionAccounting =
+    createLazyMvpBenchmarkExecutionAccountingRepository(database);
   const aggregates = {
     assets,
     audioModeIntents,
@@ -272,6 +302,7 @@ function createV2Repositories(database) {
     h3GenerationIntents,
     mediaExportRuns: createLazyMediaExportRunRepository(database),
     mvpBenchmarkExternalAuthorizations,
+    mvpBenchmarkExecutionAccounting,
     mvpBenchmarkExecutionPreflights,
     mvpBenchmarkReadiness: createMvpBenchmarkReadinessRepository(database),
     mvpBenchmarkSessions,

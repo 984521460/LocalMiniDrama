@@ -2,11 +2,30 @@
 
 const { types: { isPromise, isProxy } } = require('node:util');
 
-const promiseThen = Promise.prototype.then;
+const NATIVE_PROMISE = Promise;
+const promiseThen = Object.getOwnPropertyDescriptor(NATIVE_PROMISE.prototype, 'then').value;
+const SAFE_SPECIES_HOLDER = Object.create(null);
+Object.defineProperty(SAFE_SPECIES_HOLDER, Symbol.species, {
+  configurable: false,
+  enumerable: false,
+  writable: false,
+  value: NATIVE_PROMISE,
+});
+Object.freeze(SAFE_SPECIES_HOLDER);
 const addEventListener = EventTarget.prototype.addEventListener;
 const removeEventListener = EventTarget.prototype.removeEventListener;
 const abortedGetter = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted').get;
 const trustedErrors = new WeakSet();
+
+function shieldInternalPromise(value) {
+  Object.defineProperty(value, 'constructor', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: NATIVE_PROMISE,
+  });
+  return value;
+}
 
 class ComfyAsyncControlError extends Error {
   constructor(code) {
@@ -29,7 +48,9 @@ function isComfyAsyncControlError(error, code) {
 function isExactNativePromise(value) {
   if (!isPromise(value) || isProxy(value)) return false;
   try {
-    if (Object.getPrototypeOf(value) !== Promise.prototype) return false;
+    if (Object.getPrototypeOf(value) !== NATIVE_PROMISE.prototype || !Object.isExtensible(value)) {
+      return false;
+    }
     const descriptors = Object.getOwnPropertyDescriptors(value);
     return !Object.hasOwn(descriptors, 'then') && !Object.hasOwn(descriptors, 'constructor');
   } catch {
@@ -39,11 +60,23 @@ function isExactNativePromise(value) {
 
 function observeNativePromise(value, onFulfilled, onRejected) {
   if (!isExactNativePromise(value)) throw controlError('COMFY_ASYNC_VALUE_INVALID');
-  Reflect.apply(promiseThen, value, [onFulfilled, onRejected]);
+  let shielded = false;
+  try {
+    Object.defineProperty(value, 'constructor', {
+      configurable: true,
+      enumerable: false,
+      writable: false,
+      value: SAFE_SPECIES_HOLDER,
+    });
+    shielded = true;
+    Reflect.apply(promiseThen, value, [onFulfilled, onRejected]);
+  } finally {
+    if (shielded) delete value.constructor;
+  }
 }
 
 function raceNativePromise(value, { signal, timeoutMs, onAbort, onTimeout } = {}) {
-  return new Promise((resolve, reject) => {
+  return shieldInternalPromise(new NATIVE_PROMISE((resolve, reject) => {
     let settled = false;
     let timer;
     const finish = (callback, result) => {
@@ -95,7 +128,7 @@ function raceNativePromise(value, { signal, timeoutMs, onAbort, onTimeout } = {}
     } catch (error) {
       finish(reject, error);
     }
-  });
+  }));
 }
 
 function ignoreNativePromise(value) {
