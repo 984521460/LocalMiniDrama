@@ -20,7 +20,7 @@ const REQUIRED_TABLES = Object.freeze([
 const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
 const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 23;
+const EXPECTED_MIGRATION_VERSION = 24;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);

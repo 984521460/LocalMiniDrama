@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-execution-preflight-batch.schema.json",
+  "title": "MVP benchmark atomic execution preflight batch",
+  "$comment": "This Schema validates structure only. The runtime/repository must recompute batchSha256 and enforce exact frozen item order, request digests, one shared authorization/attestation/session/drama/time, and the aggregate cost. A validated batch does not prove that external execution occurred.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "authorizationUid", "sessionUid", "dramaUid", "attestationUid", "reservations", "estimatedCostCnyFen", "preparedAtEpochMs", "batchSha256"],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-execution-preflight-batch.v1" },
+    "authorizationUid": { "$ref": "#/$defs/uuid" },
+    "sessionUid": { "$ref": "#/$defs/uuid" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "attestationUid": { "$ref": "#/$defs/uuid" },
+    "reservations": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 38,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/reservation" }
+    },
+    "estimatedCostCnyFen": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "preparedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "batchSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "estimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "itemKind", "itemUid", "requestSha256", "estimatedCostCnyFen", "policyUid", "estimateSha256"],
+      "properties": {
+        "schemaVersion": { "const": "mvp-benchmark-cost-estimate.v1" },
+        "itemKind": { "enum": ["h3", "tts"] },
+        "itemUid": { "$ref": "#/$defs/uuid" },
+        "requestSha256": { "$ref": "#/$defs/sha256" },
+        "estimatedCostCnyFen": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "policyUid": { "$ref": "#/$defs/uuid" },
+        "estimateSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "reservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "uid", "authorizationUid", "attestationUid", "sessionUid", "dramaUid", "itemKind", "itemUid", "requestSha256", "estimate", "estimatedCostCnyFen", "attemptNumber", "reservedAtEpochMs", "reservationSha256"],
+      "properties": {
+        "schemaVersion": { "const": "mvp-benchmark-execution-reservation.v1" },
+        "uid": { "$ref": "#/$defs/uuid" },
+        "authorizationUid": { "$ref": "#/$defs/uuid" },
+        "attestationUid": { "$ref": "#/$defs/uuid" },
+        "sessionUid": { "$ref": "#/$defs/uuid" },
+        "dramaUid": { "$ref": "#/$defs/uuid" },
+        "itemKind": { "enum": ["h3", "tts"] },
+        "itemUid": { "$ref": "#/$defs/uuid" },
+        "requestSha256": { "$ref": "#/$defs/sha256" },
+        "estimate": { "$ref": "#/$defs/estimate" },
+        "estimatedCostCnyFen": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "attemptNumber": { "const": 1 },
+        "reservedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+        "reservationSha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

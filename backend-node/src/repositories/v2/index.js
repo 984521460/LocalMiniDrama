@@ -159,6 +159,12 @@ function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependenci
     getAttestation(...args) {
       return getTarget().getAttestation(...args);
     },
+    getBatchByAuthorization(...args) {
+      return getTarget().getBatchByAuthorization(...args);
+    },
+    getBatchPreparation(...args) {
+      return getTarget().getBatchPreparation(...args);
+    },
     getReservation(...args) {
       return getTarget().getReservation(...args);
     },
@@ -167,6 +173,9 @@ function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependenci
     },
     reserve(...args) {
       return getTarget().reserve(...args);
+    },
+    prepareBatch(...args) {
+      return getTarget().prepareBatch(...args);
     },
   });
 }

@@ -112,7 +112,7 @@ test('repository attests a fresh environment and atomically reserves one attempt
   assert.equal(validateAttestation(attestation), true, JSON.stringify(validateAttestation.errors));
 
   const item = session.h3Tasks[0];
-  const requestSha256 = 'c'.repeat(64);
+  const requestSha256 = item.planEvidenceSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1',
     itemKind: 'h3',
@@ -154,7 +154,7 @@ test('repository attests a fresh environment and atomically reserves one attempt
   );
 
   const tts = session.audioIntents[0];
-  const ttsHash = 'd'.repeat(64);
+  const ttsHash = tts.planSha256;
   const tooExpensive = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1',
     itemKind: 'tts',
@@ -215,7 +215,7 @@ test('expired or source-drifted authorization cannot create a reservation', (t) 
     observation: observation(current),
   }, { nowEpochMs: 2_100 });
   const item = session.h3Tasks[0];
-  const requestSha256 = 'e'.repeat(64);
+  const requestSha256 = item.planEvidenceSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1',
     itemKind: 'h3', itemUid: item.taskUid, requestSha256,
@@ -245,7 +245,7 @@ test('direct reservation insert rejects current RemoteConnection evidence drift'
     uid: uid(99615), authorizationUid: authorization.uid, observation: observation(current),
   }, { nowEpochMs: 2_100 });
   const item = session.h3Tasks[0];
-  const requestSha256 = '8'.repeat(64);
+  const requestSha256 = item.planEvidenceSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1', itemKind: 'h3',
     itemUid: item.taskUid, requestSha256, estimatedCostCnyFen: 1,
@@ -306,7 +306,7 @@ test('direct preflight inserts reject current D3A source drift before sealing ev
     uid: uid(99619), authorization, observation: lateObservation, attestedAtEpochMs: 2_300,
   });
   const item = session.audioIntents[0];
-  const requestSha256 = '7'.repeat(64);
+  const requestSha256 = item.planSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1', itemKind: 'tts',
     itemUid: item.intentUid, requestSha256, estimatedCostCnyFen: 1,
@@ -414,7 +414,7 @@ test('direct preflight inserts reject current narrative approval drift', (t) => 
     attestedAtEpochMs: 2_300,
   });
   const item = session.h3Tasks[0];
-  const requestSha256 = '6'.repeat(64);
+  const requestSha256 = item.planEvidenceSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1', itemKind: 'h3',
     itemUid: item.taskUid, requestSha256, estimatedCostCnyFen: 1,
@@ -583,7 +583,7 @@ test('preflight service consumes only captured live-check and cost-estimator out
     authorizationUid: authorization.uid,
     attestationUid: attestation.uid,
     itemUid: session.h3Tasks[0].taskUid,
-    requestSha256: 'f'.repeat(64),
+    requestSha256: session.h3Tasks[0].planEvidenceSha256,
   });
   assert.equal(checks, 1);
   assert.equal(estimates, 1);
@@ -630,7 +630,7 @@ test('preflight service rechecks expiry after slow inspection and estimation', a
       authorizationUid: authorization.uid,
       attestationUid: attestation.uid,
       itemUid: session.h3Tasks[0].taskUid,
-      requestSha256: '9'.repeat(64),
+      requestSha256: session.h3Tasks[0].planEvidenceSha256,
     }),
     { code: 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_EXPIRED' },
   );
@@ -651,7 +651,7 @@ test('independent seals reject coordinated persisted attestation and reservation
     uid: uid(99630), authorizationUid: authorization.uid, observation: observation(current),
   }, { nowEpochMs: 2_100 });
   const item = session.h3Tasks[0];
-  const requestSha256 = '1'.repeat(64);
+  const requestSha256 = item.planEvidenceSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1', itemKind: 'h3',
     itemUid: item.taskUid, requestSha256, estimatedCostCnyFen: 10,
@@ -727,7 +727,7 @@ test('missing independent seals are persisted-data errors rather than absent evi
     uid: uid(99635), authorizationUid: authorization.uid, observation: observation(current),
   }, { nowEpochMs: 2_100 });
   const item = session.h3Tasks[0];
-  const requestSha256 = '3'.repeat(64);
+  const requestSha256 = item.planEvidenceSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1', itemKind: 'h3',
     itemUid: item.taskUid, requestSha256, estimatedCostCnyFen: 1,
@@ -768,7 +768,7 @@ test('all four preflight evidence tables reject replacement, update, and delete'
     uid: uid(99640), authorizationUid: authorization.uid, observation: observation(current),
   }, { nowEpochMs: 2_100 });
   const item = session.h3Tasks[0];
-  const requestSha256 = '2'.repeat(64);
+  const requestSha256 = item.planEvidenceSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1', itemKind: 'h3',
     itemUid: item.taskUid, requestSha256, estimatedCostCnyFen: 1,

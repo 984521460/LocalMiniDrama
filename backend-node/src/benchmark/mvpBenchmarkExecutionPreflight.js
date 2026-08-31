@@ -10,6 +10,7 @@ const OBSERVATION_SCHEMA_VERSION = 'mvp-benchmark-live-environment-observation.v
 const ATTESTATION_SCHEMA_VERSION = 'mvp-benchmark-live-environment-attestation.v1';
 const COST_ESTIMATE_SCHEMA_VERSION = 'mvp-benchmark-cost-estimate.v1';
 const RESERVATION_SCHEMA_VERSION = 'mvp-benchmark-execution-reservation.v1';
+const BATCH_SCHEMA_VERSION = 'mvp-benchmark-execution-preflight-batch.v1';
 const MAX_LIVE_ENVIRONMENT_AGE_MS = 5 * 60 * 1000;
 const MAX_CLOCK_SKEW_MS = 30 * 1000;
 const MAXIMUM_COST_CNY_FEN = 1_000_000;
@@ -535,11 +536,16 @@ function createMvpBenchmarkExecutionReservation(
     || estimate.requestSha256 !== requestSha256) fail(code);
   const items = kind === 'h3' ? session.h3Tasks : session.audioIntents;
   let membershipCount = 0;
+  let expectedRequestSha256 = null;
   for (let index = 0; index < items.length; index += 1) {
     const candidate = kind === 'h3' ? items[index].taskUid : items[index].intentUid;
-    if (candidate === selectedUid) membershipCount += 1;
+    if (candidate === selectedUid) {
+      membershipCount += 1;
+      expectedRequestSha256 = kind === 'h3'
+        ? items[index].planEvidenceSha256 : items[index].planSha256;
+    }
   }
-  if (membershipCount !== 1) fail(code);
+  if (membershipCount !== 1 || requestSha256 !== expectedRequestSha256) fail(code);
   const base = OBJECT_FREEZE({
     schemaVersion: RESERVATION_SCHEMA_VERSION,
     uid: uid(input.uid, code),
@@ -589,6 +595,68 @@ function parseMvpBenchmarkExecutionReservation(
   return OBJECT_FREEZE({ ...base, reservationSha256: input.reservationSha256 });
 }
 
+function createMvpBenchmarkExecutionPreflightBatch(
+  value,
+  code = 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_INPUT_INVALID',
+) {
+  const input = exactObject(value, [
+    'authorization', 'session', 'attestation', 'reservations',
+  ], code);
+  const authorization = input.authorization;
+  const session = input.session;
+  if (!authorization || typeof authorization !== 'object' || isProxy(authorization)
+    || !session || typeof session !== 'object' || isProxy(session)) fail(code);
+  const attestation = parseMvpBenchmarkLiveEnvironmentAttestation(input.attestation, code);
+  const authorizationUid = uid(authorization.uid, code);
+  const sessionUid = uid(authorization.sessionUid, code);
+  const dramaUid = uid(authorization.dramaUid, code);
+  if (session.uid !== sessionUid || session.dramaUid !== dramaUid
+    || attestation.authorizationUid !== authorizationUid
+    || attestation.sessionUid !== sessionUid || attestation.dramaUid !== dramaUid) fail(code);
+  const h3Length = safeInteger(session.h3Tasks?.length, 1, 64, code);
+  const ttsLength = safeInteger(session.audioIntents?.length, 1, 64, code);
+  const reservations = denseArray(input.reservations, h3Length + ttsLength, code);
+  const parsedReservations = [];
+  let estimatedCostCnyFen = 0;
+  let preparedAtEpochMs = null;
+  for (let index = 0; index < reservations.length; index += 1) {
+    const reservation = parseMvpBenchmarkExecutionReservation(reservations[index], code);
+    const h3 = index < h3Length;
+    const item = h3 ? session.h3Tasks[index] : session.audioIntents[index - h3Length];
+    const expectedKind = h3 ? 'h3' : 'tts';
+    const expectedUid = h3 ? item.taskUid : item.intentUid;
+    const expectedSha256 = h3 ? item.planEvidenceSha256 : item.planSha256;
+    if (reservation.authorizationUid !== authorizationUid
+      || reservation.attestationUid !== attestation.uid
+      || reservation.sessionUid !== sessionUid || reservation.dramaUid !== dramaUid
+      || reservation.itemKind !== expectedKind || reservation.itemUid !== expectedUid
+      || reservation.requestSha256 !== expectedSha256
+      || (preparedAtEpochMs !== null && reservation.reservedAtEpochMs !== preparedAtEpochMs)) {
+      fail(code);
+    }
+    if (preparedAtEpochMs === null) preparedAtEpochMs = reservation.reservedAtEpochMs;
+    estimatedCostCnyFen += reservation.estimatedCostCnyFen;
+    if (!Number.isSafeInteger(estimatedCostCnyFen)
+      || estimatedCostCnyFen > MAXIMUM_COST_CNY_FEN) fail(code);
+    parsedReservations[index] = reservation;
+  }
+  const maximumCostCnyFen = safeInteger(
+    authorization.maximumCostCnyFen, 0, MAXIMUM_COST_CNY_FEN, code,
+  );
+  if (estimatedCostCnyFen > maximumCostCnyFen || preparedAtEpochMs === null) fail(code);
+  const base = OBJECT_FREEZE({
+    schemaVersion: BATCH_SCHEMA_VERSION,
+    authorizationUid,
+    sessionUid,
+    dramaUid,
+    attestationUid: attestation.uid,
+    reservations: OBJECT_FREEZE(parsedReservations),
+    estimatedCostCnyFen,
+    preparedAtEpochMs,
+  });
+  return OBJECT_FREEZE({ ...base, batchSha256: digest(base) });
+}
+
 function assertMvpBenchmarkLiveEnvironmentAttestationFresh(value, nowEpochMs) {
   const attestation = parseMvpBenchmarkLiveEnvironmentAttestation(
     value,
@@ -611,6 +679,7 @@ function isMvpBenchmarkExecutionPreflightError(error) {
 module.exports = OBJECT_FREEZE({
   APPROVED_LIVE_ENVIRONMENT,
   ATTESTATION_SCHEMA_VERSION,
+  BATCH_SCHEMA_VERSION,
   COST_ESTIMATE_SCHEMA_VERSION,
   MAXIMUM_COST_CNY_FEN,
   MAX_LIVE_ENVIRONMENT_AGE_MS,
@@ -620,6 +689,7 @@ module.exports = OBJECT_FREEZE({
   assertMvpBenchmarkLiveEnvironmentAttestationFresh,
   createMvpBenchmarkCostEstimate,
   createMvpBenchmarkExecutionReservation,
+  createMvpBenchmarkExecutionPreflightBatch,
   createMvpBenchmarkLiveEnvironmentAttestation,
   createMvpBenchmarkLiveEnvironmentObservation,
   isMvpBenchmarkExecutionPreflightError,

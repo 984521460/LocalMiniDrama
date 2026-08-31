@@ -283,3 +283,13 @@ only by one secret-free release receipt from a separately trusted verifier.
 Settlements, obligations, receipts, and their independent seals remain local
 operational evidence and are excluded from project archives. The migration
 does not contact, stop, or claim to have stopped a remote instance.
+
+Migration `0024_mvp_benchmark_execution_batches.sql` closes the frozen request
+identity at the SQLite boundary. Every H3 reservation must use the session's
+exact `planEvidenceSha256`, and every TTS reservation must use the exact frozen
+audio `planSha256`; direct SQL and replacement conflict algorithms cannot
+substitute another request digest. The application prepares all session items
+under one live attestation and one immediate transaction, so an expiry,
+budget failure, source drift, duplicate, or later-item insert failure leaves
+no partial batch. This local preflight still does not enable or claim any
+Provider, Vault, GPU, media, billing, or instance-return operation.

@@ -210,8 +210,99 @@ function createMvpBenchmarkExecutionPreflightService(value) {
     }, { nowEpochMs: currentTime });
   }
 
+  async function prepareBatch(authorizationUidValue) {
+    const authorizationUid = canonicalUid(authorizationUidValue);
+    const existing = preflights.getBatchByAuthorization(authorizationUid);
+    if (existing) return existing;
+    const preparation = resultObject(
+      preflights.getBatchPreparation(authorizationUid, now(configured)),
+      ['authorization', 'session'],
+    );
+    const authorization = preparation.authorization;
+    const session = preparation.session;
+    const rawObservation = await call(
+      configured,
+      configured.liveEnvironmentVerifier,
+      'inspect',
+      Object.freeze({
+        authorizationUid: authorization.uid,
+        sessionUid: authorization.sessionUid,
+        connectionUid: authorization.connectionUid,
+        connectionEvidenceSha256: authorization.connectionEvidenceSha256,
+        approvedEnvironmentSha256: authorization.requiredEnvironmentSha256,
+      }),
+    );
+    const observation = createMvpBenchmarkLiveEnvironmentObservation(rawObservation);
+    const attestationUid = nextUid(configured);
+    const reservations = [];
+    let reservationIndex = 0;
+    for (let index = 0; index < session.h3Tasks.length; index += 1) {
+      const item = session.h3Tasks[index];
+      const requestSha256 = sha256(item.planEvidenceSha256);
+      const rawEstimate = resultObject(
+        await call(configured, configured.costEstimator, 'estimateH3', Object.freeze({
+          authorizationUid,
+          attestationUid,
+          itemUid: item.taskUid,
+          requestSha256,
+        })),
+        ['estimatedCostCnyFen', 'policyUid'],
+      );
+      reservations[reservationIndex] = Object.freeze({
+        uid: nextUid(configured),
+        itemKind: 'h3',
+        itemUid: item.taskUid,
+        requestSha256,
+        estimate: createMvpBenchmarkCostEstimate({
+          schemaVersion: 'mvp-benchmark-cost-estimate.v1',
+          itemKind: 'h3',
+          itemUid: item.taskUid,
+          requestSha256,
+          estimatedCostCnyFen: rawEstimate.estimatedCostCnyFen,
+          policyUid: rawEstimate.policyUid,
+        }),
+      });
+      reservationIndex += 1;
+    }
+    for (let index = 0; index < session.audioIntents.length; index += 1) {
+      const item = session.audioIntents[index];
+      const requestSha256 = sha256(item.planSha256);
+      const rawEstimate = resultObject(
+        await call(configured, configured.costEstimator, 'estimateTts', Object.freeze({
+          authorizationUid,
+          attestationUid,
+          itemUid: item.intentUid,
+          requestSha256,
+        })),
+        ['estimatedCostCnyFen', 'policyUid'],
+      );
+      reservations[reservationIndex] = Object.freeze({
+        uid: nextUid(configured),
+        itemKind: 'tts',
+        itemUid: item.intentUid,
+        requestSha256,
+        estimate: createMvpBenchmarkCostEstimate({
+          schemaVersion: 'mvp-benchmark-cost-estimate.v1',
+          itemKind: 'tts',
+          itemUid: item.intentUid,
+          requestSha256,
+          estimatedCostCnyFen: rawEstimate.estimatedCostCnyFen,
+          policyUid: rawEstimate.policyUid,
+        }),
+      });
+      reservationIndex += 1;
+    }
+    return preflights.prepareBatch({
+      authorizationUid,
+      attestationUid,
+      observation,
+      reservations: Object.freeze(reservations),
+    }, { nowEpochMs: now(configured) });
+  }
+
   return Object.freeze({
     attest,
+    prepareBatch,
     reserveH3: (value) => reserve('h3', value),
     reserveTts: (value) => reserve('tts', value),
   });

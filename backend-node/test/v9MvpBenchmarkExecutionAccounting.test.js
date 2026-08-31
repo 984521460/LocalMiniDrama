@@ -75,7 +75,7 @@ function prepare(current, { itemKind = 'h3' } = {}) {
   }, { nowEpochMs: 2_100 });
   const item = itemKind === 'h3' ? session.h3Tasks[0] : session.audioIntents[0];
   const itemUid = itemKind === 'h3' ? item.taskUid : item.intentUid;
-  const requestSha256 = 'a'.repeat(64);
+  const requestSha256 = itemKind === 'h3' ? item.planEvidenceSha256 : item.planSha256;
   const estimate = createMvpBenchmarkCostEstimate({
     schemaVersion: 'mvp-benchmark-cost-estimate.v1',
     itemKind,
