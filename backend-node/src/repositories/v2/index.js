@@ -3,6 +3,9 @@ const { types: { isPromise } } = require('node:util');
 const { createAssetRepository } = require('./assetRepository');
 const { createAudioTtsSubmissionStore } = require('../../audio/audioTtsSubmissionStore');
 const { createAudioModeIntentRepository } = require('./audioModeIntentRepository');
+const {
+  createMvpBenchmarkExecutionGate,
+} = require('../../benchmark/mvpBenchmarkExecutionGate');
 const { createBgmTrackRepository } = require('./bgmTrackRepository');
 const { createCharacterCandidateRepository } = require('./characterCandidateRepository');
 const { createCharacterReferencePackageRepository } = require('./characterReferencePackageRepository');
@@ -127,7 +130,7 @@ function createLazyMvpBenchmarkExternalAuthorizationRepository(database, depende
     if (!target) target = createMvpBenchmarkExternalAuthorizationRepository(database, dependencies);
     return target;
   }
-  return Object.freeze({
+  const repository = Object.freeze({
     assertAudioIntentExecutionOpen(...args) {
       return getTarget().assertAudioIntentExecutionOpen(...args);
     },
@@ -144,6 +147,12 @@ function createLazyMvpBenchmarkExternalAuthorizationRepository(database, depende
       return getTarget().requireActive(...args);
     },
   });
+  const executionEvidence = Object.freeze({
+    getStored(...args) {
+      return getTarget().getStored(...args);
+    },
+  });
+  return Object.freeze({ executionEvidence, repository });
 }
 
 function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependencies) {
@@ -152,7 +161,7 @@ function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependenci
     if (!target) target = createMvpBenchmarkExecutionPreflightRepository(database, dependencies);
     return target;
   }
-  return Object.freeze({
+  const repository = Object.freeze({
     attest(...args) {
       return getTarget().attest(...args);
     },
@@ -178,6 +187,15 @@ function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependenci
       return getTarget().prepareBatch(...args);
     },
   });
+  const executionEvidence = Object.freeze({
+    getStoredAttestation(...args) {
+      return getTarget().getStoredAttestation(...args);
+    },
+    getStoredReservation(...args) {
+      return getTarget().getStoredReservation(...args);
+    },
+  });
+  return Object.freeze({ executionEvidence, repository });
 }
 
 function createLazyMvpBenchmarkExecutionAccountingRepository(database) {
@@ -286,16 +304,38 @@ function createV2Repositories(database) {
     runs,
     workflows,
   });
-  const mvpBenchmarkExternalAuthorizations =
-    createLazyMvpBenchmarkExternalAuthorizationRepository(database, {
-      mvpBenchmarkSessions,
-      remote,
-    });
-  const mvpBenchmarkExecutionPreflights =
-    createLazyMvpBenchmarkExecutionPreflightRepository(database, {
-      authorizations: mvpBenchmarkExternalAuthorizations,
-      sessions: mvpBenchmarkSessions,
-    });
+  const authorizationFacades = createLazyMvpBenchmarkExternalAuthorizationRepository(database, {
+    mvpBenchmarkSessions,
+    remote,
+  });
+  const mvpBenchmarkExternalAuthorizations = authorizationFacades.repository;
+  const executionAuthorizations = Object.freeze({
+    assertAudioIntentExecutionOpen:
+      mvpBenchmarkExternalAuthorizations.assertAudioIntentExecutionOpen,
+    assertH3TaskExecutionOpen:
+      mvpBenchmarkExternalAuthorizations.assertH3TaskExecutionOpen,
+    get: mvpBenchmarkExternalAuthorizations.get,
+    getStored: authorizationFacades.executionEvidence.getStored,
+    requireActive: mvpBenchmarkExternalAuthorizations.requireActive,
+  });
+  const preflightFacades = createLazyMvpBenchmarkExecutionPreflightRepository(database, {
+    authorizations: executionAuthorizations,
+    sessions: mvpBenchmarkSessions,
+  });
+  const mvpBenchmarkExecutionPreflights = preflightFacades.repository;
+  const executionPreflights = Object.freeze({
+    getAttestation: mvpBenchmarkExecutionPreflights.getAttestation,
+    getBatchByAuthorization: mvpBenchmarkExecutionPreflights.getBatchByAuthorization,
+    getStoredAttestation: preflightFacades.executionEvidence.getStoredAttestation,
+    getStoredReservation: preflightFacades.executionEvidence.getStoredReservation,
+  });
+  const mvpBenchmarkExecutionGate = createMvpBenchmarkExecutionGate({
+    audioModeIntents,
+    authorizations: executionAuthorizations,
+    h3GenerationIntents,
+    preflights: executionPreflights,
+    remote,
+  });
   const mvpBenchmarkExecutionAccounting =
     createLazyMvpBenchmarkExecutionAccountingRepository(database);
   const aggregates = {
@@ -312,6 +352,7 @@ function createV2Repositories(database) {
     mediaExportRuns: createLazyMediaExportRunRepository(database),
     mvpBenchmarkExternalAuthorizations,
     mvpBenchmarkExecutionAccounting,
+    mvpBenchmarkExecutionGate,
     mvpBenchmarkExecutionPreflights,
     mvpBenchmarkReadiness: createMvpBenchmarkReadinessRepository(database),
     mvpBenchmarkSessions,

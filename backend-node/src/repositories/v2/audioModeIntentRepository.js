@@ -6,6 +6,7 @@ const {
   createAudioModeIntentRecord,
   parseAudioModeIntentRequest,
   resolveAudioModeIntent,
+  resolveAudioModeIntentExecutionSource,
 } = require('../../audio/audioModeIntent');
 const {
   canonicalJson: serializeCanonicalJson,
@@ -51,9 +52,11 @@ function createAudioModeIntentRepository(database, dependencies) {
     return statements;
   }
 
-  function expected(request, ErrorClass) {
+  function expected(request, ErrorClass, executionSource = false) {
     try {
-      return resolveAudioModeIntent(request, dependencies);
+      return executionSource
+        ? resolveAudioModeIntentExecutionSource(request, dependencies)
+        : resolveAudioModeIntent(request, dependencies);
     } catch (error) {
       if (isAudioModeContractError(error) && error.code === DATA_CODE) {
         throw new ErrorClass('audio mode intent', 'referenced');
@@ -62,7 +65,7 @@ function createAudioModeIntentRepository(database, dependencies) {
     }
   }
 
-  function mapRow(row) {
+  function mapRow(row, executionSource = false) {
     try {
       const requestJson = canonicalJson(row.request_json, 4 * 1024 * 1024);
       const planJson = canonicalJson(row.plan_json, 32 * 1024 * 1024);
@@ -79,7 +82,7 @@ function createAudioModeIntentRepository(database, dependencies) {
         createdAtEpochMs: row.created_at_epoch_ms,
       });
       if (stored.plan.planSha256 !== row.plan_sha256) throw new TypeError();
-      const resolved = expected(stored.request, V2RepositoryDataError);
+      const resolved = expected(stored.request, V2RepositoryDataError, executionSource);
       if (serializeCanonicalJson(resolved.request) !== row.request_json
         || serializeCanonicalJson(resolved.plan) !== row.plan_json) throw new TypeError();
       return Object.freeze({ ...stored, request: resolved.request, plan: resolved.plan });
@@ -101,6 +104,18 @@ function createAudioModeIntentRepository(database, dependencies) {
 
   return Object.freeze({
     get,
+    getExecutionSource(uid) {
+      let canonical;
+      try {
+        canonical = canonicalUid(uid, DATA_CODE);
+      } catch {
+        throw new TypeError('Audio mode intent uid is invalid');
+      }
+      return mapRow(
+        requiredRow(prepared().get.get(canonical), 'audio mode intent', canonical),
+        true,
+      );
+    },
     prepare(value) {
       const request = parseAudioModeIntentRequest(value);
       const resolved = expected(request, V2RepositoryConflictError);

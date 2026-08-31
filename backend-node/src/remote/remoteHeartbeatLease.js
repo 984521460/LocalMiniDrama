@@ -13,7 +13,7 @@ function configuration(value) {
     throw new TypeError('Remote heartbeat lease configuration is invalid');
   }
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  const allowed = new Set(['service', 'task', 'intervalMs']);
+  const allowed = new Set(['service', 'task', 'intervalMs', 'executionPermit']);
   if (Reflect.ownKeys(descriptors).some((key) => typeof key !== 'string' || !allowed.has(key))
     || !Object.hasOwn(descriptors, 'service') || !Object.hasOwn(descriptors, 'task')) {
     throw new TypeError('Remote heartbeat lease configuration is invalid');
@@ -37,6 +37,7 @@ function configuration(value) {
   }
   return Object.freeze({
     heartbeat: heartbeat.bind(service),
+    executionPermit: descriptors.executionPermit?.value,
     intervalMs,
     task: createRemoteTaskRecord(descriptors.task.value),
   });
@@ -55,7 +56,7 @@ async function runWithRemoteTaskHeartbeat(options, operation) {
     try {
       current = createRemoteTaskRecord(configured.heartbeat(current.uid, {
         expectedStateVersion: current.stateVersion,
-      }));
+      }, configured.executionPermit));
     } catch {
       heartbeatError = createRemoteTaskError('REMOTE_TASK_CONFLICT');
     }

@@ -234,12 +234,12 @@ function createRemoteExecutionCoordinator(options) {
   const runService = createWorkflowRunService({ repositories: configured.repositories });
   const active = new Map();
 
-  function assertExecutionOpen(taskUid) {
+  function assertExecutionOpen(taskUid, executionPermit) {
     if (configured.executionGate) {
       Reflect.apply(
         configured.executionGate.method,
         configured.executionGate.target,
-        [taskUid],
+        [taskUid, executionPermit],
       );
     }
   }
@@ -284,7 +284,7 @@ function createRemoteExecutionCoordinator(options) {
     return node;
   }
 
-  function failNode(taskUid, phase, errorCode, retryable, context) {
+  function failNode(taskUid, phase, errorCode, retryable, context, executionPermit) {
     let task;
     try {
       configured.repositories.withTransaction(() => {
@@ -295,7 +295,7 @@ function createRemoteExecutionCoordinator(options) {
             phase,
             errorCode,
             retryable,
-          });
+          }, executionPermit);
         }
         if (task.stage !== 'completed') {
           const current = runService.getNode(context.node.uid);
@@ -322,11 +322,12 @@ function createRemoteExecutionCoordinator(options) {
     return task;
   }
 
-  async function heartbeatPhase(currentTask, operation) {
+  async function heartbeatPhase(currentTask, executionPermit, operation) {
     return runWithRemoteTaskHeartbeat({
       service: configured.taskService,
       task: currentTask,
       intervalMs: configured.heartbeatIntervalMs,
+      executionPermit,
     }, operation);
   }
 
@@ -375,8 +376,8 @@ function createRemoteExecutionCoordinator(options) {
     return Object.freeze({ compiled, context, h3Intent, manifest });
   }
 
-  async function executeOperation(taskUid, request) {
-    assertExecutionOpen(taskUid);
+  async function executeOperation(taskUid, request, executionPermit) {
+    assertExecutionOpen(taskUid, executionPermit);
     let task = configured.taskService.get(taskUid);
     if (task.stage !== 'prepared' || task.stateVersion !== request.expectedStateVersion) {
       fail('REMOTE_TASK_CONFLICT');
@@ -386,11 +387,11 @@ function createRemoteExecutionCoordinator(options) {
       startNode(context, task.uid);
       task = configured.taskService.beginUpload(task.uid, {
         expectedStateVersion: task.stateVersion,
-      });
+      }, executionPermit);
     });
 
     try {
-      const phase = await heartbeatPhase(task, async () => {
+      const phase = await heartbeatPhase(task, executionPermit, async () => {
         if (request.uploads.length === 0) return null;
         await withSession(task.connectionUid, task.connectionEvidenceSha256, async (opened) => {
           for (const upload of request.uploads) {
@@ -408,7 +409,9 @@ function createRemoteExecutionCoordinator(options) {
       });
       task = phase.task;
     } catch {
-      failNode(task.uid, 'upload', 'ERR_REMOTE_UPLOAD_FAILED', true, context);
+      failNode(
+        task.uid, 'upload', 'ERR_REMOTE_UPLOAD_FAILED', true, context, executionPermit,
+      );
       fail();
     }
 
@@ -416,25 +419,28 @@ function createRemoteExecutionCoordinator(options) {
       task = await configured.taskService.submit(task.uid, {
         expectedStateVersion: task.stateVersion,
         prompt: compiled.prompt,
-      });
+      }, executionPermit);
     } catch (error) {
       failNode(task.uid, error.code === 'REMOTE_TASK_DEPENDENCY_NOT_READY'
         ? 'dependency' : 'submission', error.code === 'REMOTE_TASK_DEPENDENCY_NOT_READY'
-        ? 'ERR_REMOTE_DEPENDENCY_FAILED' : 'ERR_REMOTE_SUBMISSION_INDETERMINATE', false, context);
+        ? 'ERR_REMOTE_DEPENDENCY_FAILED' : 'ERR_REMOTE_SUBMISSION_INDETERMINATE', false, context,
+      executionPermit);
       throw error;
     }
 
     try {
       task = configured.taskService.markExecuting(task.uid, {
         expectedStateVersion: task.stateVersion,
-      });
+      }, executionPermit);
     } catch {
-      failNode(task.uid, 'execution', 'ERR_REMOTE_EXECUTION_FAILED', true, context);
+      failNode(
+        task.uid, 'execution', 'ERR_REMOTE_EXECUTION_FAILED', true, context, executionPermit,
+      );
       fail();
     }
     let output;
     try {
-      const phase = await heartbeatPhase(task, () => configured.remoteClient.waitForPrompt(
+      const phase = await heartbeatPhase(task, executionPermit, () => configured.remoteClient.waitForPrompt(
         task.connectionUid, task.connectionEvidenceSha256, task.promptId,
         { timeoutMs: configured.timeoutMs, pollIntervalMs: 1000 },
       ));
@@ -449,16 +455,20 @@ function createRemoteExecutionCoordinator(options) {
       );
       if (context.binding.mediaKind !== output.mediaKind) fail('REMOTE_TASK_INPUT_INVALID');
     } catch {
-      failNode(task.uid, 'execution', 'ERR_REMOTE_EXECUTION_FAILED', true, context);
+      failNode(
+        task.uid, 'execution', 'ERR_REMOTE_EXECUTION_FAILED', true, context, executionPermit,
+      );
       fail();
     }
 
     try {
       task = configured.taskService.markDownloading(task.uid, {
         expectedStateVersion: task.stateVersion,
-      });
+      }, executionPermit);
     } catch {
-      failNode(task.uid, 'download', 'ERR_REMOTE_DOWNLOAD_FAILED', true, context);
+      failNode(
+        task.uid, 'download', 'ERR_REMOTE_DOWNLOAD_FAILED', true, context, executionPermit,
+      );
       fail();
     }
     let versionUid;
@@ -469,7 +479,7 @@ function createRemoteExecutionCoordinator(options) {
     const localRelativePath = `projects/${context.dramaUid}/assets/${versionUid}${extension}`;
     let measured;
     try {
-      const phase = await heartbeatPhase(task, () => withSession(
+      const phase = await heartbeatPhase(task, executionPermit, () => withSession(
         task.connectionUid, task.connectionEvidenceSha256, async (opened) => {
         const remote = await configured.transfer.inspectRemoteFile({
           session: opened.session,
@@ -490,22 +500,27 @@ function createRemoteExecutionCoordinator(options) {
       task = phase.task;
       measured = phase.result;
     } catch {
-      failNode(task.uid, 'download', 'ERR_REMOTE_DOWNLOAD_FAILED', true, context);
+      failNode(
+        task.uid, 'download', 'ERR_REMOTE_DOWNLOAD_FAILED', true, context, executionPermit,
+      );
       fail();
     }
 
     try {
       task = configured.taskService.markVerifying(task.uid, {
         expectedStateVersion: task.stateVersion,
-      });
+      }, executionPermit);
     } catch {
-      failNode(task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context);
+      failNode(
+        task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context,
+        executionPermit,
+      );
       fail();
     }
 
     let verifiedOutput;
     try {
-      const phase = await heartbeatPhase(task, () => configured.outputVerifier.verify({
+      const phase = await heartbeatPhase(task, executionPermit, () => configured.outputVerifier.verify({
         planNode: context.planNode,
         manifest,
         localRelativePath,
@@ -520,7 +535,10 @@ function createRemoteExecutionCoordinator(options) {
         const target = path.resolve(configured.localRoot, ...localRelativePath.split('/'));
         if (target.startsWith(`${configured.localRoot}${path.sep}`)) await fs.promises.unlink(target);
       } catch { /* fixed cleanup */ }
-      failNode(task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context);
+      failNode(
+        task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context,
+        executionPermit,
+      );
       fail();
     }
 
@@ -559,7 +577,7 @@ function createRemoteExecutionCoordinator(options) {
         task = configured.taskService.complete(task.uid, {
           expectedStateVersion: task.stateVersion,
           outputAssetVersionUid: version.uid,
-        });
+        }, executionPermit);
         const currentNode = runService.getNode(context.node.uid);
         node = runService.transitionNode({
           nodeRunUid: currentNode.uid,
@@ -582,14 +600,17 @@ function createRemoteExecutionCoordinator(options) {
         const target = path.resolve(configured.localRoot, ...localRelativePath.split('/'));
         if (target.startsWith(`${configured.localRoot}${path.sep}`)) await fs.promises.unlink(target);
       } catch { /* fixed cleanup */ }
-      failNode(task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context);
+      failNode(
+        task.uid, 'verification', 'ERR_REMOTE_VERIFICATION_FAILED', false, context,
+        executionPermit,
+      );
       fail();
     }
     return Object.freeze({ task, assetVersion: version, node, generationHistory });
   }
 
-  async function retryOperation(taskUid, request) {
-    assertExecutionOpen(taskUid);
+  async function retryOperation(taskUid, request, executionPermit) {
+    assertExecutionOpen(taskUid, executionPermit);
     const failedTask = configured.taskService.get(taskUid);
     const classification = createRemoteTaskRetryClassification(failedTask);
     if (failedTask.stateVersion !== request.expectedStateVersion
@@ -629,11 +650,11 @@ function createRemoteExecutionCoordinator(options) {
     return executeOperation(taskUid, Object.freeze({
       ...request,
       expectedStateVersion: retried.stateVersion,
-    }));
+    }), executionPermit);
   }
 
-  function execute(taskUid, value) {
-    assertExecutionOpen(taskUid);
+  function execute(taskUid, value, executionPermit) {
+    assertExecutionOpen(taskUid, executionPermit);
     const request = remoteExecutionRequest(value);
     const identity = executionIdentity(request);
     const current = active.get(taskUid);
@@ -641,15 +662,15 @@ function createRemoteExecutionCoordinator(options) {
       if (current.identity !== identity) fail('REMOTE_TASK_CONFLICT');
       return current.promise;
     }
-    const promise = executeOperation(taskUid, request).finally(() => {
+    const promise = executeOperation(taskUid, request, executionPermit).finally(() => {
       if (active.get(taskUid)?.promise === promise) active.delete(taskUid);
     });
     active.set(taskUid, Object.freeze({ identity, promise }));
     return promise;
   }
 
-  function retry(taskUid, value) {
-    assertExecutionOpen(taskUid);
+  function retry(taskUid, value, executionPermit) {
+    assertExecutionOpen(taskUid, executionPermit);
     const request = remoteExecutionRequest(value);
     const identity = executionIdentity(request);
     const current = active.get(taskUid);
@@ -657,7 +678,7 @@ function createRemoteExecutionCoordinator(options) {
       if (current.identity !== identity) fail('REMOTE_TASK_CONFLICT');
       return current.promise;
     }
-    const promise = retryOperation(taskUid, request).finally(() => {
+    const promise = retryOperation(taskUid, request, executionPermit).finally(() => {
       if (active.get(taskUid)?.promise === promise) active.delete(taskUid);
     });
     active.set(taskUid, Object.freeze({ identity, promise }));

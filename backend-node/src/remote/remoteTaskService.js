@@ -392,16 +392,18 @@ function createRemoteTaskService(options) {
     return callSync(repository, 'getFormalTask', [taskUid(uid)]);
   }
 
-  function assertExecutionOpen(uid) {
+  function assertExecutionOpen(uid, executionPermit) {
     const parsedUid = taskUid(uid);
     if (executionGate) {
-      callSync(executionGate, 'assertH3TaskExecutionOpen', [parsedUid]);
+      callSync(executionGate, 'assertH3TaskExecutionOpen', [parsedUid, executionPermit]);
     }
     return parsedUid;
   }
 
-  function transition(uidValue, value, allowedStages, nextStage, nextStatus, extra = {}) {
-    const uid = assertExecutionOpen(uidValue);
+  function transition(
+    uidValue, value, allowedStages, nextStage, nextStatus, extra = {}, executionPermit,
+  ) {
+    const uid = assertExecutionOpen(uidValue, executionPermit);
     const request = expectedVersionRequest(value);
     const current = get(uid);
     if (current.stateVersion !== request.expectedStateVersion
@@ -416,24 +418,26 @@ function createRemoteTaskService(options) {
     }]);
   }
 
-  function beginUpload(uid, value) {
-    return transition(uid, value, ['prepared'], 'uploading', 'running');
+  function beginUpload(uid, value, executionPermit) {
+    return transition(uid, value, ['prepared'], 'uploading', 'running', {}, executionPermit);
   }
 
-  function markExecuting(uid, value) {
-    return transition(uid, value, ['submitted'], 'executing', 'running');
+  function markExecuting(uid, value, executionPermit) {
+    return transition(uid, value, ['submitted'], 'executing', 'running', {}, executionPermit);
   }
 
-  function markDownloading(uid, value) {
-    return transition(uid, value, ['submitted', 'executing'], 'downloading', 'running');
+  function markDownloading(uid, value, executionPermit) {
+    return transition(
+      uid, value, ['submitted', 'executing'], 'downloading', 'running', {}, executionPermit,
+    );
   }
 
-  function markVerifying(uid, value) {
-    return transition(uid, value, ['downloading'], 'verifying', 'running');
+  function markVerifying(uid, value, executionPermit) {
+    return transition(uid, value, ['downloading'], 'verifying', 'running', {}, executionPermit);
   }
 
-  function complete(uidValue, value) {
-    const uid = assertExecutionOpen(uidValue);
+  function complete(uidValue, value, executionPermit) {
+    const uid = assertExecutionOpen(uidValue, executionPermit);
     const request = outputCompletionRequest(value);
     const current = get(uid);
     if (current.stateVersion !== request.expectedStateVersion || current.stage !== 'verifying') {
@@ -449,8 +453,8 @@ function createRemoteTaskService(options) {
     }]);
   }
 
-  function failTask(uidValue, value) {
-    const uid = taskUid(uidValue);
+  function failTask(uidValue, value, executionPermit) {
+    const uid = assertExecutionOpen(uidValue, executionPermit);
     const request = failureRequest(value);
     const current = get(uid);
     if (current.stateVersion !== request.expectedStateVersion
@@ -483,8 +487,8 @@ function createRemoteTaskService(options) {
     }]);
   }
 
-  async function submit(uidValue, value) {
-    const uid = assertExecutionOpen(uidValue);
+  async function submit(uidValue, value, executionPermit) {
+    const uid = assertExecutionOpen(uidValue, executionPermit);
     const submission = promptSubmission(value);
     const current = get(uid);
     if (hashRemoteTaskPrompt(submission.prompt) !== current.promptSha256) {
@@ -580,8 +584,8 @@ function createRemoteTaskService(options) {
     }
   }
 
-  function heartbeat(uidValue, value) {
-    const uid = assertExecutionOpen(uidValue);
+  function heartbeat(uidValue, value, executionPermit) {
+    const uid = assertExecutionOpen(uidValue, executionPermit);
     const input = exactObject(value, ['expectedStateVersion']);
     let heartbeatAt;
     try { heartbeatAt = now(); } catch { fail('REMOTE_TASK_UNEXPECTED'); }
@@ -609,8 +613,8 @@ function createRemoteTaskService(options) {
     }]);
   }
 
-  async function recover(uidValue) {
-    const task = get(assertExecutionOpen(uidValue));
+  async function recover(uidValue, executionPermit) {
+    const task = get(assertExecutionOpen(uidValue, executionPermit));
     if (['succeeded', 'failed', 'cancelled'].includes(task.status)) return task;
     if (activeSubmissions.has(task.uid)) return task;
     if (['prepared', 'uploading'].includes(task.stage)) {
@@ -646,7 +650,9 @@ function createRemoteTaskService(options) {
       return failRecovery(task, 'retryable', 'ERR_REMOTE_EXECUTION_FAILED');
     }
     if (state.state === 'running') {
-      return heartbeat(task.uid, { expectedStateVersion: task.stateVersion });
+      return heartbeat(
+        task.uid, { expectedStateVersion: task.stateVersion }, executionPermit,
+      );
     }
     let queued;
     try {
@@ -662,7 +668,9 @@ function createRemoteTaskService(options) {
       return failRecovery(task, 'orphaned', 'ERR_REMOTE_RECOVERY_UNCERTAIN');
     }
     if (queued) {
-      return heartbeat(task.uid, { expectedStateVersion: task.stateVersion });
+      return heartbeat(
+        task.uid, { expectedStateVersion: task.stateVersion }, executionPermit,
+      );
     }
     return failRecovery(task, 'orphaned', 'ERR_REMOTE_RECOVERY_ORPHANED');
   }

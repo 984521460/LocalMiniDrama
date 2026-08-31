@@ -83,7 +83,7 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
     return session;
   }
 
-  function mapRow(row) {
+  function mapStoredRow(row) {
     if (!row) throw new V2RepositoryNotFoundError(ENTITY);
     try {
       const request = parseMvpBenchmarkExternalAuthorizationRequest(
@@ -101,15 +101,20 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
         || row.authorization_sha256 !== authorization.authorizationSha256
         || row.authorized_at_epoch_ms !== authorization.authorizedAtEpochMs
         || row.expires_at_epoch_ms !== authorization.expiresAtEpochMs) invalidData();
-      const session = assertSources(request, invalidData);
-      if (authorization.h3SubmissionLimit !== session.h3Tasks.length
-        || authorization.ttsSubmissionLimit !== session.audioIntents.length
-        || authorization.sessionPlanSha256 !== session.planSha256) invalidData();
-      return authorization;
+      return Object.freeze({ authorization, request });
     } catch (error) {
       if (error instanceof V2RepositoryDataError) throw error;
       return invalidData();
     }
+  }
+
+  function mapRow(row) {
+    const stored = mapStoredRow(row);
+    const session = assertSources(stored.request, invalidData);
+    if (stored.authorization.h3SubmissionLimit !== session.h3Tasks.length
+      || stored.authorization.ttsSubmissionLimit !== session.audioIntents.length
+      || stored.authorization.sessionPlanSha256 !== session.planSha256) invalidData();
+    return stored.authorization;
   }
 
   function get(uid) {
@@ -152,6 +157,9 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
       return assertNotReserved(statements.reservedH3Task, taskUid);
     },
     get,
+    getStored(uid) {
+      return mapStoredRow(statements.get.get(uid)).authorization;
+    },
     prepare(value, { nowEpochMs = Date.now() } = {}) {
       let request;
       try { request = parseMvpBenchmarkExternalAuthorizationRequest(value); } catch (error) {

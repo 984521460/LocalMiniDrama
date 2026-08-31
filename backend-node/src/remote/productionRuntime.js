@@ -19,7 +19,8 @@ const { createRemoteOutputVerifier } = require('./outputVerifier');
 
 const DEPENDENCY_KEYS = Object.freeze([
   'credentialVault', 'sshTransport', 'tunnelManager', 'comfyClientFactory',
-  'h3Inspector', 'remoteTimeoutMs', 'executionTimeoutMs', 'heartbeatIntervalMs',
+  'h3Inspector', 'executionGate', 'remoteTimeoutMs', 'executionTimeoutMs',
+  'heartbeatIntervalMs',
 ]);
 
 function dependencySnapshot(value) {
@@ -80,11 +81,12 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
       ? { timeoutMs: configured.remoteTimeoutMs }
       : {}),
   });
+  const executionGate = configured.executionGate ?? repositories.mvpBenchmarkExecutionGate;
   const remoteTasks = createRemoteTaskService({
     repository: repositories.remote,
     manifestRepository: repositories.comfyManifests,
     remoteClient,
-    executionGate: repositories.mvpBenchmarkExternalAuthorizations,
+    executionGate,
     ...(configured.remoteTimeoutMs !== undefined
       ? { timeoutMs: configured.remoteTimeoutMs }
       : {}),
@@ -97,7 +99,7 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
   const remoteCoordinator = createRemoteExecutionCoordinator({
     repositories,
     taskService: remoteTasks,
-    executionGate: repositories.mvpBenchmarkExternalAuthorizations,
+    executionGate,
     sessionService: remoteSessionService,
     transfer,
     remoteClient,

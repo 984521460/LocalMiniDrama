@@ -16,7 +16,7 @@ const {
 const { createTtsProviderClient } = require('./ttsProviderClient');
 
 const DEPENDENCY_KEYS = Object.freeze([
-  'credentialVault', 'ttsClient', 'mediaProbe', 'timeoutMs', 'nowEpochMs',
+  'credentialVault', 'ttsClient', 'mediaProbe', 'executionGate', 'timeoutMs', 'nowEpochMs',
 ]);
 
 function includes(values, expected) {
@@ -80,10 +80,19 @@ function createProductionAudioTtsRuntime({ database, localRoot, dependencies: va
     timeoutMs,
     nowEpochMs: configured.nowEpochMs ?? Date.now,
   });
+  const executionGate = configured.executionGate ?? repositories.mvpBenchmarkExecutionGate;
+  const executionGateMethod = !isProxy(executionGate)
+    ? Object.getOwnPropertyDescriptor(
+      executionGate,
+      'assertAudioIntentExecutionOpen',
+    )?.value
+    : null;
+  if (typeof executionGateMethod !== 'function' || isProxy(executionGateMethod)) {
+    throw new TypeError('Production audio TTS runtime dependencies are invalid');
+  }
   const guardedService = Object.freeze({
-    execute(intentUid, dramaUid) {
-      repositories.mvpBenchmarkExternalAuthorizations
-        .assertAudioIntentExecutionOpen(intentUid);
+    execute(intentUid, dramaUid, executionPermit) {
+      Reflect.apply(executionGateMethod, executionGate, [intentUid, executionPermit]);
       return service.execute(intentUid, dramaUid);
     },
     get(intentUid, dramaUid) {

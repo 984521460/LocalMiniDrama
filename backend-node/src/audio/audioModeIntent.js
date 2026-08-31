@@ -290,7 +290,7 @@ function configuration(dependencies) {
   return dependencies;
 }
 
-function resolveAudioModeIntent(value, dependencies) {
+function resolveAudioModeIntentInternal(value, dependencies, allowRunningWorkflow) {
   const request = parseAudioModeIntentRequest(value);
   const configured = configuration(dependencies);
   try {
@@ -299,7 +299,8 @@ function resolveAudioModeIntent(value, dependencies) {
     const definition = configured.workflows.getDefinition(run.workflowUid);
     const executionPlan = validateWorkflowExecutionPlan(run.graphSnapshot);
     const planNode = findPlanNode({ graphSnapshot: executionPlan }, node);
-    if (node.workflowRunUid !== run.uid || node.status !== 'queued' || run.status !== 'queued'
+    if (node.workflowRunUid !== run.uid || node.status !== 'queued'
+      || (run.status !== 'queued' && !(allowRunningWorkflow && run.status === 'running'))
       || definition.dramaUid !== request.dramaUid
       || definition.uid !== run.workflowUid
       || definition.registryVersion !== executionPlan.registryVersion
@@ -394,6 +395,14 @@ function resolveAudioModeIntent(value, dependencies) {
     if (isAudioModeContractError(error) && error.code === INPUT_CODE) throw error;
     return fail(DATA_CODE);
   }
+}
+
+function resolveAudioModeIntent(value, dependencies) {
+  return resolveAudioModeIntentInternal(value, dependencies, false);
+}
+
+function resolveAudioModeIntentExecutionSource(value, dependencies) {
+  return resolveAudioModeIntentInternal(value, dependencies, true);
 }
 
 function createAudioModeIntentRecord(value, code = DATA_CODE) {
@@ -517,4 +526,5 @@ module.exports = Object.freeze({
   parseAudioModeIntentRequest,
   publicAudioModeIntent,
   resolveAudioModeIntent,
+  resolveAudioModeIntentExecutionSource,
 });

@@ -89,7 +89,7 @@ function createH3GenerationIntentRepository(database, {
     }
   }
 
-  function assertReferences(intent, { preparing = false } = {}) {
+  function assertReferences(intent, { executionSource = false, preparing = false } = {}) {
     const sql = prepared();
     let task;
     let manifest;
@@ -139,6 +139,7 @@ function createH3GenerationIntentRepository(database, {
     }
     if (binding.taskPromptSha256 !== intent.taskPromptSha256
       || binding.planEvidenceSha256 !== intent.planEvidenceSha256) invalidData();
+    if (executionSource && asset.currentVersionUid !== intent.parentVersionUid) invalidData();
     if (preparing && (task.stage !== 'prepared' || task.status !== 'queued'
       || task.promptId !== null || task.outputAssetVersionUid !== null
       || asset.currentVersionUid !== intent.parentVersionUid)) {
@@ -148,7 +149,7 @@ function createH3GenerationIntentRepository(database, {
     return intent;
   }
 
-  function map(row) {
+  function map(row, options) {
     let prompt;
     let generationSpec;
     try {
@@ -171,7 +172,7 @@ function createH3GenerationIntentRepository(database, {
         taskPromptSha256: row.task_prompt_sha256,
         planEvidenceSha256: row.plan_evidence_sha256,
         createdAtEpochMs: row.created_at_epoch_ms,
-      }));
+      }), options);
     } catch (error) {
       if (error instanceof V2RepositoryConflictError) throw error;
       if (error instanceof V2RepositoryDataError) throw error;
@@ -213,6 +214,13 @@ function createH3GenerationIntentRepository(database, {
 
   return Object.freeze({
     getByTask,
+    getExecutionSource(taskUid) {
+      return map(requiredRow(
+        prepared().getByTask.get(taskUid),
+        'H3 generation intent',
+        taskUid,
+      ), { executionSource: true });
+    },
 
     prepare(value) {
       let taskUid;

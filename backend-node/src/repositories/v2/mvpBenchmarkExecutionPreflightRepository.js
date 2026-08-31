@@ -78,6 +78,7 @@ function invalidData() {
 function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) {
   const { authorizations, sessions } = dependencies ?? {};
   if (!authorizations || typeof authorizations.get !== 'function'
+    || typeof authorizations.getStored !== 'function'
     || typeof authorizations.requireActive !== 'function'
     || !sessions || typeof sessions.get !== 'function') {
     throw new TypeError('MVP benchmark execution preflight repository dependencies are invalid');
@@ -116,6 +117,16 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
       SELECT COALESCE(sum(estimated_cost_cny_fen),0) AS total
       FROM mvp_benchmark_execution_reservations WHERE authorization_uid=?
     `).pluck(),
+    sessionRecord: database.prepare(`
+      SELECT session.*,
+             mvp_benchmark_session_record_valid(
+               session.uid,session.drama_uid,session.workflow_run_uid,
+               session.request_json,session.plan_json,session.plan_sha256,
+               session.created_at_epoch_ms
+             ) AS record_valid
+      FROM mvp_benchmark_sessions AS session
+      WHERE session.uid=?
+    `),
     insertAttestation: database.prepare(`
       INSERT INTO mvp_benchmark_live_environment_attestations
         (uid,authorization_uid,session_uid,drama_uid,connection_uid,
@@ -138,7 +149,7 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
     `),
   });
 
-  function mapAttestation(row) {
+  function mapStoredAttestation(row) {
     if (!row) throw new V2RepositoryNotFoundError(ENTITY);
     try {
       const observation = parseMvpBenchmarkLiveEnvironmentObservation(
@@ -147,7 +158,7 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
       const attestation = parseMvpBenchmarkLiveEnvironmentAttestation(
         Reflect.apply(JSON_PARSE, JSON, [row.attestation_json]),
       );
-      const authorization = authorizations.get(attestation.authorizationUid);
+      const authorization = authorizations.getStored(attestation.authorizationUid);
       const expected = createMvpBenchmarkLiveEnvironmentAttestation({
         uid: attestation.uid,
         authorization,
@@ -181,11 +192,17 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
     }
   }
 
+  function mapAttestation(row) {
+    const attestation = mapStoredAttestation(row);
+    authorizations.get(attestation.authorizationUid);
+    return attestation;
+  }
+
   function getAttestation(uid) {
     return mapAttestation(statements.attestation.get(uid));
   }
 
-  function mapReservation(row) {
+  function mapStoredReservation(row) {
     if (!row) throw new V2RepositoryNotFoundError(ENTITY);
     try {
       const reservation = parseMvpBenchmarkExecutionReservation(
@@ -194,20 +211,11 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
       const estimate = parseMvpBenchmarkCostEstimate(
         Reflect.apply(JSON_PARSE, JSON, [row.estimate_json]),
       );
-      const authorization = authorizations.get(reservation.authorizationUid);
-      const attestation = getAttestation(reservation.attestationUid);
-      const session = sessions.get(reservation.sessionUid);
-      const expected = createMvpBenchmarkExecutionReservation({
-        uid: reservation.uid,
-        authorization,
-        attestation,
-        session,
-        itemKind: reservation.itemKind,
-        itemUid: reservation.itemUid,
-        requestSha256: reservation.requestSha256,
-        estimate,
-        reservedAtEpochMs: reservation.reservedAtEpochMs,
-      }, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_DATA_INVALID');
+      const authorization = authorizations.getStored(reservation.authorizationUid);
+      const attestation = mapStoredAttestation(
+        statements.attestation.get(reservation.attestationUid),
+      );
+      const session = statements.sessionRecord.get(reservation.sessionUid);
       if (serializeMvpBenchmarkExecutionPreflightJson(estimate) !== row.estimate_json
         || serializeMvpBenchmarkExecutionPreflightJson(reservation) !== row.reservation_json
         || row.uid !== reservation.uid
@@ -224,12 +232,43 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
         || row.reserved_at_epoch_ms !== reservation.reservedAtEpochMs
         || statements.reservedCost.get(reservation.authorizationUid)
           > authorization.maximumCostCnyFen
-        || expected.reservationSha256 !== reservation.reservationSha256) invalidData();
+        || !session || session.record_valid !== 1
+        || session.uid !== reservation.sessionUid
+        || session.drama_uid !== reservation.dramaUid
+        || session.plan_sha256 !== authorization.sessionPlanSha256
+        || attestation.authorizationUid !== reservation.authorizationUid
+        || attestation.sessionUid !== reservation.sessionUid
+        || attestation.dramaUid !== reservation.dramaUid) invalidData();
       return reservation;
     } catch (error) {
       if (error instanceof V2RepositoryDataError) throw error;
       return invalidData();
     }
+  }
+
+  function mapReservation(row) {
+    const reservation = mapStoredReservation(row);
+    const authorization = authorizations.get(reservation.authorizationUid);
+    const attestation = getAttestation(reservation.attestationUid);
+    const session = sessions.get(reservation.sessionUid);
+    let expected;
+    try {
+      expected = createMvpBenchmarkExecutionReservation({
+        uid: reservation.uid,
+        authorization,
+        attestation,
+        session,
+        itemKind: reservation.itemKind,
+        itemUid: reservation.itemUid,
+        requestSha256: reservation.requestSha256,
+        estimate: reservation.estimate,
+        reservedAtEpochMs: reservation.reservedAtEpochMs,
+      }, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_DATA_INVALID');
+    } catch {
+      return invalidData();
+    }
+    if (expected.reservationSha256 !== reservation.reservationSha256) invalidData();
+    return reservation;
   }
 
   function getReservation(uid) {
@@ -434,9 +473,15 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
       return result;
     },
     getAttestation,
+    getStoredAttestation(uid) {
+      return mapStoredAttestation(statements.attestation.get(uid));
+    },
     getBatchByAuthorization,
     getBatchPreparation,
     getReservation,
+    getStoredReservation(uid) {
+      return mapStoredReservation(statements.reservation.get(uid));
+    },
     getReservationByItem(kind, itemUid) {
       return mapReservation(statements.reservationByItem.get(kind, itemUid));
     },

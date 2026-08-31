@@ -283,7 +283,7 @@ function persistedResult(configured, intent, executionResult) {
 function createH3LocalExecutionService(options) {
   const configured = configuration(options);
   return Object.freeze({
-    execute(taskUidValue, request) {
+    execute(taskUidValue, request, executionPermit) {
       let taskUid;
       let intent;
       let pending;
@@ -293,7 +293,7 @@ function createH3LocalExecutionService(options) {
         pending = Reflect.apply(
           method(configured.coordinator, 'execute'),
           configured.coordinator,
-          [taskUid, request],
+          [taskUid, request, executionPermit],
         );
       } catch (error) {
         return rejectedInternalPromise(error);

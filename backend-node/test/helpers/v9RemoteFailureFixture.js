@@ -288,6 +288,9 @@ async function createCoordinatorTransferFailureFixture(t, fault, options = {}) {
   const taskService = createRemoteTaskService({
     repository: repositories.remote,
     manifestRepository: repositories.comfyManifests,
+    ...(options.executionGate === undefined
+      ? {}
+      : { executionGate: options.executionGate }),
     client,
     dependencyChecker: { async requireReady() { return Object.freeze({ ready: true }); } },
     createUid: () => TASK_UID,
