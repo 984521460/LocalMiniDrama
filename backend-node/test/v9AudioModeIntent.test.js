@@ -16,20 +16,18 @@ const { createNarrativeReviewService } = require('../src/narrative/reviews');
 const { createV2Repositories, V2RepositoryDataError } = require('../src/repositories/v2');
 const { createNarrativeApprovalGate } = require('../src/repositories/v2/narrativeApprovalGate');
 const audioModeIntentRoutes = require('../src/routes/v2/audioModeIntents');
-const { createWorkflowRunService, createWorkflowService } = require('../src/workflows');
+const { createWorkflowRunService } = require('../src/workflows');
 const audioModePlanSchema = require('../../schemas/v8/audio-mode-plan.schema.json');
 const dialogueDeliverySchema = require('../../schemas/v8/dialogue-delivery.schema.json');
 const voiceProfileSchema = require('../../schemas/v8/voice-profile.schema.json');
 const h3GenerationSpecSchema = require('../../schemas/v7/h3-generation-spec.schema.json');
 const h3VideoEvidenceSchema = require('../../schemas/v7/h3-video-evidence.schema.json');
 const audioModeIntentSchema = require('../../schemas/v9/audio-mode-intent.schema.json');
-const {
-  createPromptSemanticFixture,
-  seedContinuityFixture,
-} = require('./helpers/v5ContinuityFixtures');
 const { createMigratedV2Database, uid } = require('./helpers/v2RepositoryDatabase');
-
-const CREDENTIAL_REF = `credential:v1:${uid(97001)}`;
+const {
+  CREDENTIAL_REF,
+  createAudioModeIntentFixture: createFixture,
+} = require('./helpers/v9AudioModeIntentFixture');
 
 test('request parsing never executes inherited collection or text hooks', () => {
   const modulePath = path.join(__dirname, '..', 'src', 'audio', 'audioModeIntent.js');
@@ -131,125 +129,6 @@ test('request parsing never executes inherited collection or text hooks', () => 
   });
 });
 
-function uidSequence(values) {
-  const queue = [...values];
-  return () => queue.shift();
-}
-
-function createFixture(t) {
-  const fixture = seedContinuityFixture(t);
-  const prompt = createPromptSemanticFixture(fixture, 97100);
-  const repositories = createV2Repositories(fixture.database);
-  const voice = repositories.characterVersions.create({
-    schemaVersion: '5.0',
-    kind: 'voice',
-    uid: uid(97200),
-    characterUid: fixture.characterUid,
-    identityVersionUid: fixture.character.identity.uid,
-    parentUid: null,
-    metadata: {
-      name: 'Prepared intent voice',
-      language: 'zh-CN',
-      style: 'stable synthetic delivery',
-    },
-    createdAtEpochMs: 10,
-  });
-  const profile = repositories.voiceProfiles.create({
-    schemaVersion: '8.0',
-    uid: uid(97201),
-    dramaUid: fixture.dramaUid,
-    characterUid: fixture.characterUid,
-    characterVoiceVersionUid: voice.uid,
-    parentUid: null,
-    revision: 1,
-    provider: 'openai-compatible',
-    model: 'gpt-4o-mini-tts',
-    voiceKey: 'alloy',
-    credentialRef: CREDENTIAL_REF,
-    sourceKind: 'provider-preset',
-    status: 'ready',
-    defaultEmotion: 'neutral',
-    emotionMap: {
-      neutral: 'neutral', happy: 'happy', sad: 'sad', angry: 'angry',
-      fearful: 'fearful', surprised: 'surprised',
-    },
-    minimumSpeedPermille: 500,
-    defaultSpeedPermille: 1000,
-    maximumSpeedPermille: 2000,
-    createdAtEpochMs: 11,
-  });
-  repositories.voiceProfiles.activate({
-    schemaVersion: '8.0',
-    uid: uid(97202),
-    dramaUid: fixture.dramaUid,
-    characterUid: fixture.characterUid,
-    voiceProfileUid: profile.uid,
-    previousVoiceProfileUid: null,
-    stateVersion: 1,
-    changedAtEpochMs: 12,
-  });
-
-  const workflowService = createWorkflowService({
-    repositories,
-    createUid: () => uid(97300),
-  });
-  const workflow = workflowService.createWorkflow({ dramaId: 1, name: 'Prepared TTS intent' });
-  const canvasNodeUid = uid(97301);
-  workflowService.replaceGraph(workflow.definition.uid, {
-    expectedRevision: 0,
-    nodes: [{
-      uid: canvasNodeUid,
-      nodeType: 'audio.tts',
-      position: { x: 0, y: 0 },
-      config: { credentialRef: CREDENTIAL_REF, profileUid: profile.uid, speed: 1 },
-      domainRef: { type: 'narrative_result', uid: fixture.shot.resultUid },
-      status: 'ready',
-    }],
-    edges: [],
-  });
-  const run = createWorkflowRunService({
-    repositories,
-    createUid: uidSequence([uid(97310), uid(97311)]),
-  }).createRun({ workflowUid: workflow.definition.uid, triggerType: 'manual' });
-
-  const reviews = createNarrativeReviewService({ repositories });
-  const shotDetail = reviews.getResult(fixture.shot.resultUid);
-  const scriptResultUid = shotDetail.result.upstreamResultUid;
-  const script = reviews.requireApproved(scriptResultUid, 'script').result;
-  const shot = fixture.shot.result.output.shots.find((candidate) => (
-    candidate.dialogueEntryRefs.length > 0
-  ));
-  const dialogueEntryId = shot.dialogueEntryRefs[0];
-  const dialogue = script.output.scenes.flatMap((scene) => scene.entries)
-    .find((entry) => entry.entryId === dialogueEntryId);
-  const snapshot = prompt.snapshots.find((candidate) => candidate.shotId === shot.shotId);
-  const audioNodeRun = run.nodes.find((candidate) => candidate.nodeUid === canvasNodeUid);
-  assert.ok(audioNodeRun);
-  const request = {
-    schemaVersion: 'audio-mode-intent-request.v1',
-    uid: uid(97400),
-    dramaUid: fixture.dramaUid,
-    workflowRunUid: run.run.uid,
-    nodeRunUid: audioNodeRun.uid,
-    shotResultUid: fixture.shot.resultUid,
-    scriptResultUid,
-    deliveries: [{
-      uid: uid(97401),
-      continuitySnapshotUid: snapshot.snapshotUid,
-      shotId: shot.shotId,
-      dialogueEntryId,
-      voiceProfileUid: profile.uid,
-      emotion: 'fearful',
-      emotionIntensityPermille: 700,
-      speedPermille: 1000,
-      pauseBeforeMs: 0,
-      pauseAfterMs: 120,
-    }],
-    createdAtEpochMs: 20,
-  };
-  return { fixture, profile, repositories, request, run };
-}
-
 function persistedIntent(record) {
   return {
     uid: record.uid,
@@ -288,11 +167,11 @@ const INSERT_INTENT_SQL = `
      @scriptResultUid, @requestJson, @planJson, @planSha256, @createdAtEpochMs)
 `;
 
-test('migration seventeen installs the prepared audio mode intent store', (t) => {
+test('migration eighteen preserves the prepared audio mode intent store', (t) => {
   const database = createMigratedV2Database(t);
   assert.equal(
     database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(),
-    17,
+    18,
   );
   assert.equal(
     database.prepare(`

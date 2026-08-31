@@ -1,6 +1,7 @@
 const { types: { isPromise } } = require('node:util');
 
 const { createAssetRepository } = require('./assetRepository');
+const { createAudioTtsSubmissionStore } = require('../../audio/audioTtsSubmissionStore');
 const { createAudioModeIntentRepository } = require('./audioModeIntentRepository');
 const { createBgmTrackRepository } = require('./bgmTrackRepository');
 const { createCharacterCandidateRepository } = require('./characterCandidateRepository');
@@ -164,9 +165,11 @@ function createV2Repositories(database) {
     voiceProfiles,
     workflows,
   });
+  const audioTtsSubmissions = createAudioTtsSubmissionStore(database, { audioModeIntents });
   const aggregates = {
     assets,
     audioModeIntents,
+    audioTtsSubmissions,
     bgmTracks: createBgmTrackRepository(database),
     characterCandidates: createCharacterCandidateRepository(database),
     characterReferencePackages,

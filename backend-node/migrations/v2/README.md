@@ -201,3 +201,13 @@ readback, and every later read. Public projections omit both the request and
 credential reference. These prepared operations are local execution state and
 are deliberately excluded from project archives; they create no audio file,
 AssetVersion, Vault read, Provider call, or readiness claim.
+
+Migration `0018_audio_tts_submissions.sql` reserves each prepared dialogue
+request before a synchronous TTS Provider call. The immutable identity binds
+the intent, request ordinal, DialogueDelivery UID, request hash, VoiceProfile,
+and Provider. A reservation begins as `submitting`; startup recovery changes
+an interrupted reservation to `submission_unknown`, which is never eligible
+for automatic replay. The optional `received` transition stores only a bounded
+digest, byte count, and MIME summary and is reserved for a later durable media
+sink. Credentials and audio bytes are not stored in this table. The table is
+local operation state and is excluded from project archives.

@@ -21,6 +21,7 @@ function coordinatorForBoundary({
     workflowRuns: { recoverInterruptedRuns() { return { recoveredCount: 0 }; } },
     mediaExports: { recoverInterrupted() { return { recoveredCount: 0 }; } },
     h3ApiSubmissions: { recoverInterrupted() { return { recoveredCount: 0 }; } },
+    audioTtsSubmissions: { recoverInterrupted() { return { recoveredCount: 0 }; } },
     remoteTasks: { async recoverAll() { return remoteResult; } },
     log: { info() {}, warn() {} },
   });
@@ -34,6 +35,7 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
     workflowRuns: { recoverInterruptedRuns() { calls.push('workflow'); return { recoveredCount: 3 }; } },
     mediaExports: { recoverInterrupted() { calls.push('media'); throw new Error('secret-path-C:/private'); } },
     h3ApiSubmissions: { recoverInterrupted() { calls.push('h3'); return { recoveredCount: 4 }; } },
+    audioTtsSubmissions: { recoverInterrupted() { calls.push('tts'); return { recoveredCount: 5 }; } },
     remoteTasks: {
       async recoverAll() {
         calls.push('remote');
@@ -46,12 +48,12 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
   const first = await coordinator.run();
   const second = await coordinator.run();
   assert.strictEqual(second, first);
-  assert.deepEqual(calls, ['legacy-async', 'legacy-video', 'workflow', 'media', 'h3', 'remote']);
+  assert.deepEqual(calls, ['legacy-async', 'legacy-video', 'workflow', 'media', 'h3', 'tts', 'remote']);
   assert.equal(first.schemaVersion, 'startup-recovery.v1');
   assert.equal(first.status, 'partial_failure');
   assert.deepEqual(first.families.map((family) => family.name), [
     'legacy_async_tasks', 'legacy_video_generations', 'workflow_runs',
-    'media_exports', 'h3_api_submissions', 'remote_tasks',
+    'media_exports', 'h3_api_submissions', 'audio_tts_submissions', 'remote_tasks',
   ]);
   assert.deepEqual(first.families.at(-1), {
     name: 'remote_tasks', status: 'partial_failure', recoveredCount: 1, failedCount: 1,
@@ -190,6 +192,10 @@ test('P9-01 actual createApp runs startup recovery before serving paid submissio
     assert.equal(
       report.families.find((family) => family.name === 'h3_api_submissions').recoveredCount,
       1,
+    );
+    assert.equal(
+      report.families.find((family) => family.name === 'audio_tts_submissions').recoveredCount,
+      0,
     );
     assert.equal(
       report.families.find((family) => family.name === 'legacy_async_tasks').recoveredCount,

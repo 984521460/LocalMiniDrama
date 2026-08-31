@@ -158,7 +158,7 @@ function states(database, resultUids) {
 
 test('migration five installs the staleness state and append-only audit contract', (t) => {
   const database = createMigratedV2Database(t);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 17);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 18);
   assert.deepEqual(
     database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'narrative_stale_events'").all(),
     [{ name: 'narrative_stale_events' }],

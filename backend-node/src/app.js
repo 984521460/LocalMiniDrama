@@ -65,6 +65,7 @@ function createApp({
   const taskService = require('./services/taskService');
   const { resumeProcessingVideoGenerations } = require('./services/videoService');
   const recoveryLog = Object.freeze({ info() {}, warn() {}, error() {} });
+  const recoveryRepositories = createV2Repositories(db);
   const startupRecovery = createStartupRecoveryCoordinator({
     legacyAsyncTasks: Object.freeze({
       recover() {
@@ -79,9 +80,10 @@ function createApp({
         return Object.freeze({ recoveredCount: result.recoveredCount });
       },
     }),
-    workflowRuns: createWorkflowRunService({ repositories: createV2Repositories(db) }),
+    workflowRuns: createWorkflowRunService({ repositories: recoveryRepositories }),
     mediaExports: mediaExportRuntime.mediaExports.service,
     h3ApiSubmissions: createH3ApiSubmissionStore(db),
+    audioTtsSubmissions: recoveryRepositories.audioTtsSubmissions,
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,
   });

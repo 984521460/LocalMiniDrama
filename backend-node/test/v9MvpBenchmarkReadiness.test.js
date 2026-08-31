@@ -260,6 +260,19 @@ test('readiness fails closed when the version-seventeen intent table is missing'
   });
 });
 
+test('readiness fails closed when the version-eighteen TTS submission table is missing', (t) => {
+  const database = createMigratedV2Database(t);
+  const repository = createMvpBenchmarkReadinessRepository(database);
+  assert.equal(repository.inspect().contractsReady, true);
+
+  database.exec('DROP TABLE audio_tts_submissions');
+
+  assert.deepEqual(repository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness parser binds the whole projection to the current runtime and database', (t) => {
   const database = createMigratedV2Database(t);
   const runtime = productionRuntimeFixture();

@@ -3,6 +3,15 @@
 const { createHash } = require('node:crypto');
 const { types: { isProxy } } = require('node:util');
 
+const JSON_STRINGIFY = JSON.stringify;
+const DEFINE_PROPERTY = Object.defineProperty;
+const GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const REFLECT_OWN_KEYS = Reflect.ownKeys;
+const WEAK_SET_ADD = WeakSet.prototype.add;
+const WEAK_SET_DELETE = WeakSet.prototype.delete;
+const WEAK_SET_HAS = WeakSet.prototype.has;
+
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_EPOCH_MS = 253402300799999;
@@ -15,6 +24,13 @@ const ERROR_MESSAGES = Object.freeze({
   AUDIO_MODE_INPUT_INVALID: 'Audio mode input is invalid',
   AUDIO_MODE_DATA_INVALID: 'Audio mode data is invalid',
   AUDIO_TTS_NOT_CONFIGURED: 'Independent TTS is not configured',
+  AUDIO_TTS_SUBMISSION_INVALID: 'Independent TTS submission is invalid',
+  AUDIO_TTS_SUBMISSION_DATA_INVALID: 'Independent TTS submission state is invalid',
+  AUDIO_TTS_SUBMISSION_UNKNOWN: 'Independent TTS submission result is unknown',
+  AUDIO_TTS_PROVIDER_UNAVAILABLE: 'Independent TTS provider is unavailable',
+  AUDIO_TTS_PROVIDER_REJECTED: 'Independent TTS provider rejected the request',
+  AUDIO_TTS_RESPONSE_INVALID: 'Independent TTS provider response is invalid',
+  AUDIO_TTS_REQUEST_ABORTED: 'Independent TTS provider request was aborted',
   AUDIO_H3_NATIVE_UNAVAILABLE: 'H3 native audio is unavailable',
   AUDIO_EXECUTION_EVIDENCE_INVALID: 'Audio execution evidence is invalid',
   AUDIO_TIMELINE_INPUT_INVALID: 'Audio timeline input is invalid',
@@ -161,8 +177,88 @@ function boundedInteger(value, minimum, maximum, code) {
   return value;
 }
 
+function jsonSnapshot(value, ancestors) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (!value || typeof value !== 'object' || isProxy(value)
+    || Reflect.apply(WEAK_SET_HAS, ancestors, [value])) {
+    throw new TypeError('Audio canonical JSON is invalid');
+  }
+  let prototype;
+  let descriptors;
+  try {
+    prototype = Reflect.apply(GET_PROTOTYPE_OF, Object, [value]);
+    descriptors = Reflect.apply(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+  } catch {
+    throw new TypeError('Audio canonical JSON is invalid');
+  }
+  Reflect.apply(WEAK_SET_ADD, ancestors, [value]);
+  try {
+    if (Array.isArray(value)) {
+      if (prototype !== Array.prototype) throw new TypeError('Audio canonical JSON is invalid');
+      const length = descriptors.length;
+      if (!length || !Object.hasOwn(length, 'value') || !Number.isSafeInteger(length.value)
+        || length.value < 0) throw new TypeError('Audio canonical JSON is invalid');
+      const keys = Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+      if (keys.length !== length.value + 1) {
+        throw new TypeError('Audio canonical JSON is invalid');
+      }
+      for (let index = 0; index < keys.length; index += 1) {
+        if (typeof keys[index] !== 'string') {
+          throw new TypeError('Audio canonical JSON is invalid');
+        }
+      }
+      const output = [];
+      Reflect.apply(DEFINE_PROPERTY, Object, [output, 'toJSON', {
+        configurable: false,
+        enumerable: false,
+        writable: false,
+        value: undefined,
+      }]);
+      for (let index = 0; index < length.value; index += 1) {
+        const descriptor = descriptors[String(index)];
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
+          throw new TypeError('Audio canonical JSON is invalid');
+        }
+        Reflect.apply(DEFINE_PROPERTY, Object, [output, String(index), {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: jsonSnapshot(descriptor.value, ancestors),
+        }]);
+      }
+      return output;
+    }
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError('Audio canonical JSON is invalid');
+    }
+    const output = Object.create(null);
+    const keys = Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      const descriptor = descriptors[key];
+      if (typeof key !== 'string' || !descriptor || !Object.hasOwn(descriptor, 'value')) {
+        throw new TypeError('Audio canonical JSON is invalid');
+      }
+      if (!descriptor.enumerable) continue;
+      Reflect.apply(DEFINE_PROPERTY, Object, [output, key, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: jsonSnapshot(descriptor.value, ancestors),
+      }]);
+    }
+    return output;
+  } finally {
+    Reflect.apply(WEAK_SET_DELETE, ancestors, [value]);
+  }
+}
+
 function canonicalHash(value) {
-  return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
+  const snapshot = jsonSnapshot(value, new WeakSet());
+  return createHash('sha256')
+    .update(Reflect.apply(JSON_STRINGIFY, JSON, [snapshot]), 'utf8')
+    .digest('hex');
 }
 
 function textHash(value) {

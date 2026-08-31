@@ -413,6 +413,10 @@ function parseAudioModePlanRecord(value) {
   }
 }
 
+function parseAudioTtsRequestRecord(value) {
+  return parseTtsRequest(value, DATA_CODE);
+}
+
 function parseAudioModePlanAgainstEnvelope(value, expectedEnvelope, expectedPlanUid) {
   try {
     const stored = parseAudioModePlanRecord(value);
@@ -484,6 +488,7 @@ module.exports = Object.freeze({
   createAudioModePlan,
   createAudioModePlanVerifier,
   parseAudioModePlanRecord,
+  parseAudioTtsRequestRecord,
   parseH3NativeSourceEvidence,
   requireTrustedAudioModePlan,
 });
