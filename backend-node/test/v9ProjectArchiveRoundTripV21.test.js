@@ -165,6 +165,57 @@ test('a complete migrated project round-trips through a clean database as normal
   const schemaPortableExtra = structuredClone(firstManifest);
   schemaPortableExtra.portableBindings[0].portable_field.unexpected = true;
   assert.equal(validateSchema(schemaPortableExtra), false);
+  const narrativeNode = firstManifest.records.canvasNodes.find(
+    (row) => row.domain_ref_type === 'narrative_result',
+  );
+  assert.ok(narrativeNode);
+  assert.ok(firstManifest.structuredRecords.narrativeResults.some(
+    (row) => row.uid === narrativeNode.domain_ref_uid,
+  ));
+  const missingNarrativeBinding = structuredClone(firstManifest);
+  missingNarrativeBinding.structuredRecords.narrativeResults = (
+    missingNarrativeBinding.structuredRecords.narrativeResults.filter(
+      (row) => row.uid !== narrativeNode.domain_ref_uid,
+    )
+  );
+  assert.throws(
+    () => parseProjectManifestV21(missingNarrativeBinding),
+    (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
+  );
+  const narrativeNodeTypes = Object.freeze({
+    'story.facts': 'extraction',
+    'episode.adaptation': 'adaptation',
+    'script.structured': 'script',
+    'shot.plan': 'shot',
+  });
+  for (const [nodeType, resultType] of Object.entries(narrativeNodeTypes)) {
+    const mismatchedNarrativeBinding = structuredClone(firstManifest);
+    const canvasNode = mismatchedNarrativeBinding.records.canvasNodes.find(
+      (row) => row.node_type === nodeType,
+    );
+    const wrongResult = mismatchedNarrativeBinding.structuredRecords.narrativeResults.find(
+      (row) => row.result_type !== resultType,
+    );
+    assert.ok(canvasNode);
+    assert.ok(wrongResult);
+    canvasNode.domain_ref_type = 'narrative_result';
+    canvasNode.domain_ref_uid = wrongResult.uid;
+    assert.throws(
+      () => parseProjectManifestV21(mismatchedNarrativeBinding),
+      (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
+    );
+  }
+  const invalidNarrativeNode = structuredClone(firstManifest);
+  const videoNode = invalidNarrativeNode.records.canvasNodes.find(
+    (row) => row.node_type === 'shot.video',
+  );
+  assert.ok(videoNode);
+  videoNode.domain_ref_type = 'narrative_result';
+  videoNode.domain_ref_uid = narrativeNode.domain_ref_uid;
+  assert.throws(
+    () => parseProjectManifestV21(invalidNarrativeNode),
+    (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
+  );
 
   for (const [name, rows] of Object.entries(firstManifest.structuredRecords)) {
     assert.ok(rows.length > 0, `structured ${name} should be represented`);

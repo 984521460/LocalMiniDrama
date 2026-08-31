@@ -38,6 +38,12 @@ const PORTABLE_ENTRY_FIELDS = Object.freeze([
 const MEDIA_BINDING_FIELDS = Object.freeze([
   'asset_version_uid', 'binding_state', 'archive_path', 'byte_length', 'sha256',
 ]);
+const NARRATIVE_RESULT_TYPE_BY_NODE_TYPE = Object.freeze({
+  'story.facts': 'extraction',
+  'episode.adaptation': 'adaptation',
+  'script.structured': 'script',
+  'shot.plan': 'shot',
+});
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const CONTENT_PATH = /^v2\/media\/sha256\/([0-9a-f]{2})\/([0-9a-f]{64})$/u;
@@ -360,7 +366,12 @@ function cloneCompatRecords(records, replacements) {
       for (let columnIndex = 0; columnIndex < spec.columns.length; columnIndex += 1) {
         const column = spec.columns[columnIndex];
         const identity = portableIdentity(spec.table, row.uid, column);
-        clone[column] = mapHas(replacements, identity) ? mapGet(replacements, identity) : row[column];
+        const narrativeCompatibilityProjection = name === 'canvasNodes'
+          && row.domain_ref_type === 'narrative_result'
+          && (column === 'domain_ref_type' || column === 'domain_ref_uid');
+        clone[column] = narrativeCompatibilityProjection
+          ? null
+          : (mapHas(replacements, identity) ? mapGet(replacements, identity) : row[column]);
       }
       clonedRows[rowIndex] = clone;
     }
@@ -486,6 +497,18 @@ function assertStructuredBaseReferences(records, structured, legacyRecords) {
   const selectionUids = uidSet(records.sourceSelections);
   const promptUids = uidSet(records.promptSemanticVersions);
   const manifestUids = uidSet(records.workflowManifests);
+  const narrativeResults = indexByUid(structured.narrativeResults);
+
+  for (let index = 0; index < records.canvasNodes.length; index += 1) {
+    const row = records.canvasNodes[index];
+    if (row.domain_ref_type !== 'narrative_result') continue;
+    const expectedType = safeHasOwn(NARRATIVE_RESULT_TYPE_BY_NODE_TYPE, row.node_type)
+      ? NARRATIVE_RESULT_TYPE_BY_NODE_TYPE[row.node_type]
+      : null;
+    const narrativeResult = mapGet(narrativeResults, row.domain_ref_uid);
+    if (expectedType === null || !narrativeResult
+      || narrativeResult.result_type !== expectedType) invalidManifest();
+  }
 
   const characterGroups = [
     structured.characterIdentityVersions,

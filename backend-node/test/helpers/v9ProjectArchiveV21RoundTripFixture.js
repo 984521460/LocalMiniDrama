@@ -5,8 +5,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { createNarrativeStalenessService } = require('../../src/narrative/staleness');
+const { createProductionMediaExportRuntime } = require('../../src/media/productionRuntime');
 const { normalizeWorkflowNodeConfig } = require('../../src/workflows/nodeConfig');
 const { createWorkflowExecutionPlan } = require('../../src/workflows/executionPlan');
+const {
+  createMaterializedNodeExecutor,
+  createWorkflowRunService,
+} = require('../../src/workflows');
 const {
   createPromptSemanticFixture,
   seedContinuityFixture,
@@ -500,15 +505,22 @@ function addPortableWorkflow(fixture, voiceProfile) {
   });
 }
 
-function addMediaExportSeal(fixture, executionPlan, storageRoot) {
+async function addMediaExportSeal(fixture, localExport, storageRoot) {
   const { repositories } = fixture;
+  const { executionPlan } = localExport.fixture;
   const workflowUid = uid(29100);
   const sourceAssetUid = uid(29101);
   const sourceVersionUid = uid(29107);
-  const sourceNodeUid = uid(29102);
-  const exportNodeUid = uid(29103);
-  const sourceNodeRunUid = uid(29104);
-  const exportNodeRunUid = uid(29105);
+  const exportNodeUid = uid(29130);
+  const selectionUid = fixture.database.prepare(`
+    SELECT uid FROM source_selections
+    WHERE document_uid IN (SELECT uid FROM source_documents WHERE drama_uid=?)
+    ORDER BY uid LIMIT 1
+  `).pluck().get(fixture.dramaUid);
+  const narrativeResultUid = (resultType) => fixture.database.prepare(`
+    SELECT uid FROM narrative_results
+    WHERE drama_uid=? AND result_type=?
+  `).pluck().get(fixture.dramaUid, resultType);
   repositories.assets.create({
     uid: sourceAssetUid,
     ownerType: 'drama',
@@ -532,6 +544,36 @@ function addMediaExportSeal(fixture, executionPlan, storageRoot) {
     parentUid: null,
     status: 'ready',
   }, { makeCurrent: true });
+  const materialized = Object.freeze([
+    Object.freeze({
+      uid: uid(29110), nodeType: 'source.selection',
+      domainRefType: 'source_selection', domainRefUid: selectionUid,
+    }),
+    Object.freeze({
+      uid: uid(29111), nodeType: 'story.facts',
+      domainRefType: 'narrative_result', domainRefUid: narrativeResultUid('extraction'),
+    }),
+    Object.freeze({
+      uid: uid(29112), nodeType: 'episode.adaptation',
+      domainRefType: 'narrative_result', domainRefUid: narrativeResultUid('adaptation'),
+    }),
+    Object.freeze({
+      uid: uid(29113), nodeType: 'script.structured',
+      domainRefType: 'narrative_result', domainRefUid: narrativeResultUid('script'),
+    }),
+    Object.freeze({
+      uid: uid(29114), nodeType: 'shot.plan',
+      domainRefType: 'narrative_result', domainRefUid: fixture.shot.resultUid,
+    }),
+    Object.freeze({
+      uid: uid(29115), nodeType: 'shot.image',
+      domainRefType: 'asset', domainRefUid: uid(19700),
+    }),
+    Object.freeze({
+      uid: uid(29116), nodeType: 'shot.video',
+      domainRefType: 'asset', domainRefUid: sourceAssetUid,
+    }),
+  ]);
   repositories.workflows.createGraph({
     definition: {
       uid: workflowUid,
@@ -542,21 +584,16 @@ function addMediaExportSeal(fixture, executionPlan, storageRoot) {
       description: 'Exercises the terminal media export seal.',
     },
     nodes: [
-      {
-        uid: sourceNodeUid,
-        nodeType: 'shot.video',
-        position: { x: 0, y: 0 },
-        config: normalizeWorkflowNodeConfig('shot.video', {
-          durationMs: 1500, fps: 24, height: 1080, width: 1920,
-        }),
-        domainRefType: 'asset',
-        domainRefUid: sourceAssetUid,
+      ...materialized.map((node, index) => ({
+        ...node,
+        position: { x: index * 120, y: index * 80 },
+        config: normalizeWorkflowNodeConfig(node.nodeType, {}),
         status: 'ready',
-      },
+      })),
       {
         uid: exportNodeUid,
         nodeType: 'export.final',
-        position: { x: 300, y: 0 },
+        position: { x: 900, y: 560 },
         config: normalizeWorkflowNodeConfig('export.final', {
           format: 'mp4', fps: 24, height: 1080, width: 1920,
         }),
@@ -566,8 +603,8 @@ function addMediaExportSeal(fixture, executionPlan, storageRoot) {
       },
     ],
     edges: [{
-      uid: uid(29106),
-      sourceNodeUid,
+      uid: uid(29131),
+      sourceNodeUid: materialized[6].uid,
       sourcePort: 'video',
       targetNodeUid: exportNodeUid,
       targetPort: 'videos',
@@ -576,6 +613,9 @@ function addMediaExportSeal(fixture, executionPlan, storageRoot) {
   const plan = createWorkflowExecutionPlan(
     repositories.workflows.getGraph(workflowUid), repositories,
   );
+  const nodeRunUidByNodeUid = new Map(plan.topologicalOrder.map((nodeUid, ordinal) => (
+    [nodeUid, uid(29210 + ordinal)]
+  )));
   repositories.runs.createWorkflowWithNodes({
     run: {
       uid: executionPlan.workflowRunUid,
@@ -586,59 +626,95 @@ function addMediaExportSeal(fixture, executionPlan, storageRoot) {
       triggerType: 'manual',
       status: 'queued',
     },
-    nodes: [
+    nodes: plan.topologicalOrder.map((nodeUid, ordinal) => (
       {
-        uid: sourceNodeRunUid,
-        nodeUid: sourceNodeUid,
-        ordinal: 0,
+        uid: nodeRunUidByNodeUid.get(nodeUid),
+        nodeUid,
+        ordinal,
         inputSnapshot: {},
         output: null,
         cacheKey: null,
         status: 'queued',
-      },
-      {
-        uid: exportNodeRunUid,
-        nodeUid: exportNodeUid,
-        ordinal: 1,
-        inputSnapshot: {},
-        output: null,
-        cacheKey: null,
-        status: 'queued',
-      },
-    ],
+      }
+    )),
   });
-  repositories.runs.transitionWorkflowStatus({
-    uid: executionPlan.workflowRunUid, expectedStatus: 'queued', nextStatus: 'running',
+  const runService = createWorkflowRunService({ repositories });
+  const executeNode = createMaterializedNodeExecutor({ repositories, runService });
+  runService.transitionWorkflow({
+    runUid: executionPlan.workflowRunUid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
   });
-  repositories.runs.transitionNodeStatus({
-    uid: sourceNodeRunUid, expectedStatus: 'queued', nextStatus: 'running', inputSnapshot: {},
+  const materializedOutputs = Object.create(null);
+  for (const node of materialized) {
+    const nodeRunUid = nodeRunUidByNodeUid.get(node.uid);
+    const running = runService.transitionNode({
+      nodeRunUid,
+      expectedStatus: 'queued',
+      nextStatus: 'running',
+      inputSnapshot: {},
+    });
+    const planNode = plan.snapshot.nodes.find((candidate) => candidate.uid === node.uid);
+    const output = executeNode({
+      runUid: executionPlan.workflowRunUid,
+      nodeRunUid,
+      node: planNode,
+      inputSnapshot: running.inputSnapshot,
+      signal: null,
+    });
+    runService.transitionNode({
+      nodeRunUid,
+      expectedStatus: 'running',
+      nextStatus: 'succeeded',
+      output,
+    });
+    materializedOutputs[node.nodeType] = output;
+  }
+  const exportNodeRunUid = nodeRunUidByNodeUid.get(exportNodeUid);
+  runService.transitionNode({
+    nodeRunUid: exportNodeRunUid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+    inputSnapshot: {},
   });
-  repositories.runs.transitionNodeStatus({
-    uid: sourceNodeRunUid, expectedStatus: 'running', nextStatus: 'succeeded', output: {},
-  });
-  repositories.runs.transitionNodeStatus({
-    uid: exportNodeRunUid, expectedStatus: 'queued', nextStatus: 'running', inputSnapshot: {},
-  });
-  repositories.runs.transitionNodeStatus({
-    uid: exportNodeRunUid,
+  runService.transitionNode({
+    nodeRunUid: exportNodeRunUid,
     expectedStatus: 'running',
     nextStatus: 'succeeded',
     output: { schemaVersion: 'media-export-node-output.v1', executionPlan },
   });
-  repositories.runs.transitionWorkflowStatus({
-    uid: executionPlan.workflowRunUid, expectedStatus: 'running', nextStatus: 'succeeded',
+  runService.transitionWorkflow({
+    runUid: executionPlan.workflowRunUid,
+    expectedStatus: 'running',
+    nextStatus: 'succeeded',
   });
-  const seal = repositories.mediaExportRuns.prepareFromNode(
-    exportNodeRunUid, executionPlan.createdAtEpochMs, fixture.dramaUid,
+  const generatedUids = [uid(29900), uid(29901)];
+  const mediaRuntime = createProductionMediaExportRuntime({
+    database: fixture.database,
+    localRoot: storageRoot,
+    workspaceRoot: localExport.workspaceRoot,
+    dependencies: {
+      ffmpegPath: localExport.ffmpegPath,
+      ffprobePath: localExport.ffprobePath,
+      createUid: () => generatedUids.shift(),
+      nowEpochMs: () => executionPlan.createdAtEpochMs + 100,
+    },
+  });
+  const mediaExportRun = await mediaRuntime.mediaExports.service.start(
+    { nodeRunUid: exportNodeRunUid }, fixture.dramaUid,
   );
-  repositories.mediaExportRuns.start(seal.uid);
-  repositories.mediaExportRuns.fail(
-    seal.uid, 'MEDIA_EXPORT_FAILED', executionPlan.createdAtEpochMs + 1,
-  );
+  return Object.freeze({
+    executionPlan,
+    exportNodeRunUid,
+    materializedOutputs: Object.freeze(materializedOutputs),
+    mediaExportRun,
+    nodeRunUidByNodeUid: Object.freeze(Object.fromEntries(nodeRunUidByNodeUid)),
+    workflowUid,
+  });
 }
 
 async function seedProjectArchiveV21RoundTripFixture(t, database, storageRoot) {
-  const localExport = await createLocalMediaExportFixture(t, 29150);
+  const localExport = await createLocalMediaExportFixture(t, 29150, { root: storageRoot });
   const fixture = seedContinuityFixture(t, database, {
     dramaUid: v8Uid(1),
     materializeAssetVersion({ assetVersionUid, relativePath }) {
@@ -650,7 +726,7 @@ async function seedProjectArchiveV21RoundTripFixture(t, database, storageRoot) {
   const { voiceProfile } = addVoiceAndBgm(fixture, storageRoot);
   addGenerationHistory(fixture, promptFixture, storageRoot);
   addPortableWorkflow(fixture, voiceProfile);
-  addMediaExportSeal(fixture, localExport.fixture.executionPlan, storageRoot);
+  const fullRun = await addMediaExportSeal(fixture, localExport, storageRoot);
   const selectionUid = database.prepare(`
     SELECT uid FROM source_selections
     WHERE document_uid IN (SELECT uid FROM source_documents WHERE drama_uid=?)
@@ -661,6 +737,8 @@ async function seedProjectArchiveV21RoundTripFixture(t, database, storageRoot) {
   return Object.freeze({
     ...fixture,
     credentialRef: CREDENTIAL_REF,
+    fullRun,
+    localExport,
     promptFixture,
   });
 }

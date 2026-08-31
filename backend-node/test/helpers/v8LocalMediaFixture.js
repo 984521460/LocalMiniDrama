@@ -46,9 +46,13 @@ function generateAudio(ffmpegPath, target, frequency, durationSeconds) {
   ]);
 }
 
-async function createLocalMediaExportFixture(t, executionNumber = 1500) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'localminidrama-export-run-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+async function createLocalMediaExportFixture(t, executionNumber = 1500, options = {}) {
+  const ownsRoot = options.root === undefined;
+  const root = ownsRoot
+    ? fs.mkdtempSync(path.join(os.tmpdir(), 'localminidrama-export-run-'))
+    : path.resolve(options.root);
+  if (ownsRoot) t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  else fs.mkdirSync(root, { recursive: true });
   const workspaceRoot = path.join(root, '.media-export-work');
   fs.mkdirSync(workspaceRoot);
   const ffmpegPath = getFfmpegPath();
