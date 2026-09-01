@@ -17,6 +17,8 @@ const REQUIRED_ASAR_ENTRIES = Object.freeze([
   '/product-identity.js',
   '/user-data-path.js',
   '/windows-release-contract.js',
+  '/windows-build-provenance.js',
+  '/build-provenance.json',
   '/backend-app/src/app.js',
   '/backend-app/src/utils/boundedLogFile.js',
   '/backend-app/src/utils/logDirectoryLease.js',
@@ -198,6 +200,7 @@ function assertWindowsReleaseConfig(packageJson) {
   const build = packageJson.build;
   const win = build && build.win;
   const nsis = build && build.nsis;
+  const scripts = packageJson.scripts;
   if (!build || !win || !nsis) invalid();
   try {
     assertDistributionBuildConfig(packageJson);
@@ -214,6 +217,9 @@ function assertWindowsReleaseConfig(packageJson) {
   if (nsis.perMachine !== false || nsis.deleteAppDataOnUninstall !== false) invalid();
   if (nsis.allowElevation !== false || nsis.runAfterFinish !== false) invalid();
   if (packageJson.publish !== undefined || build.publish !== undefined) invalid();
+  if (!scripts || scripts['write:provenance'] !== 'node scripts/write-build-provenance.js'
+    || scripts.pack !== 'npm run prepare-backend && npm run build:front && npm run copy-front && npm run clean:unpacked && npm run prepare:packaging && npm run write:provenance && electron-builder --dir'
+    || scripts.dist !== 'npm run prepare-backend && npm run build:front && npm run copy-front && npm run clean:unpacked && npm run prepare:packaging && npm run write:provenance && electron-builder --win') invalid();
   if (!Array.isArray(build.files)) invalid();
   if (!Array.isArray(build.asarUnpack)
     || !build.asarUnpack.includes('backend-app/migrations/**')
@@ -225,6 +231,8 @@ function assertWindowsReleaseConfig(packageJson) {
     'product-identity.js',
     'user-data-path.js',
     'windows-release-contract.js',
+    'windows-build-provenance.js',
+    'build-provenance.json',
     'backend-app/**/*',
     'node_modules/**/*',
   ]) {

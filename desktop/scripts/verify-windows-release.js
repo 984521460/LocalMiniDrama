@@ -24,6 +24,13 @@ const {
   PRODUCT_NAME,
   USER_DATA_DIRECTORY,
 } = require('../product-identity');
+const {
+  MAX_PROVENANCE_BYTES,
+  currentWindowsBuildProvenance,
+  parseWindowsBuildProvenanceBytes,
+  provenanceSha256,
+  serializeWindowsBuildProvenance,
+} = require('../windows-build-provenance');
 
 const desktopRoot = path.join(__dirname, '..');
 const releaseRoot = path.join(desktopRoot, 'release');
@@ -165,9 +172,27 @@ function assertBoundedRegularFile(filePath, maxBytes) {
   return stat.size;
 }
 
+function extractBuildProvenance(asarImpl, archivePath) {
+  let stat;
+  let bytes;
+  try {
+    stat = asarImpl.statFile(archivePath, 'build-provenance.json', false);
+    if (!stat || 'link' in stat || 'files' in stat || stat.unpacked === true
+      || !Number.isSafeInteger(stat.size) || stat.size < 2
+      || stat.size > MAX_PROVENANCE_BYTES) fail();
+    bytes = asarImpl.extractFile(archivePath, 'build-provenance.json', false);
+  } catch (_) {
+    fail();
+  }
+  const provenance = parseWindowsBuildProvenanceBytes(bytes);
+  if (Buffer.byteLength(serializeWindowsBuildProvenance(provenance), 'utf8') !== stat.size) fail();
+  return provenance;
+}
+
 function assertExtractedExecutablePayload({
   extractionRoot,
   sidecarAsarPath,
+  expectedProvenance,
   projectLicensePath = path.join(desktopRoot, '..', 'LICENSE'),
   thirdPartyNoticesPath = path.join(desktopRoot, '..', 'THIRD_PARTY_NOTICES.md'),
   asarImpl = asar,
@@ -195,19 +220,34 @@ function assertExtractedExecutablePayload({
     || sha256(extractedNotices) !== sha256(thirdPartyNoticesPath)) fail();
 
   let entries;
+  let sidecarProvenance;
+  let embeddedProvenance;
   try {
     entries = asarImpl.listPackage(extractedAsar);
+    sidecarProvenance = extractBuildProvenance(asarImpl, sidecarAsarPath);
+    embeddedProvenance = extractBuildProvenance(asarImpl, extractedAsar);
   } catch (_) {
     fail();
   }
   assertAsarEntriesImpl(entries);
+  let expectedSerialized;
+  try {
+    expectedSerialized = serializeWindowsBuildProvenance(expectedProvenance);
+  } catch (_) {
+    fail();
+  }
+  if (serializeWindowsBuildProvenance(sidecarProvenance) !== expectedSerialized
+    || serializeWindowsBuildProvenance(embeddedProvenance) !== expectedSerialized) fail();
   return Object.freeze({
     asarEntries: entries.length,
     asarSha256: embeddedAsarSha256,
+    provenanceSha256: provenanceSha256(embeddedProvenance),
+    sourceCommitSha: embeddedProvenance.sourceCommitSha,
+    sourceTreeSha: embeddedProvenance.sourceTreeSha,
   });
 }
 
-async function inspectExecutablePayload(executable, kind, sidecarAsarPath) {
+async function inspectExecutablePayload(executable, kind, sidecarAsarPath, expectedProvenance) {
   if (kind !== 'installer' && kind !== 'portable') fail();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `ai-drama-p9-05-${kind}-payload-`));
   try {
@@ -224,7 +264,11 @@ async function inspectExecutablePayload(executable, kind, sidecarAsarPath) {
       'resources\\licenses\\LICENSE',
       'resources\\licenses\\THIRD_PARTY_NOTICES.md',
     ]);
-    return assertExtractedExecutablePayload({ extractionRoot: root, sidecarAsarPath });
+    return assertExtractedExecutablePayload({
+      extractionRoot: root,
+      sidecarAsarPath,
+      expectedProvenance,
+    });
   } finally {
     removeTaskRoot(root);
   }
@@ -255,6 +299,15 @@ function waitFor(predicate, attempts = 60) {
 async function verifyArtifacts() {
   const manifest = packageJson();
   assertWindowsReleaseConfig(manifest);
+  let expectedProvenance;
+  try {
+    expectedProvenance = currentWindowsBuildProvenance({
+      repoRoot: path.resolve(desktopRoot, '..'),
+      packageJsonPath: path.join(desktopRoot, 'package.json'),
+    });
+  } catch (_) {
+    fail();
+  }
   const names = releaseArtifactNames(manifest);
   const installer = path.join(releaseRoot, names.installer);
   const portable = path.join(releaseRoot, names.portable);
@@ -269,9 +322,12 @@ async function verifyArtifacts() {
     listExecutableArchive(portable),
   ]);
   const [installerPayload, portablePayload] = await Promise.all([
-    inspectExecutablePayload(installer, 'installer', asarPath),
-    inspectExecutablePayload(portable, 'portable', asarPath),
+    inspectExecutablePayload(installer, 'installer', asarPath, expectedProvenance),
+    inspectExecutablePayload(portable, 'portable', asarPath, expectedProvenance),
   ]);
+  if (installerPayload.provenanceSha256 !== portablePayload.provenanceSha256
+    || installerPayload.sourceCommitSha !== portablePayload.sourceCommitSha
+    || installerPayload.sourceTreeSha !== portablePayload.sourceTreeSha) fail();
 
   return Object.freeze({
     manifest,
@@ -289,6 +345,9 @@ async function verifyArtifacts() {
       portableEntries,
       portableAsarEntries: portablePayload.asarEntries,
       portableAsarSha256: portablePayload.asarSha256,
+      sourceCommitSha: installerPayload.sourceCommitSha,
+      sourceTreeSha: installerPayload.sourceTreeSha,
+      provenanceSha256: installerPayload.provenanceSha256,
       asarEntries: entries.length,
     }),
   });

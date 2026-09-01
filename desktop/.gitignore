@@ -3,4 +3,7 @@ release/
 frontweb-dist/
 backend-app/
 schemas/
+build-provenance.json
+build-provenance.json.pending-*
+build-provenance.json.previous-*
 *.log

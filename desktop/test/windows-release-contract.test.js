@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 const asar = require('@electron/asar');
 
@@ -22,6 +23,15 @@ const {
   removeTaskRoot,
 } = require('../scripts/verify-windows-release');
 const { pruneUnsupportedOptionalNative } = require('../scripts/prune-optional-native');
+const { installBuildProvenanceFile } = require('../scripts/write-build-provenance');
+const {
+  WINDOWS_BUILD_PROVENANCE_ERROR,
+  createWindowsBuildProvenance,
+  currentWindowsBuildProvenance,
+  parseWindowsBuildProvenanceBytes,
+  provenanceSha256,
+  serializeWindowsBuildProvenance,
+} = require('../windows-build-provenance');
 
 const desktopRoot = path.join(__dirname, '..');
 
@@ -43,6 +53,17 @@ function withPackagingSmokeTaskRoot(t, suffix = 'fixture') {
   return { root, appDataRoot };
 }
 
+function syntheticProvenance(overrides = {}) {
+  return createWindowsBuildProvenance({
+    schemaVersion: 'windows-build-provenance.v1',
+    sourceCommitSha: 'a'.repeat(40),
+    sourceTreeSha: 'b'.repeat(40),
+    packageVersion: '1.2.8',
+    appId: 'com.localminidrama.desktop',
+    ...overrides,
+  });
+}
+
 test('Windows release config has distinct installer and portable artifacts with safe user-data behavior', () => {
   const packageJson = packageFixture();
   const result = assertWindowsReleaseConfig(packageJson);
@@ -51,11 +72,132 @@ test('Windows release config has distinct installer and portable artifacts with 
   assert.equal(result.perMachine, false);
   assert.equal(result.deleteAppDataOnUninstall, false);
   assert.equal(result.publishConfigured, false);
+  assert.equal(packageJson.scripts['write:provenance'], 'node scripts/write-build-provenance.js');
+  assert.ok(packageJson.build.files.includes('windows-build-provenance.js'));
+  assert.ok(packageJson.build.files.includes('build-provenance.json'));
   assert.deepEqual(releaseArtifactNames(packageJson), {
     installer: 'AI漫剧工作台 Setup 1.2.8.exe',
     portable: 'AI漫剧工作台 1.2.8.exe',
     unpackedExecutable: 'AI漫剧工作台.exe',
   });
+});
+
+test('Windows build provenance is exact, canonical and source-bound', () => {
+  const provenance = syntheticProvenance();
+  const serialized = serializeWindowsBuildProvenance(provenance);
+  assert.deepEqual(parseWindowsBuildProvenanceBytes(Buffer.from(serialized)), provenance);
+  assert.equal(provenanceSha256(provenance), require('node:crypto')
+    .createHash('sha256').update(serialized).digest('hex'));
+  for (const candidate of [
+    Buffer.from(serialized.trim()),
+    Buffer.from(serialized.replace('"sourceTreeSha"', '"sourceTreeSha" :')),
+    Buffer.from(serializeWindowsBuildProvenance(syntheticProvenance({ sourceCommitSha: 'c'.repeat(40) }))
+      .replace('"sourceCommitSha"', '"sourceCommitSha":"a","sourceCommitSha"')),
+  ]) {
+    assert.throws(
+      () => parseWindowsBuildProvenanceBytes(candidate),
+      (error) => error && error.code === WINDOWS_BUILD_PROVENANCE_ERROR,
+    );
+  }
+  assert.throws(
+    () => createWindowsBuildProvenance({ ...provenance, unexpected: true }),
+    (error) => error && error.code === WINDOWS_BUILD_PROVENANCE_ERROR,
+  );
+  let proxyReads = 0;
+  const proxied = new Proxy(Buffer.from(serialized), {
+    getPrototypeOf() {
+      proxyReads += 1;
+      throw new Error('synthetic-proxy-marker');
+    },
+  });
+  assert.throws(
+    () => parseWindowsBuildProvenanceBytes(proxied),
+    (error) => error && error.code === WINDOWS_BUILD_PROVENANCE_ERROR,
+  );
+  assert.equal(proxyReads, 0);
+});
+
+test('Windows build provenance reads only a clean exact Git commit and tree', (t) => {
+  const root = withTempDirectory(t);
+  const packageJsonPath = path.join(root, 'desktop-package.json');
+  fs.writeFileSync(packageJsonPath, JSON.stringify({
+    version: '1.2.8',
+    build: { appId: 'com.localminidrama.desktop' },
+  }));
+  fs.writeFileSync(path.join(root, 'source.txt'), 'clean-source\n');
+  const git = (...args) => execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).trim();
+  git('init');
+  git('config', 'core.autocrlf', 'false');
+  git('config', 'user.name', 'Synthetic Test');
+  git('config', 'user.email', 'synthetic@example.invalid');
+  git('add', '.');
+  git('commit', '-m', 'synthetic fixture');
+  const provenance = currentWindowsBuildProvenance({ repoRoot: root, packageJsonPath });
+  assert.equal(provenance.sourceCommitSha, git('rev-parse', 'HEAD'));
+  assert.equal(provenance.sourceTreeSha, git('rev-parse', 'HEAD^{tree}'));
+  fs.writeFileSync(path.join(root, 'source.txt'), 'dirty-source\n');
+  assert.throws(
+    () => currentWindowsBuildProvenance({ repoRoot: root, packageJsonPath }),
+    (error) => error && error.code === WINDOWS_BUILD_PROVENANCE_ERROR,
+  );
+});
+
+test('Windows build provenance installation never follows links and rejects target races', (t) => {
+  const root = withTempDirectory(t);
+  const targetPath = path.join(root, 'build-provenance.json');
+  const externalPath = path.join(root, 'external.txt');
+  fs.writeFileSync(externalPath, 'external-sentinel\n');
+  fs.linkSync(externalPath, targetPath);
+  assert.throws(
+    () => installBuildProvenanceFile({
+      provenance: syntheticProvenance(),
+      targetPath,
+      nonce: '1'.repeat(32),
+    }),
+    (error) => error && error.code === WINDOWS_BUILD_PROVENANCE_ERROR,
+  );
+  assert.equal(fs.readFileSync(externalPath, 'utf8'), 'external-sentinel\n');
+  fs.unlinkSync(targetPath);
+
+  const first = syntheticProvenance();
+  const second = syntheticProvenance({ sourceCommitSha: 'c'.repeat(40) });
+  assert.deepEqual(installBuildProvenanceFile({
+    provenance: first,
+    targetPath,
+    nonce: '2'.repeat(32),
+  }), first);
+  assert.deepEqual(installBuildProvenanceFile({
+    provenance: second,
+    targetPath,
+    nonce: '3'.repeat(32),
+  }), second);
+  assert.deepEqual(parseWindowsBuildProvenanceBytes(fs.readFileSync(targetPath)), second);
+
+  const displaced = path.join(root, 'displaced-provenance.json');
+  const fsWithRace = {
+    ...fs,
+    renameSync(source, destination) {
+      if (path.resolve(source) === path.resolve(targetPath)) {
+        fs.renameSync(source, displaced);
+        fs.linkSync(externalPath, source);
+      }
+      return fs.renameSync(source, destination);
+    },
+  };
+  assert.throws(
+    () => installBuildProvenanceFile({
+      provenance: first,
+      targetPath,
+      fsImpl: fsWithRace,
+      nonce: '4'.repeat(32),
+    }),
+    (error) => error && error.code === WINDOWS_BUILD_PROVENANCE_ERROR,
+  );
+  assert.equal(fs.readFileSync(externalPath, 'utf8'), 'external-sentinel\n');
 });
 
 test('release config rejects unsafe or ambiguous Windows packaging changes', () => {
@@ -65,6 +207,9 @@ test('release config rejects unsafe or ambiguous Windows packaging changes', () 
     (value) => { value.build.nsis.deleteAppDataOnUninstall = true; },
     (value) => { value.build.artifactName = value.build.nsis.artifactName; },
     (value) => { value.build.publish = [{ provider: 'github' }]; },
+    (value) => { delete value.scripts['write:provenance']; },
+    (value) => { value.scripts.pack = value.scripts.pack.replace('npm run write:provenance && ', ''); },
+    (value) => { value.scripts.dist = value.scripts.dist.replace('npm run write:provenance && ', ''); },
     (value) => { value.build.extraResources.push({ from: '../example_drama', to: 'example_drama', filter: ['**/*'] }); },
     (value) => { value.build.extraResources.push({ from: '../backend-node/tools/ffmpeg', to: 'ffmpeg', filter: ['**/*'] }); },
   ]) {
@@ -101,6 +246,8 @@ test('PE and packaged asar contracts fail closed on missing production payload',
     '/product-identity.js',
     '/user-data-path.js',
     '/windows-release-contract.js',
+    '/windows-build-provenance.js',
+    '/build-provenance.json',
     '/backend-app/src/app.js',
     '/backend-app/src/utils/boundedLogFile.js',
     '/backend-app/src/utils/logDirectoryLease.js',
@@ -336,6 +483,10 @@ test('release verifier binds each final executable payload to the reviewed sidec
   fs.mkdirSync(path.dirname(extractedLicensePath), { recursive: true });
   fs.writeFileSync(path.join(cleanSource, 'main.js'), 'module.exports = 1;\n');
   fs.writeFileSync(path.join(poisonedSource, 'main.js'), 'module.exports = 1;\n');
+  const expectedProvenance = syntheticProvenance();
+  const provenanceText = serializeWindowsBuildProvenance(expectedProvenance);
+  fs.writeFileSync(path.join(cleanSource, 'build-provenance.json'), provenanceText);
+  fs.writeFileSync(path.join(poisonedSource, 'build-provenance.json'), provenanceText);
   fs.writeFileSync(path.join(poisonedSource, 'model.onnx'), 'synthetic-model');
   fs.writeFileSync(projectLicensePath, 'synthetic-license\n');
   fs.writeFileSync(thirdPartyNoticesPath, 'synthetic-notices\n');
@@ -348,6 +499,7 @@ test('release verifier binds each final executable payload to the reviewed sidec
     () => assertExtractedExecutablePayload({
       extractionRoot,
       sidecarAsarPath,
+      expectedProvenance,
       projectLicensePath,
       thirdPartyNoticesPath,
       assertAsarEntriesImpl() {},
@@ -360,24 +512,65 @@ test('release verifier binds each final executable payload to the reviewed sidec
     assertExtractedExecutablePayload({
       extractionRoot,
       sidecarAsarPath,
+      expectedProvenance,
       projectLicensePath,
       thirdPartyNoticesPath,
       assertAsarEntriesImpl() {},
     }),
     {
-      asarEntries: 1,
+      asarEntries: 2,
       asarSha256: require('node:crypto')
         .createHash('sha256')
         .update(fs.readFileSync(sidecarAsarPath))
         .digest('hex'),
+      provenanceSha256: provenanceSha256(expectedProvenance),
+      sourceCommitSha: expectedProvenance.sourceCommitSha,
+      sourceTreeSha: expectedProvenance.sourceTreeSha,
     },
   );
+
+  assert.throws(
+    () => assertExtractedExecutablePayload({
+      extractionRoot,
+      sidecarAsarPath,
+      expectedProvenance: syntheticProvenance({ sourceCommitSha: 'c'.repeat(40) }),
+      projectLicensePath,
+      thirdPartyNoticesPath,
+      assertAsarEntriesImpl() {},
+    }),
+    (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+  );
+
+  let oversizedExtractCalls = 0;
+  assert.throws(
+    () => assertExtractedExecutablePayload({
+      extractionRoot,
+      sidecarAsarPath,
+      expectedProvenance,
+      projectLicensePath,
+      thirdPartyNoticesPath,
+      asarImpl: {
+        listPackage: asar.listPackage,
+        statFile() {
+          return { unpacked: false, executable: false, offset: '0', size: 2049 };
+        },
+        extractFile() {
+          oversizedExtractCalls += 1;
+          return Buffer.alloc(2049);
+        },
+      },
+      assertAsarEntriesImpl() {},
+    }),
+    (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+  );
+  assert.equal(oversizedExtractCalls, 0);
 
   fs.writeFileSync(extractedNoticesPath, 'drifted-notices\n');
   assert.throws(
     () => assertExtractedExecutablePayload({
       extractionRoot,
       sidecarAsarPath,
+      expectedProvenance,
       projectLicensePath,
       thirdPartyNoticesPath,
       assertAsarEntriesImpl() {},
