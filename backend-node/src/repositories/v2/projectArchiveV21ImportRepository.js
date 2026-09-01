@@ -14,6 +14,9 @@ const {
 } = require('../../adapters/v2/compat/projectArchiveV21LegacyData');
 const { archiveError, isProjectArchiveError } = require('../../adapters/v2/zip/errors');
 const { createProjectArchiveRepository } = require('./projectArchiveRepository');
+const {
+  createCharacterCandidateExecutionRepository,
+} = require('./characterCandidateExecutionRepository');
 const { projectArchiveRecordsForManifest } = require('../../services/projectArchiveSourceEvidence');
 const { assertDatabase } = require('./repositorySupport');
 
@@ -27,7 +30,9 @@ const STRUCTURED_ORDER = Object.freeze([
   'narrativeResults', 'narrativeReviewEvents', 'narrativeStaleEvents',
   'characterIdentityVersions', 'characterAppearanceVersions',
   'characterCostumeVersions', 'characterVoiceVersions', 'sceneVersions', 'propVersions',
-  'characterCandidateResults', 'characterCandidateBatches', 'characterIdentityLockEvents',
+  'characterCandidateResults', 'characterCandidateBatches',
+  'characterCandidateExecutions', 'characterCandidateExecutionItems',
+  'characterIdentityLockEvents',
   'characterReferencePackageItems', 'characterReferencePackages',
   'shotContinuityCharacterRefs', 'shotContinuityPropRefs', 'shotContinuitySnapshots',
   'voiceProfiles', 'voiceProfileSelectionEvents', 'bgmLicenses', 'bgmTracks',
@@ -224,6 +229,7 @@ function targetTables() {
 
 function createProjectArchiveV21ImportRepository(database) {
   assertDatabase(database);
+  const characterCandidateExecutions = createCharacterCandidateExecutionRepository(database);
   const tables = targetTables();
   const placeholderValues = new Array(tables.length);
   for (let index = 0; index < tables.length; index += 1) placeholderValues[index] = '?';
@@ -417,6 +423,16 @@ function createProjectArchiveV21ImportRepository(database) {
       ),
     ];
     for (let index = 0; index < checks.length; index += 1) if (!checks[index]) fail();
+    for (let index = 0;
+      index < manifest.structuredRecords.characterCandidateExecutions.length;
+      index += 1) {
+      const expected = manifest.structuredRecords.characterCandidateExecutions[index];
+      const restored = characterCandidateExecutions.get(expected.operation_uid);
+      if (!restored || restored.operationUid !== expected.operation_uid
+        || restored.state !== expected.state || restored.items.length !== (
+          expected.state === 'succeeded' ? 4 : 0
+        )) fail();
+    }
   }
 
   function importInsideTransaction(manifest) {

@@ -86,6 +86,31 @@ test('production export defaults to a strict minimal 2.1 archive', (t) => {
   );
   assert.equal(archive.files.size, 0);
 
+  const preE3Zip = new AdmZip(exported.buffer);
+  const preE3Manifest = JSON.parse(preE3Zip.readAsText('v2/manifest.json'));
+  delete preE3Manifest.structuredRecords.characterCandidateExecutions;
+  delete preE3Manifest.structuredRecords.characterCandidateExecutionItems;
+  preE3Zip.updateFile(
+    'v2/manifest.json',
+    Buffer.from(JSON.stringify(preE3Manifest, null, 2), 'utf8'),
+  );
+  const preE3Target = createDatabase(t);
+  const preE3Storage = createStorage(t, 'archive-v21-pre-e3-target');
+  const preE3Imported = projectZipService.importDrama(
+    preE3Target,
+    { storage: { local_path: preE3Storage } },
+    quietLog,
+    preE3Zip.toBuffer(),
+  );
+  const normalizedPreE3 = readProjectArchive(projectZipService.exportDrama(
+    preE3Target,
+    { storage: { local_path: preE3Storage } },
+    quietLog,
+    preE3Imported.drama_id,
+  ).buffer).manifestData;
+  assert.deepEqual(normalizedPreE3.structuredRecords.characterCandidateExecutions, []);
+  assert.deepEqual(normalizedPreE3.structuredRecords.characterCandidateExecutionItems, []);
+
   let trapReads = 0;
   const hostileDramaId = new Proxy({}, {
     get() {
@@ -159,6 +184,10 @@ test('a complete migrated project round-trips through a clean database as normal
   const schemaMissingGroup = structuredClone(firstManifest);
   delete schemaMissingGroup.structuredRecords.narrativeResults;
   assert.equal(validateSchema(schemaMissingGroup), false);
+  const schemaPreE3 = structuredClone(firstManifest);
+  delete schemaPreE3.structuredRecords.characterCandidateExecutions;
+  delete schemaPreE3.structuredRecords.characterCandidateExecutionItems;
+  assert.equal(validateSchema(schemaPreE3), true, JSON.stringify(validateSchema.errors));
   const schemaMediaExtra = structuredClone(firstManifest);
   schemaMediaExtra.mediaBindings[0].unexpected = true;
   assert.equal(validateSchema(schemaMediaExtra), false);
@@ -218,7 +247,12 @@ test('a complete migrated project round-trips through a clean database as normal
   );
 
   for (const [name, rows] of Object.entries(firstManifest.structuredRecords)) {
-    assert.ok(rows.length > 0, `structured ${name} should be represented`);
+    if (name === 'characterCandidateExecutions'
+      || name === 'characterCandidateExecutionItems') {
+      assert.deepEqual(rows, [], `structured ${name} is an optional E3 extension`);
+    } else {
+      assert.ok(rows.length > 0, `structured ${name} should be represented`);
+    }
   }
   for (const [name, rows] of Object.entries(firstManifest.legacyRecords)) {
     assert.ok(rows.length > 0, `legacy ${name} should be represented`);

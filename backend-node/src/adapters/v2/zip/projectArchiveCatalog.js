@@ -58,6 +58,8 @@ const REQUIRED_V21_TABLES = Object.freeze([
   'prop_versions',
   'character_candidate_batches',
   'character_candidate_results',
+  'character_candidate_executions',
+  'character_candidate_execution_items',
   'character_identity_lock_events',
   'character_reference_packages',
   'character_reference_package_items',

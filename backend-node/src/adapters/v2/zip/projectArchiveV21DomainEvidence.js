@@ -78,6 +78,30 @@ function assertVersions(records) {
 function assertCandidates(records) {
   const candidatesByBatch = rowsBy(records, 'characterCandidateResults', 'batch_uid');
   for (const row of records.characterCandidateBatches) {
+    const unordered = candidatesByBatch.get(row.uid) || [];
+    const candidates = new Array(unordered.length);
+    for (let index = 0; index < unordered.length; index += 1) {
+      const ordinal = unordered[index].ordinal;
+      if (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal >= candidates.length
+        || candidates[ordinal] !== undefined) throw new TypeError();
+      candidates[ordinal] = unordered[index];
+    }
+    const candidateRecords = new Array(candidates.length);
+    for (let index = 0; index < candidates.length; index += 1) {
+      const candidate = candidates[index];
+      if (!candidate) throw new TypeError();
+      candidateRecords[index] = {
+        uid: candidate.uid,
+        ordinal: candidate.ordinal,
+        assetVersionUid: candidate.asset_version_uid,
+        logicalUri: candidate.logical_uri,
+        mediaType: candidate.media_type,
+        width: candidate.width,
+        height: candidate.height,
+        contentSha256: candidate.content_sha256,
+        presentation: candidate.presentation,
+      };
+    }
     const batch = createCharacterCandidateBatch({
       schemaVersion: '5.0',
       batchUid: row.uid,
@@ -90,17 +114,7 @@ function assertCandidates(records) {
       seed: row.seed,
       candidateCount: row.candidate_count,
     }, {
-      candidates: (candidatesByBatch.get(row.uid) || []).map((candidate) => ({
-        uid: candidate.uid,
-        ordinal: candidate.ordinal,
-        assetVersionUid: candidate.asset_version_uid,
-        logicalUri: candidate.logical_uri,
-        mediaType: candidate.media_type,
-        width: candidate.width,
-        height: candidate.height,
-        contentSha256: candidate.content_sha256,
-        presentation: candidate.presentation,
-      })),
+      candidates: candidateRecords,
     });
     if (batch.requestSha256 !== row.request_sha256) throw new TypeError();
   }

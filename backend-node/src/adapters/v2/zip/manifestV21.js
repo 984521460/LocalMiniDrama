@@ -26,6 +26,9 @@ const {
   MEDIA_LIMITS,
   validateProjectArchiveV21Media,
 } = require('./projectArchiveV21MediaClosure');
+const {
+  assertProjectArchiveV21CharacterCandidateExecutionBase,
+} = require('./projectArchiveV21CharacterCandidateExecutionEvidence');
 
 const SCHEMA_VERSION = ARCHIVE_V21;
 const MANIFEST_FIELDS = Object.freeze([
@@ -495,8 +498,6 @@ function assertStructuredBaseReferences(records, structured, legacyRecords) {
   const sceneUids = uidSet(legacyRecords.scenes);
   const propUids = uidSet(legacyRecords.props);
   const selectionUids = uidSet(records.sourceSelections);
-  const promptUids = uidSet(records.promptSemanticVersions);
-  const manifestUids = uidSet(records.workflowManifests);
   const narrativeResults = indexByUid(structured.narrativeResults);
 
   for (let index = 0; index < records.canvasNodes.length; index += 1) {
@@ -517,6 +518,7 @@ function assertStructuredBaseReferences(records, structured, legacyRecords) {
     structured.characterVoiceVersions,
     structured.characterCandidateBatches,
     structured.characterCandidateResults,
+    structured.characterCandidateExecutions,
     structured.characterIdentityLockEvents,
     structured.characterReferencePackages,
     structured.characterReferencePackageItems,
@@ -547,12 +549,41 @@ function assertStructuredBaseReferences(records, structured, legacyRecords) {
       invalidManifest();
     }
   }
-  for (let index = 0; index < structured.characterCandidateBatches.length; index += 1) {
-    const row = structured.characterCandidateBatches[index];
-    if (!setHas(promptUids, row.prompt_semantic_uid) || !setHas(manifestUids, row.manifest_uid)) {
-      invalidManifest();
+}
+
+function normalizeCharacterCandidateExecutionGroups(root) {
+  const structured = root.structuredRecords;
+  if (structured === null || typeof structured !== 'object'
+    || apply(ARRAY_IS_ARRAY, Array, [structured])) return root;
+  const descriptors = apply(OBJECT_GET_DESCRIPTORS, Object, [structured]);
+  const hasExecutions = safeHasOwn(descriptors, 'characterCandidateExecutions');
+  const hasItems = safeHasOwn(descriptors, 'characterCandidateExecutionItems');
+  if (hasExecutions || hasItems) return root;
+
+  const names = apply(REFLECT_OWN_KEYS, Reflect, [STRUCTURED_RECORD_SPECS]);
+  const actual = apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+  if (actual.length !== names.length - 2) return root;
+  const normalized = apply(OBJECT_CREATE, Object, [null]);
+  for (let index = 0; index < names.length; index += 1) {
+    const name = names[index];
+    if (name === 'characterCandidateExecutions'
+      || name === 'characterCandidateExecutionItems') {
+      normalized[name] = apply(OBJECT_FREEZE, Object, [new Array(0)]);
+      continue;
     }
+    const descriptor = descriptors[name];
+    if (!descriptor || descriptor.enumerable !== true || !safeHasOwn(descriptor, 'value')) {
+      return root;
+    }
+    normalized[name] = descriptor.value;
   }
+  apply(OBJECT_FREEZE, Object, [normalized]);
+  const output = apply(OBJECT_CREATE, Object, [null]);
+  for (let index = 0; index < MANIFEST_FIELDS.length; index += 1) {
+    const field = MANIFEST_FIELDS[index];
+    output[field] = field === 'structuredRecords' ? normalized : root[field];
+  }
+  return apply(OBJECT_FREEZE, Object, [output]);
 }
 
 function assertCoreClosure(project, legacyRecords) {
@@ -613,6 +644,13 @@ function validateSnapshot(manifest) {
   });
   assertCoreClosure(root.project, root.legacyRecords);
   assertStructuredBaseReferences(root.records, root.structuredRecords, root.legacyRecords);
+  assertProjectArchiveV21CharacterCandidateExecutionBase(
+    root.records,
+    root.structuredRecords,
+    root.legacyRecords,
+    root.mediaBindings,
+    invalidManifest,
+  );
   assertMediaEvidence(root.records, root.structuredRecords);
   assertMediaBindings(root);
   return root;
@@ -620,7 +658,7 @@ function validateSnapshot(manifest) {
 
 function parseProjectManifestV21(value) {
   try {
-    return validateSnapshot(snapshotJson(value));
+    return validateSnapshot(normalizeCharacterCandidateExecutionGroups(snapshotJson(value)));
   } catch (error) {
     if (isProjectArchiveError(error)) throw error;
     return invalidManifest();

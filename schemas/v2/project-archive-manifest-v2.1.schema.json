@@ -42,6 +42,132 @@
       "type": "array", "maxItems": 100000,
       "items": { "type": "object" }
     },
+    "characterCandidateExecutionRows": {
+      "type": "array", "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operation_uid", "drama_uid", "character_uid", "source_selection_uid",
+          "extraction_result_uid", "extraction_result_hash", "extraction_envelope_hash",
+          "extraction_review_uid", "request_json", "request_sha256", "source_json",
+          "source_sha256", "profile_json", "profile_sha256", "manifest_json",
+          "manifest_sha256", "state", "batch_uid", "error_code",
+          "created_at_epoch_ms", "updated_at_epoch_ms"
+        ],
+        "properties": {
+          "operation_uid": { "$ref": "#/$defs/uid" },
+          "drama_uid": { "$ref": "#/$defs/uid" },
+          "character_uid": { "$ref": "#/$defs/uid" },
+          "source_selection_uid": { "$ref": "#/$defs/uid" },
+          "extraction_result_uid": { "$ref": "#/$defs/uid" },
+          "extraction_result_hash": { "$ref": "#/$defs/sha256" },
+          "extraction_envelope_hash": { "$ref": "#/$defs/sha256" },
+          "extraction_review_uid": { "$ref": "#/$defs/uid" },
+          "request_json": { "type": "string", "minLength": 2, "maxLength": 16384 },
+          "request_sha256": { "$ref": "#/$defs/sha256" },
+          "source_json": { "type": "string", "minLength": 2, "maxLength": 65536 },
+          "source_sha256": { "$ref": "#/$defs/sha256" },
+          "profile_json": { "type": "string", "minLength": 2, "maxLength": 4096 },
+          "profile_sha256": { "$ref": "#/$defs/sha256" },
+          "manifest_json": { "type": "string", "minLength": 2, "maxLength": 4096 },
+          "manifest_sha256": { "$ref": "#/$defs/sha256" },
+          "state": { "enum": ["reserved", "succeeded", "failed", "submission_unknown"] },
+          "batch_uid": { "oneOf": [{ "$ref": "#/$defs/uid" }, { "type": "null" }] },
+          "error_code": {
+            "oneOf": [
+              { "enum": [
+                "CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID",
+                "CHARACTER_CANDIDATE_EXECUTION_SOURCE_STALE",
+                "CHARACTER_CANDIDATE_EXECUTION_SUBMISSION_UNKNOWN"
+              ] },
+              { "type": "null" }
+            ]
+          },
+          "created_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+          "updated_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "state": { "const": "succeeded" } }, "required": ["state"] },
+            "then": {
+              "properties": {
+                "batch_uid": { "$ref": "#/$defs/uid" },
+                "error_code": { "type": "null" }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "state": { "const": "reserved" } }, "required": ["state"] },
+            "then": {
+              "properties": {
+                "batch_uid": { "type": "null" },
+                "error_code": { "type": "null" }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "state": { "const": "failed" } }, "required": ["state"] },
+            "then": {
+              "properties": {
+                "batch_uid": { "type": "null" },
+                "error_code": {
+                  "enum": [
+                    "CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID",
+                    "CHARACTER_CANDIDATE_EXECUTION_SOURCE_STALE"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "state": { "const": "submission_unknown" } },
+              "required": ["state"]
+            },
+            "then": {
+              "properties": {
+                "batch_uid": { "type": "null" },
+                "error_code": { "const": "CHARACTER_CANDIDATE_EXECUTION_SUBMISSION_UNKNOWN" }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "characterCandidateExecutionItemRows": {
+      "type": "array", "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operation_uid", "ordinal", "seed", "prompt_sha256", "provider", "model",
+          "parameters_json", "parameters_sha256", "candidate_uid", "asset_uid",
+          "asset_version_uid", "logical_uri", "relative_path", "content_sha256",
+          "byte_length", "width", "height", "created_at_epoch_ms"
+        ],
+        "properties": {
+          "operation_uid": { "$ref": "#/$defs/uid" },
+          "ordinal": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "prompt_sha256": { "$ref": "#/$defs/sha256" },
+          "provider": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+          "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "parameters_json": { "type": "string", "minLength": 2, "maxLength": 4096 },
+          "parameters_sha256": { "$ref": "#/$defs/sha256" },
+          "candidate_uid": { "$ref": "#/$defs/uid" },
+          "asset_uid": { "$ref": "#/$defs/uid" },
+          "asset_version_uid": { "$ref": "#/$defs/uid" },
+          "logical_uri": { "type": "string", "minLength": 1, "maxLength": 2048 },
+          "relative_path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f]+$", "maxLength": 2048 },
+          "content_sha256": { "$ref": "#/$defs/sha256" },
+          "byte_length": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+          "width": { "type": "integer", "minimum": 256, "maximum": 2048 },
+          "height": { "type": "integer", "minimum": 256, "maximum": 2048 },
+          "created_at_epoch_ms": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }
+        }
+      }
+    },
     "structuredRecords": {
       "type": "object",
       "additionalProperties": false,
@@ -54,6 +180,10 @@
         "shotContinuityCharacterRefs", "shotContinuityPropRefs", "voiceProfiles",
         "voiceProfileSelectionEvents", "bgmLicenses", "bgmTracks"
       ],
+      "dependentRequired": {
+        "characterCandidateExecutions": ["characterCandidateExecutionItems"],
+        "characterCandidateExecutionItems": ["characterCandidateExecutions"]
+      },
       "properties": {
         "narrativeResults": { "$ref": "#/$defs/recordRows" },
         "narrativeReviewEvents": { "$ref": "#/$defs/recordRows" },
@@ -66,6 +196,8 @@
         "propVersions": { "$ref": "#/$defs/recordRows" },
         "characterCandidateBatches": { "$ref": "#/$defs/recordRows" },
         "characterCandidateResults": { "$ref": "#/$defs/recordRows" },
+        "characterCandidateExecutions": { "$ref": "#/$defs/characterCandidateExecutionRows" },
+        "characterCandidateExecutionItems": { "$ref": "#/$defs/characterCandidateExecutionItemRows" },
         "characterIdentityLockEvents": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackages": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackageItems": { "$ref": "#/$defs/recordRows" },

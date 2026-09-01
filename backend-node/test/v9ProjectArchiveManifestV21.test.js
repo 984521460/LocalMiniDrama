@@ -204,6 +204,26 @@ test('creates and parses an exact deeply frozen 2.1 manifest without activating 
   assert.equal(v20.schemaVersion, '2.0.0');
 });
 
+test('normalizes pre-E3 2.1 manifests with no candidate execution groups to empty evidence', () => {
+  const { parts } = fixture();
+  const preE3 = structuredClone(createProjectManifestV21(parts));
+  delete preE3.structuredRecords.characterCandidateExecutions;
+  delete preE3.structuredRecords.characterCandidateExecutionItems;
+
+  const parsed = parseProjectManifestV21(preE3);
+  assert.deepEqual(parsed.structuredRecords.characterCandidateExecutions, []);
+  assert.deepEqual(parsed.structuredRecords.characterCandidateExecutionItems, []);
+  assert.equal(Object.isFrozen(parsed.structuredRecords.characterCandidateExecutions), true);
+  assert.equal(Object.isFrozen(parsed.structuredRecords.characterCandidateExecutionItems), true);
+
+  const partialE3 = structuredClone(createProjectManifestV21(parts));
+  delete partialE3.structuredRecords.characterCandidateExecutionItems;
+  assert.throws(
+    () => parseProjectManifestV21(partialE3),
+    (error) => error.code === 'PROJECT_ARCHIVE_MANIFEST_INVALID',
+  );
+});
+
 test('binds every portable carrier exactly once and rejects coordinated or raw credential drift', () => {
   const { parts } = fixture({ portableNode: true });
   const manifest = createProjectManifestV21(parts);

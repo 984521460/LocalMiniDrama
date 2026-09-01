@@ -32,6 +32,8 @@ const EXPECTED_TABLES = Object.freeze([
   'prop_versions',
   'character_candidate_batches',
   'character_candidate_results',
+  'character_candidate_executions',
+  'character_candidate_execution_items',
   'character_identity_lock_events',
   'character_reference_packages',
   'character_reference_package_items',
@@ -193,6 +195,11 @@ test('2.1 structured evidence exports every P9-04B domain without credential ref
 
   const records = repositories.projectArchives.exportStructuredV21(dramaUid);
   for (const [name, rows] of Object.entries(records)) {
+    if (name === 'characterCandidateExecutions'
+      || name === 'characterCandidateExecutionItems') {
+      assert.deepEqual(rows, []);
+      continue;
+    }
     assert.ok(rows.length > 0, `${name} should be represented`);
   }
   assert.equal(records.voiceProfiles[0].credential_binding_state, 'needs_rebind');
