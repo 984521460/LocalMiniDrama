@@ -585,6 +585,14 @@ test('production preflight route binds drama, session, and authorization before 
   const runtime = createProductionMvpBenchmarkRuntime({
     database: current.database,
     sessionService: Object.freeze({ openSession() { throw new Error('must not open'); } }),
+    h3LocalExecution: Object.freeze({
+      get() { return null; },
+      execute() { throw new Error('must not execute'); },
+    }),
+    audioTtsExecution: Object.freeze({
+      get() { return Promise.resolve(null); },
+      execute() { throw new Error('must not execute'); },
+    }),
     dependencies: Object.freeze({
       liveEnvironmentVerifier: Object.freeze({
         inspect() {

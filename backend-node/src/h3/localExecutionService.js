@@ -207,20 +207,7 @@ function readPreparedIntent(repositories, taskUid) {
   }
 }
 
-function persistedResult(configured, intent, executionResult) {
-  const output = exactRecord(
-    executionResult,
-    ['task', 'assetVersion', 'node', 'generationHistory'],
-    CONFLICT_CODE,
-  );
-  const resultTaskUid = dataField(output.task, 'uid', CONFLICT_CODE);
-  const resultVersionUid = dataField(output.assetVersion, 'uid', CONFLICT_CODE);
-  const resultNodeUid = dataField(output.node, 'uid', CONFLICT_CODE);
-  const resultHistoryUid = dataField(output.generationHistory, 'uid', CONFLICT_CODE);
-  if (resultTaskUid !== intent.taskUid || resultHistoryUid !== intent.historyUid) {
-    fail(CONFLICT_CODE);
-  }
-
+function currentPersistedResult(configured, intent) {
   const { repositories } = configured;
   let currentIntent;
   let task;
@@ -234,7 +221,8 @@ function persistedResult(configured, intent, executionResult) {
     generationRun = repositories.runs.getGeneration(intent.generationRunUid);
     history = repositories.generationHistory.get(intent.historyUid);
     version = repositories.assets.getVersion(task.outputAssetVersionUid);
-    node = repositories.runs.getNode(resultNodeUid);
+    if (task.idempotencyKey.slice(0, 15) !== 'remote-task:v1:') fail(CONFLICT_CODE);
+    node = repositories.runs.getNode(task.idempotencyKey.slice(15));
   } catch {
     return fail(CONFLICT_CODE);
   }
@@ -245,24 +233,24 @@ function persistedResult(configured, intent, executionResult) {
     || task.workflowRunUid === null
     || task.workflowManifestUid !== intent.manifestUid
     || task.idempotencyKey !== `remote-task:v1:${node.uid}`
-    || task.outputAssetVersionUid === null || task.outputAssetVersionUid !== resultVersionUid
+    || task.outputAssetVersionUid === null || task.outputAssetVersionUid !== version.uid
     || generationRun.uid !== intent.generationRunUid || generationRun.status !== 'succeeded'
     || generationRun.ownerType !== 'drama'
     || generationRun.ownerUid !== intent.promptSemantic.dramaUid
     || generationRun.provider !== 'local-comfy' || generationRun.model !== 'MiniMax-H3'
     || generationRun.seed !== intent.generationSpec.seed
     || generationRun.promptVersionUid !== intent.promptSemantic.uid
-    || generationRun.outputAssetVersionUid !== resultVersionUid
+    || generationRun.outputAssetVersionUid !== version.uid
     || history.uid !== intent.historyUid || history.runUid !== intent.generationRunUid
     || history.dramaUid !== intent.promptSemantic.dramaUid
     || history.assetUid !== intent.assetUid || history.status !== 'succeeded'
     || history.manifestUid !== intent.manifestUid
     || history.promptSemanticUid !== intent.promptSemantic.uid
-    || history.outputVersionUid !== resultVersionUid
-    || version.uid !== resultVersionUid || version.assetUid !== intent.assetUid
+    || history.outputVersionUid !== version.uid
+    || version.assetUid !== intent.assetUid
     || version.status !== 'ready' || node.status !== 'succeeded'
     || node.workflowRunUid !== task.workflowRunUid
-    || dataField(nodeOutput, 'assetVersionUid', CONFLICT_CODE) !== resultVersionUid
+    || dataField(nodeOutput, 'assetVersionUid', CONFLICT_CODE) !== version.uid
     || dataField(nodeOutput, 'remoteTaskUid', CONFLICT_CODE) !== intent.taskUid) {
     fail(CONFLICT_CODE);
   }
@@ -280,9 +268,42 @@ function persistedResult(configured, intent, executionResult) {
   });
 }
 
+function persistedResult(configured, intent, executionResult) {
+  const output = exactRecord(
+    executionResult,
+    ['task', 'assetVersion', 'node', 'generationHistory'],
+    CONFLICT_CODE,
+  );
+  const resultTaskUid = dataField(output.task, 'uid', CONFLICT_CODE);
+  const resultVersionUid = dataField(output.assetVersion, 'uid', CONFLICT_CODE);
+  const resultNodeUid = dataField(output.node, 'uid', CONFLICT_CODE);
+  const resultHistoryUid = dataField(output.generationHistory, 'uid', CONFLICT_CODE);
+  if (resultTaskUid !== intent.taskUid || resultHistoryUid !== intent.historyUid) {
+    fail(CONFLICT_CODE);
+  }
+  const result = currentPersistedResult(configured, intent);
+  if (result.taskUid !== resultTaskUid || result.assetVersionUid !== resultVersionUid
+    || result.nodeRunUid !== resultNodeUid || result.historyUid !== resultHistoryUid) {
+    fail(CONFLICT_CODE);
+  }
+  return result;
+}
+
 function createH3LocalExecutionService(options) {
   const configured = configuration(options);
   return Object.freeze({
+    get(taskUidValue) {
+      try {
+        const taskUid = uid(taskUidValue, INPUT_CODE);
+        const intent = readPreparedIntent(configured.repositories, taskUid);
+        const task = configured.repositories.remote.getFormalTask(taskUid);
+        if (task.stage !== 'completed' || task.status !== 'succeeded') return null;
+        return currentPersistedResult(configured, intent);
+      } catch (error) {
+        if (isH3ContractError(error)) throw error;
+        return fail(CONFLICT_CODE);
+      }
+    },
     execute(taskUidValue, request, executionPermit) {
       let taskUid;
       let intent;

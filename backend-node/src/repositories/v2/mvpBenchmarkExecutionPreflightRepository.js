@@ -19,6 +19,10 @@ const {
   V2RepositoryDataError,
   V2RepositoryNotFoundError,
 } = require('./errors');
+const {
+  parseMvpBenchmarkSessionPlan,
+  serializeMvpBenchmarkSessionJson,
+} = require('../../benchmark/mvpBenchmarkSession');
 const { executeWrite } = require('./repositorySupport');
 
 const ENTITY = 'MVP benchmark execution preflight';
@@ -319,6 +323,69 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
     }
   }
 
+  function getStoredBatchByAuthorization(authorizationUid) {
+    const rows = statements.reservationsByAuthorization.all(authorizationUid);
+    if (rows.length === 0) return null;
+    try {
+      const authorization = authorizations.getStored(authorizationUid);
+      const sessionRow = statements.sessionRecord.get(authorization.sessionUid);
+      if (!sessionRow || sessionRow.record_valid !== 1
+        || sessionRow.uid !== authorization.sessionUid
+        || sessionRow.drama_uid !== authorization.dramaUid
+        || sessionRow.plan_sha256 !== authorization.sessionPlanSha256) invalidData();
+      const session = parseMvpBenchmarkSessionPlan(
+        Reflect.apply(JSON_PARSE, JSON, [sessionRow.plan_json]),
+      );
+      if (serializeMvpBenchmarkSessionJson(session) !== sessionRow.plan_json
+        || session.uid !== authorization.sessionUid
+        || session.dramaUid !== authorization.dramaUid
+        || session.planSha256 !== authorization.sessionPlanSha256) invalidData();
+      const expectedLength = session.h3Tasks.length + session.audioIntents.length;
+      if (rows.length !== expectedLength) {
+        throw new V2RepositoryConflictError(ENTITY, 'batch reserved');
+      }
+      const reservations = [];
+      let attestation = null;
+      for (let index = 0; index < expectedLength; index += 1) {
+        const h3 = index < session.h3Tasks.length;
+        const item = h3
+          ? session.h3Tasks[index] : session.audioIntents[index - session.h3Tasks.length];
+        const kind = h3 ? 'h3' : 'tts';
+        const itemUid = h3 ? item.taskUid : item.intentUid;
+        let matchingRow = null;
+        let matches = 0;
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+          if (rows[rowIndex].item_kind === kind && rows[rowIndex].item_uid === itemUid) {
+            matches += 1;
+            matchingRow = rows[rowIndex];
+          }
+        }
+        if (matches !== 1) throw new V2RepositoryConflictError(ENTITY, 'batch reserved');
+        const reservation = mapStoredReservation(matchingRow);
+        const expectedRequestSha256 = h3 ? item.planEvidenceSha256 : item.planSha256;
+        if (reservation.authorizationUid !== authorization.uid
+          || reservation.sessionUid !== session.uid
+          || reservation.dramaUid !== session.dramaUid
+          || reservation.requestSha256 !== expectedRequestSha256) invalidData();
+        const currentAttestation = mapStoredAttestation(
+          statements.attestation.get(reservation.attestationUid),
+        );
+        if (attestation === null) attestation = currentAttestation;
+        else if (attestation.uid !== currentAttestation.uid
+          || attestation.attestationSha256 !== currentAttestation.attestationSha256) invalidData();
+        reservations[index] = reservation;
+      }
+      return createMvpBenchmarkExecutionPreflightBatch({
+        authorization, session, attestation, reservations,
+      }, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_DATA_INVALID');
+    } catch (error) {
+      if (error instanceof V2RepositoryConflictError || error instanceof V2RepositoryDataError) {
+        throw error;
+      }
+      return invalidData();
+    }
+  }
+
   function getBatchPreparation(authorizationUid, nowEpochMs) {
     const authorization = authorizations.requireActive(authorizationUid, nowEpochMs);
     const session = sessions.get(authorization.sessionUid);
@@ -477,6 +544,7 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
       return mapStoredAttestation(statements.attestation.get(uid));
     },
     getBatchByAuthorization,
+    getStoredBatchByAuthorization,
     getBatchPreparation,
     getReservation,
     getStoredReservation(uid) {

@@ -42,7 +42,16 @@ function fixture() {
     createdAtEpochMs: 0,
   });
   const state = {
-    task: null,
+    task: Object.freeze({
+      uid: ids.task,
+      stage: 'prepared',
+      status: 'queued',
+      workflowRunUid: uid(10),
+      workflowManifestUid: ids.manifest,
+      idempotencyKey: `remote-task:v1:${ids.node}`,
+      outputAssetVersionUid: null,
+      stateVersion: 0,
+    }),
     run: null,
     history: null,
     version: null,
@@ -132,6 +141,7 @@ test('local H3 execution returns a minimal receipt only after durable evidence m
     repositories: current.repositories,
     coordinator: current.coordinator,
   });
+  assert.equal(service.get(current.ids.task), null);
   const result = await service.execute(current.ids.task, Object.freeze({ request: 'opaque' }));
 
   assert.deepEqual({ ...result }, {
@@ -145,6 +155,7 @@ test('local H3 execution returns a minimal receipt only after durable evidence m
     nodeRunUid: current.ids.node,
     status: 'succeeded',
   });
+  assert.deepEqual(service.get(current.ids.task), result);
   assert.equal(Object.isFrozen(result), true);
   assert.equal(Object.getPrototypeOf(result), null);
   assert.equal(current.coordinatorCalls(), 1);

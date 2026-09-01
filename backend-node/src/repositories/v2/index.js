@@ -191,6 +191,9 @@ function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependenci
     getStoredAttestation(...args) {
       return getTarget().getStoredAttestation(...args);
     },
+    getStoredBatchByAuthorization(...args) {
+      return getTarget().getStoredBatchByAuthorization(...args);
+    },
     getStoredReservation(...args) {
       return getTarget().getStoredReservation(...args);
     },
@@ -327,6 +330,8 @@ function createV2Repositories(database) {
     getAttestation: mvpBenchmarkExecutionPreflights.getAttestation,
     getBatchByAuthorization: mvpBenchmarkExecutionPreflights.getBatchByAuthorization,
     getStoredAttestation: preflightFacades.executionEvidence.getStoredAttestation,
+    getStoredBatchByAuthorization:
+      preflightFacades.executionEvidence.getStoredBatchByAuthorization,
     getStoredReservation: preflightFacades.executionEvidence.getStoredReservation,
   });
   const mvpBenchmarkExecutionGate = createMvpBenchmarkExecutionGate({

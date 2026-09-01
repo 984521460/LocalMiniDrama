@@ -24,6 +24,9 @@ const {
 const {
   isMvpBenchmarkExecutionPreflightError,
 } = require('../../benchmark/mvpBenchmarkExecutionPreflight');
+const {
+  isMvpBenchmarkProductionExecutionError,
+} = require('../../benchmark/mvpBenchmarkProductionExecutionService');
 const response = require('../../response');
 
 function mvpBenchmarkRoutes(log, runtime, database) {
@@ -47,6 +50,22 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         && Object.getOwnPropertyDescriptor(service, 'prepareBatch')?.value;
       if (typeof prepareBatch !== 'function' || isProxy(prepareBatch)) return null;
       return Object.freeze({ service, prepareBatch });
+    } catch {
+      return null;
+    }
+  }
+
+  function executionService() {
+    try {
+      if (!runtime || typeof runtime !== 'object' || isProxy(runtime)) return null;
+      const benchmarkRuntime = Object.getOwnPropertyDescriptor(runtime, 'mvpBenchmark')?.value;
+      if (!benchmarkRuntime || typeof benchmarkRuntime !== 'object'
+        || isProxy(benchmarkRuntime)) return null;
+      const service = Object.getOwnPropertyDescriptor(benchmarkRuntime, 'execution')?.value;
+      if (!service || typeof service !== 'object' || isProxy(service)) return null;
+      const executeNext = Object.getOwnPropertyDescriptor(service, 'executeNext')?.value;
+      if (typeof executeNext !== 'function' || isProxy(executeNext)) return null;
+      return Object.freeze({ service, executeNext });
     } catch {
       return null;
     }
@@ -125,6 +144,34 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       code: 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNEXPECTED',
     });
     return response.error(res, 500, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNEXPECTED', 'MVP benchmark execution preflight operation failed');
+  }
+
+  function executionError(res, error) {
+    if (isMvpBenchmarkProductionExecutionError(error)) {
+      const status = error.code === 'MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID' ? 400
+        : error.code === 'MVP_BENCHMARK_PRODUCTION_EXECUTION_IN_PROGRESS' ? 409
+          : error.code === 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE' ? 503 : 502;
+      return response.error(res, status, error.code, error.message);
+    }
+    if (isMvpBenchmarkExternalAuthorizationError(error)) {
+      return response.error(
+        res, 409, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE',
+        'MVP benchmark production execution is unavailable',
+      );
+    }
+    if (error instanceof TypeError) {
+      return response.error(
+        res, 400, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID',
+        'MVP benchmark production execution input is invalid',
+      );
+    }
+    log?.error?.('mvp-benchmark-production-execution-unexpected', {
+      code: 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNEXPECTED',
+    });
+    return response.error(
+      res, 500, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNEXPECTED',
+      'MVP benchmark production execution failed',
+    );
   }
 
   function pathAuthorization(parameters) {
@@ -252,6 +299,38 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         return response.success(res, batch);
       } catch (error) {
         return preflightError(res, error);
+      }
+    },
+  );
+
+  router.post(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/execute-next',
+    async (req, res) => {
+      try {
+        if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)
+          || Reflect.ownKeys(req.body).length !== 0) {
+          return response.error(
+            res, 400, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID',
+            'MVP benchmark production execution input is invalid',
+          );
+        }
+        const configured = executionService();
+        if (!configured) {
+          return response.error(
+            res, 503, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE',
+            'MVP benchmark production execution is unavailable',
+          );
+        }
+        const result = await Reflect.apply(configured.executeNext, configured.service, [{
+          authorizationUid: parseMvpBenchmarkExternalAuthorizationUid(
+            req.params.authorizationUid,
+          ),
+          dramaUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.dramaUid),
+          sessionUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.sessionUid),
+        }]);
+        return response.success(res, result);
+      } catch (error) {
+        return executionError(res, error);
       }
     },
   );

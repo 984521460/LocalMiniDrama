@@ -66,6 +66,8 @@ function createApp({
   const mvpBenchmarkRuntime = createProductionMvpBenchmarkRuntime({
     database: db,
     sessionService: remoteRuntime.remoteConnections.remoteSessionService,
+    h3LocalExecution: h3Runtime.localExecution,
+    audioTtsExecution: audioTtsRuntime.audioTts.service,
     dependencies: benchmarkDependencies,
   });
   const runtime = Object.freeze({

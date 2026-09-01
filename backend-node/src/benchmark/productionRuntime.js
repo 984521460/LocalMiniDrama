@@ -10,6 +10,9 @@ const {
   createMvpBenchmarkExecutionPreflightService,
 } = require('./mvpBenchmarkExecutionPreflightService');
 const {
+  createMvpBenchmarkProductionExecutionService,
+} = require('./mvpBenchmarkProductionExecutionService');
+const {
   createMvpBenchmarkSshLiveEnvironmentVerifier,
 } = require('./mvpBenchmarkSshLiveEnvironmentVerifier');
 
@@ -47,10 +50,13 @@ function dependencySnapshot(value) {
 }
 
 function createProductionMvpBenchmarkRuntime({
-  database, sessionService, dependencies = {},
+  database, sessionService, h3LocalExecution, audioTtsExecution, dependencies = {},
 } = {}) {
   if (!database || typeof database !== 'object' || isProxy(database)
-    || !sessionService || typeof sessionService !== 'object' || isProxy(sessionService)) {
+    || !sessionService || typeof sessionService !== 'object' || isProxy(sessionService)
+    || !h3LocalExecution || typeof h3LocalExecution !== 'object' || isProxy(h3LocalExecution)
+    || !audioTtsExecution || typeof audioTtsExecution !== 'object'
+    || isProxy(audioTtsExecution)) {
     throw new TypeError('Production MVP benchmark runtime configuration is invalid');
   }
   const configured = dependencySnapshot(dependencies);
@@ -72,7 +78,16 @@ function createProductionMvpBenchmarkRuntime({
     ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
     ...(configured.timeoutMs !== undefined ? { timeoutMs: configured.timeoutMs } : {}),
   });
-  return Object.freeze({ preflight });
+  const execution = createMvpBenchmarkProductionExecutionService({
+    repositories,
+    executionGate: repositories.mvpBenchmarkExecutionGate,
+    h3LocalExecution,
+    audioTtsExecution,
+    liveEnvironmentVerifier,
+    ...(configured.createUid !== undefined ? { createUid: configured.createUid } : {}),
+    ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
+  });
+  return Object.freeze({ execution, preflight });
 }
 
 module.exports = Object.freeze({ createProductionMvpBenchmarkRuntime });
