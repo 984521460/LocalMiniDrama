@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { types: { isProxy } } = require('node:util');
 const { spawn, spawnSync } = require('node:child_process');
 
 const asar = require('@electron/asar');
@@ -378,14 +379,33 @@ function hasKnownRegistration() {
   return [PRODUCT_NAME, APP_ID, ...LEGACY_PRODUCT_NAMES].some(registryContains);
 }
 
+function knownInstallCandidates(env = process.env) {
+  const candidates = [];
+  if (typeof env.LOCALAPPDATA === 'string' && env.LOCALAPPDATA.length > 0) {
+    candidates.push(path.join(env.LOCALAPPDATA, 'Programs', PRODUCT_NAME, `${PRODUCT_NAME}.exe`));
+  }
+  if (typeof env.USERPROFILE === 'string' && env.USERPROFILE.length > 0) {
+    candidates.push(path.join(env.USERPROFILE, 'Desktop', `${PRODUCT_NAME}.lnk`));
+  }
+  if (typeof env.APPDATA === 'string' && env.APPDATA.length > 0) {
+    candidates.push(path.join(
+      env.APPDATA,
+      'Microsoft',
+      'Windows',
+      'Start Menu',
+      'Programs',
+      `${PRODUCT_NAME}.lnk`,
+    ));
+  }
+  return candidates;
+}
+
+function hasKnownInstalledPaths() {
+  return knownInstallCandidates().some((candidate) => fs.existsSync(candidate));
+}
+
 function assertNoPreexistingInstall() {
-  if (hasKnownRegistration()) fail();
-  const candidates = [
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', PRODUCT_NAME, `${PRODUCT_NAME}.exe`),
-    path.join(process.env.USERPROFILE || '', 'Desktop', `${PRODUCT_NAME}.lnk`),
-    path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', `${PRODUCT_NAME}.lnk`),
-  ];
-  if (candidates.some((candidate) => candidate && fs.existsSync(candidate))) fail();
+  if (hasKnownRegistration() || hasKnownInstalledPaths()) fail();
 }
 
 function sentinelPath(appDataRoot, legacy) {
@@ -465,50 +485,93 @@ function findUninstaller(installRoot) {
   return path.join(installRoot, matches[0]);
 }
 
-async function runInstallerLifecycle(installer, unpackedExecutable) {
-  assertNoPreexistingInstall();
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-drama-p9-05-installer-'));
+function installerLifecycleDependencies(overrides) {
+  const defaults = Object.freeze({
+    assertMigratedSentinelImpl: assertMigratedSentinel,
+    assertNoPreexistingInstallImpl: assertNoPreexistingInstall,
+    assertPeFileImpl: assertPeFile,
+    createTaskRoot: () => fs.mkdtempSync(path.join(os.tmpdir(), 'ai-drama-p9-05-installer-')),
+    findUninstallerImpl: findUninstaller,
+    hasKnownInstalledPathsImpl: hasKnownInstalledPaths,
+    hasKnownRegistrationImpl: hasKnownRegistration,
+    removeTaskRootImpl: removeTaskRoot,
+    runPackagedSmokeImpl: runPackagedSmoke,
+    runProcessImpl: runProcess,
+    seedLegacyUserDataImpl: seedLegacyUserData,
+    waitForImpl: waitFor,
+  });
+  if (overrides === undefined) return defaults;
+  if (overrides === null || typeof overrides !== 'object' || isProxy(overrides)) fail();
+  const prototype = Object.getPrototypeOf(overrides);
+  if (prototype !== Object.prototype && prototype !== null) fail();
+  const descriptors = Object.getOwnPropertyDescriptors(overrides);
+  if (Object.getOwnPropertySymbols(overrides).length !== 0) fail();
+  const dependencies = { ...defaults };
+  const keys = Object.keys(descriptors);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    const descriptor = descriptors[key];
+    if (!Object.hasOwn(defaults, key) || !('value' in descriptor)
+      || typeof descriptor.value !== 'function') fail();
+    dependencies[key] = descriptor.value;
+  }
+  return Object.freeze(dependencies);
+}
+
+async function runInstallerLifecycle(installer, unpackedExecutable, overrides) {
+  const dependencies = installerLifecycleDependencies(overrides);
+  dependencies.assertNoPreexistingInstallImpl();
+  const root = dependencies.createTaskRoot();
   const installRoot = path.join(root, 'installed');
   const appDataRoot = path.join(root, 'appdata');
   const localAppDataRoot = path.join(root, 'localappdata');
   let installed = false;
   let uninstaller = null;
   let installedExecutable = null;
+  const installationTracesRemain = () => (installedExecutable !== null
+      && fs.existsSync(installedExecutable))
+    || dependencies.hasKnownRegistrationImpl()
+    || dependencies.hasKnownInstalledPathsImpl();
   try {
     fs.mkdirSync(appDataRoot, { recursive: true });
     fs.mkdirSync(localAppDataRoot, { recursive: true });
-    const sentinelSha256 = seedLegacyUserData(appDataRoot);
+    const sentinelSha256 = dependencies.seedLegacyUserDataImpl(appDataRoot);
     const installArgs = ['/S', '/currentuser', '/noDesktopShortcut', `/D=${installRoot}`];
 
-    await runProcess(installer, installArgs);
+    await dependencies.runProcessImpl(installer, installArgs);
     installed = true;
     installedExecutable = path.join(installRoot, unpackedExecutable);
-    assertPeFile(installedExecutable);
-    uninstaller = findUninstaller(installRoot);
-    if (!hasKnownRegistration()) fail();
-    await runPackagedSmoke(installedExecutable, appDataRoot, localAppDataRoot);
-    assertMigratedSentinel(appDataRoot, sentinelSha256);
+    dependencies.assertPeFileImpl(installedExecutable);
+    uninstaller = dependencies.findUninstallerImpl(installRoot);
+    if (!dependencies.hasKnownRegistrationImpl()) fail();
+    await dependencies.runPackagedSmokeImpl(installedExecutable, appDataRoot, localAppDataRoot);
+    dependencies.assertMigratedSentinelImpl(appDataRoot, sentinelSha256);
 
-    await runProcess(installer, installArgs);
-    assertPeFile(installedExecutable);
-    await runPackagedSmoke(installedExecutable, appDataRoot, localAppDataRoot);
-    assertMigratedSentinel(appDataRoot, sentinelSha256);
+    await dependencies.runProcessImpl(installer, installArgs);
+    dependencies.assertPeFileImpl(installedExecutable);
+    await dependencies.runPackagedSmokeImpl(installedExecutable, appDataRoot, localAppDataRoot);
+    dependencies.assertMigratedSentinelImpl(appDataRoot, sentinelSha256);
 
-    await runProcess(uninstaller, ['/S', '/currentuser']);
+    await dependencies.runProcessImpl(uninstaller, ['/S', '/currentuser']);
+    if (!dependencies.waitForImpl(() => !installationTracesRemain())) fail();
     installed = false;
-    if (!waitFor(() => !fs.existsSync(installedExecutable) && !hasKnownRegistration())) fail();
-    assertMigratedSentinel(appDataRoot, sentinelSha256);
+    dependencies.assertMigratedSentinelImpl(appDataRoot, sentinelSha256);
     return Object.freeze({ install: 'passed', upgrade: 'preserved', uninstall: 'preserved' });
   } finally {
     if (installed && uninstaller && fs.existsSync(uninstaller)) {
       try {
-        await runProcess(uninstaller, ['/S', '/currentuser']);
-        installed = false;
+        await dependencies.runProcessImpl(uninstaller, ['/S', '/currentuser']);
+        if (dependencies.waitForImpl(() => !installationTracesRemain())) installed = false;
       } catch (_) {}
     }
-    if (!waitFor(() => !installed && !hasKnownRegistration()
-      && (!installedExecutable || !fs.existsSync(installedExecutable)))) fail();
-    removeTaskRoot(root);
+    let taskRootRemoved = false;
+    try {
+      dependencies.removeTaskRootImpl(root);
+      taskRootRemoved = true;
+    } catch (_) {}
+    const tracesCleared = dependencies.waitForImpl(() => !installationTracesRemain());
+    if (taskRootRemoved && tracesCleared) installed = false;
+    if (!taskRootRemoved || installed || !tracesCleared) fail();
   }
 }
 
@@ -551,6 +614,7 @@ module.exports = Object.freeze({
   main,
   parseArchiveEntries,
   removeTaskRoot,
+  runInstallerLifecycle,
   runPackagedSmoke,
   verifyArtifacts,
 });

@@ -21,6 +21,7 @@ const {
   hasHostInstallerFlag,
   parseArchiveEntries,
   removeTaskRoot,
+  runInstallerLifecycle,
 } = require('../scripts/verify-windows-release');
 const { pruneUnsupportedOptionalNative } = require('../scripts/prune-optional-native');
 const { installBuildProvenanceFile } = require('../scripts/write-build-provenance');
@@ -603,4 +604,154 @@ test('release cleanup only removes a task-owned OS-temp root', () => {
     () => removeTaskRoot(path.join(os.tmpdir(), 'unrelated-fixture')),
     (error) => error && error.code === WINDOWS_RELEASE_ERROR,
   );
+});
+
+test('installer lifecycle retries cleanup when a successful uninstaller leaves traces', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-drama-p9-05-installer-retry-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const installedExecutable = path.join(root, 'installed', 'AI漫剧工作台.exe');
+  const uninstaller = path.join(root, 'installed', 'Uninstall AI漫剧工作台.exe');
+  const shortcut = path.join(root, 'synthetic-start-menu-shortcut.lnk');
+  let registered = false;
+  let installCalls = 0;
+  let uninstallCalls = 0;
+
+  await assert.rejects(
+    runInstallerLifecycle('synthetic-installer.exe', 'AI漫剧工作台.exe', {
+      assertNoPreexistingInstallImpl() {},
+      createTaskRoot() { return root; },
+      seedLegacyUserDataImpl() { return 'a'.repeat(64); },
+      assertMigratedSentinelImpl() {},
+      assertPeFileImpl() {},
+      findUninstallerImpl() { return uninstaller; },
+      runPackagedSmokeImpl() { return Promise.resolve(); },
+      hasKnownRegistrationImpl() { return registered; },
+      hasKnownInstalledPathsImpl() { return fs.existsSync(shortcut); },
+      waitForImpl(predicate) { return predicate(); },
+      removeTaskRootImpl: removeTaskRoot,
+      async runProcessImpl(executable) {
+        if (executable === 'synthetic-installer.exe') {
+          installCalls += 1;
+          fs.mkdirSync(path.dirname(installedExecutable), { recursive: true });
+          fs.writeFileSync(installedExecutable, 'synthetic-executable');
+          fs.writeFileSync(uninstaller, 'synthetic-uninstaller');
+          fs.writeFileSync(shortcut, 'synthetic-shortcut');
+          registered = true;
+          return;
+        }
+        assert.equal(executable, uninstaller);
+        uninstallCalls += 1;
+        if (uninstallCalls === 2) {
+          fs.rmSync(installedExecutable);
+          fs.rmSync(uninstaller);
+          fs.rmSync(shortcut);
+          registered = false;
+        }
+      },
+    }),
+    (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+  );
+
+  assert.equal(installCalls, 2);
+  assert.equal(uninstallCalls, 2);
+  assert.equal(fs.existsSync(root), false);
+  assert.equal(registered, false);
+});
+
+test('installer lifecycle reports success only after every known trace is gone', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-drama-p9-05-installer-success-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const installedExecutable = path.join(root, 'installed', 'AI漫剧工作台.exe');
+  const uninstaller = path.join(root, 'installed', 'Uninstall AI漫剧工作台.exe');
+  const shortcut = path.join(root, 'synthetic-desktop-shortcut.lnk');
+  let registered = false;
+  let installCalls = 0;
+  let uninstallCalls = 0;
+
+  const receipt = await runInstallerLifecycle('synthetic-installer.exe', 'AI漫剧工作台.exe', {
+    assertNoPreexistingInstallImpl() {},
+    createTaskRoot() { return root; },
+    seedLegacyUserDataImpl() { return 'b'.repeat(64); },
+    assertMigratedSentinelImpl() {},
+    assertPeFileImpl() {},
+    findUninstallerImpl() { return uninstaller; },
+    runPackagedSmokeImpl() { return Promise.resolve(); },
+    hasKnownRegistrationImpl() { return registered; },
+    hasKnownInstalledPathsImpl() { return fs.existsSync(shortcut); },
+    waitForImpl(predicate) { return predicate(); },
+    removeTaskRootImpl: removeTaskRoot,
+    async runProcessImpl(executable) {
+      if (executable === 'synthetic-installer.exe') {
+        installCalls += 1;
+        fs.mkdirSync(path.dirname(installedExecutable), { recursive: true });
+        fs.writeFileSync(installedExecutable, 'synthetic-executable');
+        fs.writeFileSync(uninstaller, 'synthetic-uninstaller');
+        fs.writeFileSync(shortcut, 'synthetic-shortcut');
+        registered = true;
+        return;
+      }
+      assert.equal(executable, uninstaller);
+      uninstallCalls += 1;
+      fs.rmSync(installedExecutable);
+      fs.rmSync(uninstaller);
+      fs.rmSync(shortcut);
+      registered = false;
+    },
+  });
+
+  assert.deepEqual(receipt, { install: 'passed', upgrade: 'preserved', uninstall: 'preserved' });
+  assert.equal(installCalls, 2);
+  assert.equal(uninstallCalls, 1);
+  assert.equal(fs.existsSync(root), false);
+  assert.equal(registered, false);
+});
+
+test('installer lifecycle removes its task root when the uninstaller disappears with residue', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-drama-p9-05-installer-missing-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const installedExecutable = path.join(root, 'installed', 'AI漫剧工作台.exe');
+  const uninstaller = path.join(root, 'installed', 'Uninstall AI漫剧工作台.exe');
+  let installCalls = 0;
+  let uninstallCalls = 0;
+  let cleanupCalls = 0;
+  let registered = false;
+
+  await assert.rejects(
+    runInstallerLifecycle('synthetic-installer.exe', 'AI漫剧工作台.exe', {
+      assertNoPreexistingInstallImpl() {},
+      createTaskRoot() { return root; },
+      seedLegacyUserDataImpl() { return 'c'.repeat(64); },
+      assertMigratedSentinelImpl() {},
+      assertPeFileImpl() {},
+      findUninstallerImpl() { return uninstaller; },
+      runPackagedSmokeImpl() { return Promise.resolve(); },
+      hasKnownRegistrationImpl() { return registered; },
+      hasKnownInstalledPathsImpl() { return false; },
+      waitForImpl(predicate) { return predicate(); },
+      removeTaskRootImpl(taskRoot) {
+        cleanupCalls += 1;
+        removeTaskRoot(taskRoot);
+      },
+      async runProcessImpl(executable) {
+        if (executable === 'synthetic-installer.exe') {
+          installCalls += 1;
+          fs.mkdirSync(path.dirname(installedExecutable), { recursive: true });
+          fs.writeFileSync(installedExecutable, 'synthetic-executable');
+          fs.writeFileSync(uninstaller, 'synthetic-uninstaller');
+          registered = true;
+          return;
+        }
+        assert.equal(executable, uninstaller);
+        uninstallCalls += 1;
+        fs.rmSync(uninstaller);
+        registered = false;
+      },
+    }),
+    (error) => error && error.code === WINDOWS_RELEASE_ERROR,
+  );
+
+  assert.equal(installCalls, 2);
+  assert.equal(uninstallCalls, 1);
+  assert.equal(cleanupCalls, 1);
+  assert.equal(fs.existsSync(root), false);
 });
