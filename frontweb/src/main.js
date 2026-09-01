@@ -3,12 +3,11 @@ import './styles/theme.css'
 // 初始化主题（必须在挂载前执行）
 import './composables/useTheme.js'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
 import { ElConfigProvider } from 'element-plus'
 import 'element-plus/dist/index.css'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
+import { installElementPlus } from './plugins/elementPlus.js'
 import router from './router'
 
 const app = createApp({
@@ -17,6 +16,7 @@ const app = createApp({
     return h(
       ElConfigProvider,
       {
+        locale: zhCn,
         message: {
           duration: 5000,
           showClose: true,
@@ -29,11 +29,7 @@ const app = createApp({
 })
 const pinia = createPinia()
 
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
-
+installElementPlus(app)
 app.use(pinia)
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
 app.mount('#app')
