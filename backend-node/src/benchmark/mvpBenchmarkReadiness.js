@@ -198,6 +198,16 @@ function hasProductionNarrativeExecutor(runtime) {
   try { return Reflect.apply(isAvailable, tasks, []) === true; } catch { return false; }
 }
 
+function hasProductionCharacterCandidateExecutor(runtime) {
+  if (!hasFunction(runtime, ['characterCandidates', 'execute'])
+    || !hasFunction(runtime, ['characterCandidates', 'get'])
+    || !hasFunction(runtime, ['characterCandidates', 'isAvailable'])) return false;
+  const candidates = dataValue(runtime, 'characterCandidates');
+  const isAvailable = dataValue(candidates, 'isAvailable');
+  if (isProxy(isAvailable)) return false;
+  try { return Reflect.apply(isAvailable, candidates, []) === true; } catch { return false; }
+}
+
 function databaseState(readinessRepository) {
   if (!readinessRepository || typeof readinessRepository !== 'object'
     || isProxy(readinessRepository)) {
@@ -230,7 +240,7 @@ function capabilityStates(runtime, readinessRepository) {
   const states = Object.freeze({
     'database-contracts': stored.contractsReady,
     'narrative-execution': hasProductionNarrativeExecutor(runtime),
-    'character-candidate-execution': hasFunction(runtime, ['characterCandidates', 'complete']),
+    'character-candidate-execution': hasProductionCharacterCandidateExecutor(runtime),
     'workflow-execution': hasProductionWorkflowExecutor(runtime),
     'remote-execution': remoteReady,
     'ready-gpu-connection': stored.readyConnection,

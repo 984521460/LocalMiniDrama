@@ -1,5 +1,7 @@
 'use strict';
 
+const { createHash } = require('node:crypto');
+
 const { validateH3GenerationSpec } = require('../../h3/generationSpec');
 const { sha256Canonical } = require('../../h3/contract');
 const { createPromptSemanticVersionRecord } = require('../../assets/generationHistory');
@@ -54,6 +56,21 @@ const {
 const {
   narrativeExecutionRequestSha256,
 } = require('../../narrative/execution/request');
+const {
+  characterCandidateExecutionRequestSha256,
+  parseCharacterCandidateExecutionRequest,
+} = require('../../characterCandidates/execution/request');
+const {
+  characterCandidateSourceSha256,
+  parseCharacterCandidateSource,
+} = require('../../characterCandidates/execution/source');
+const { createCharacterCandidatePrompt } = require('../../characterCandidates/execution/prompt');
+const {
+  MANIFEST_SHA256: CHARACTER_CANDIDATE_MANIFEST_SHA256,
+  PROFILE_SHA256: CHARACTER_CANDIDATE_PROFILE_SHA256,
+  parseConfiguredCharacterCandidateManifest,
+  parseConfiguredCharacterCandidateProfile,
+} = require('../../characterCandidates/execution/profile');
 const {
   narrativeExecutionResultMatchesRequestSql,
 } = require('../../narrative/execution/resultBinding');
@@ -144,6 +161,69 @@ function narrativeExecutionRequestSha256Sql(value) {
   const parsed = canonicalJson(value, 64 * 1024);
   if (parsed === null) return null;
   try { return narrativeExecutionRequestSha256(parsed); } catch { return null; }
+}
+
+function characterCandidateExecutionRequestSha256Sql(value) {
+  const parsed = canonicalJson(value, 16 * 1024);
+  if (parsed === null) return null;
+  try { return characterCandidateExecutionRequestSha256(parsed); } catch { return null; }
+}
+
+function characterCandidateSourceSha256Sql(value) {
+  const parsed = canonicalJson(value, 64 * 1024);
+  if (parsed === null) return null;
+  try { return characterCandidateSourceSha256(parsed); } catch { return null; }
+}
+
+function characterCandidatePromptSha256Sql(sourceJson, requestJson, ordinal) {
+  const parsedSource = canonicalJson(sourceJson, 64 * 1024);
+  const parsedRequest = canonicalJson(requestJson, 16 * 1024);
+  if (parsedSource === null || parsedRequest === null
+    || !Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal > 3) return null;
+  try {
+    const source = parseCharacterCandidateSource(parsedSource);
+    const request = parseCharacterCandidateExecutionRequest(parsedRequest);
+    const seed = (request.seed + ordinal * 2_654_435_761) % 4_294_967_296;
+    return createCharacterCandidatePrompt(source, ordinal, seed).promptSha256;
+  } catch {
+    return null;
+  }
+}
+
+function characterCandidateProfileSha256Sql(value) {
+  try {
+    parseConfiguredCharacterCandidateProfile(value);
+    return CHARACTER_CANDIDATE_PROFILE_SHA256;
+  } catch {
+    return null;
+  }
+}
+
+function characterCandidateManifestSha256Sql(value) {
+  try {
+    parseConfiguredCharacterCandidateManifest(value);
+    return CHARACTER_CANDIDATE_MANIFEST_SHA256;
+  } catch {
+    return null;
+  }
+}
+
+function characterCandidateParametersSha256Sql(value) {
+  const parsed = canonicalJson(value, 4096);
+  if (parsed === null || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  try {
+    const keys = Object.keys(parsed);
+    if (keys.length !== 4 || keys[0] !== 'adapter' || keys[1] !== 'size'
+      || keys[2] !== 'requestedSeed' || keys[3] !== 'ordinal'
+      || parsed.adapter !== 'configured-image.v1'
+      || typeof parsed.size !== 'string' || !/^\d{3,4}x\d{3,4}$/u.test(parsed.size)
+      || !Number.isSafeInteger(parsed.requestedSeed)
+      || parsed.requestedSeed < 0 || parsed.requestedSeed > 4_294_967_295
+      || !Number.isSafeInteger(parsed.ordinal) || parsed.ordinal < 0 || parsed.ordinal > 3) return null;
+    return createHash('sha256').update(value, 'utf8').digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 function mediaExportReceiptMatchesPlan(planJson, receiptJson) {
@@ -897,6 +977,36 @@ function mvpBenchmarkH3TerminalEvidence(
 
 function registerV2SqlFunctions(database) {
   database.function(
+    'character_candidate_execution_request_sha256',
+    { deterministic: true },
+    characterCandidateExecutionRequestSha256Sql,
+  );
+  database.function(
+    'character_candidate_source_sha256',
+    { deterministic: true },
+    characterCandidateSourceSha256Sql,
+  );
+  database.function(
+    'character_candidate_profile_sha256',
+    { deterministic: true },
+    characterCandidateProfileSha256Sql,
+  );
+  database.function(
+    'character_candidate_prompt_sha256',
+    { deterministic: true },
+    characterCandidatePromptSha256Sql,
+  );
+  database.function(
+    'character_candidate_manifest_sha256',
+    { deterministic: true },
+    characterCandidateManifestSha256Sql,
+  );
+  database.function(
+    'character_candidate_parameters_sha256',
+    { deterministic: true },
+    characterCandidateParametersSha256Sql,
+  );
+  database.function(
     'narrative_execution_request_sha256',
     { deterministic: true },
     narrativeExecutionRequestSha256Sql,
@@ -1088,6 +1198,12 @@ module.exports = Object.freeze({
   audioModeNarrativeEmotion,
   bgmLicenseValid,
   bgmTrackValid,
+  characterCandidateExecutionRequestSha256Sql,
+  characterCandidateManifestSha256Sql,
+  characterCandidateParametersSha256Sql,
+  characterCandidatePromptSha256Sql,
+  characterCandidateProfileSha256Sql,
+  characterCandidateSourceSha256Sql,
   h3GenerationSpecSha256,
   h3HistoryMatchesIntent,
   h3OfficialManifestMatches,

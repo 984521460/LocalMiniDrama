@@ -34,7 +34,11 @@ function productionRuntimeFixture({ full = false } = {}) {
   };
   if (full) {
     runtime.narrativeTasks = { execute() {}, get() {}, isAvailable() { return true; } };
-    runtime.characterCandidates = { complete() {} };
+    runtime.characterCandidates = {
+      execute() {},
+      get() {},
+      isAvailable() { return true; },
+    };
     runtime.workflows = {
       executeNode() {},
       supportedNodeTypes: SUPPORTED_MATERIALIZED_NODE_TYPES,
@@ -399,6 +403,23 @@ test('readiness fails closed when the version-twenty-five narrative execution ta
     contractsReady: false,
     readyConnection: false,
   });
+});
+
+test('readiness fails closed when either version-twenty-six candidate execution table is missing', (t) => {
+  const tables = [
+    'character_candidate_executions',
+    'character_candidate_execution_items',
+  ];
+  for (let index = 0; index < tables.length; index += 1) {
+    const database = createMigratedV2Database(t);
+    const repository = createMvpBenchmarkReadinessRepository(database);
+    assert.equal(repository.inspect().contractsReady, true);
+    database.exec(`DROP TABLE ${tables[index]}`);
+    assert.deepEqual(repository.inspect(), {
+      contractsReady: false,
+      readyConnection: false,
+    });
+  }
 });
 
 test('readiness parser binds the whole projection to the current runtime and database', (t) => {

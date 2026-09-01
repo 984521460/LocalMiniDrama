@@ -8,6 +8,9 @@ const {
 } = require('../../benchmark/mvpBenchmarkExecutionGate');
 const { createBgmTrackRepository } = require('./bgmTrackRepository');
 const { createCharacterCandidateRepository } = require('./characterCandidateRepository');
+const {
+  createCharacterCandidateExecutionRepository,
+} = require('./characterCandidateExecutionRepository');
 const { createCharacterReferencePackageRepository } = require('./characterReferencePackageRepository');
 const { createCharacterVersionRepository } = require('./characterVersionRepository');
 const { createComfyManifestRepository } = require('./comfyManifestRepository');
@@ -134,6 +137,23 @@ function createLazyNarrativeExecutionRepository(database) {
     reserve(...args) {
       return getTarget().reserve(...args);
     },
+  });
+}
+
+function createLazyCharacterCandidateExecutionRepository(database) {
+  let target;
+  function getTarget() {
+    if (!target) target = createCharacterCandidateExecutionRepository(database);
+    return target;
+  }
+  return Object.freeze({
+    complete(...args) { return getTarget().complete(...args); },
+    fail(...args) { return getTarget().fail(...args); },
+    get(...args) { return getTarget().get(...args); },
+    getCharacterSource(...args) { return getTarget().getCharacterSource(...args); },
+    markUnknown(...args) { return getTarget().markUnknown(...args); },
+    recoverInterrupted(...args) { return getTarget().recoverInterrupted(...args); },
+    reserve(...args) { return getTarget().reserve(...args); },
   });
 }
 
@@ -298,6 +318,7 @@ function createV2Repositories(database) {
   const comfyManifests = createComfyManifestRepository(database);
   const narrativeReviews = createNarrativeReviewRepository(database);
   const narrativeExecutions = createLazyNarrativeExecutionRepository(database);
+  const characterCandidateExecutions = createLazyCharacterCandidateExecutionRepository(database);
   const remote = createRemoteRepository(database);
   const scenePropVersions = createScenePropVersionRepository(database);
   const sources = createSourceRepository(database);
@@ -379,6 +400,7 @@ function createV2Repositories(database) {
     audioTtsSubmissions,
     bgmTracks: createBgmTrackRepository(database),
     characterCandidates: createCharacterCandidateRepository(database),
+    characterCandidateExecutions,
     characterReferencePackages,
     characterVersions,
     comfyManifests,

@@ -49,8 +49,22 @@ function importRow(stage, statement, row) {
 function createProjectArchiveRepository(database) {
   assertDatabase(database);
   let structuredV21;
+  let hasCharacterCandidateExecution;
 
   function exportStructuredV21(dramaUid) {
+    if (!hasCharacterCandidateExecution) {
+      hasCharacterCandidateExecution = database.prepare(`
+        SELECT 1
+        FROM character_candidate_executions
+        WHERE drama_uid = ?
+        LIMIT 1
+      `);
+    }
+    if (hasCharacterCandidateExecution.get(dramaUid)) {
+      throw new TypeError(
+        'Project archive 2.1 does not yet preserve character candidate execution evidence',
+      );
+    }
     if (!structuredV21) structuredV21 = createProjectArchiveV21StructuredData(database);
     return structuredV21.exportForDrama(dramaUid);
   }

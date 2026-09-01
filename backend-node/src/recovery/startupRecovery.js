@@ -10,6 +10,7 @@ const FAMILY_SPECS = Object.freeze([
   Object.freeze({ name: 'h3_api_submissions', dependency: 'h3ApiSubmissions', method: 'recoverInterrupted' }),
   Object.freeze({ name: 'audio_tts_submissions', dependency: 'audioTtsSubmissions', method: 'recoverInterrupted' }),
   Object.freeze({ name: 'narrative_task_executions', dependency: 'narrativeExecutions', method: 'recoverInterrupted' }),
+  Object.freeze({ name: 'character_candidate_executions', dependency: 'characterCandidateExecutions', method: 'recoverInterrupted' }),
   Object.freeze({ name: 'benchmark_releases', dependency: 'benchmarkReleases', method: 'recoverOpen', remote: true }),
   Object.freeze({ name: 'remote_tasks', dependency: 'remoteTasks', method: 'recoverAll', remote: true }),
 ]);

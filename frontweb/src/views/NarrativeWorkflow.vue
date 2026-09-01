@@ -64,6 +64,7 @@
         v-if="drama?.uid"
         :drama-id="dramaId"
         :drama-uid="drama.uid"
+        :characters="drama.characters || []"
         :selections="activeDocument?.selections || []"
       />
       <AssetVersionContinuityWorkspace :drama-id="dramaId" />

@@ -16,9 +16,6 @@ const {
   validateProjectArchiveV21Bundle,
 } = require('../adapters/v2/zip/manifestV21');
 const { archiveError, isProjectArchiveError } = require('../adapters/v2/zip/errors');
-const { createProjectArchiveV21StructuredData } = require(
-  '../adapters/v2/zip/projectArchiveV21StructuredData',
-);
 const { createV2Repositories } = require('../repositories/v2');
 const { projectArchiveRecordsForManifest } = require('./projectArchiveSourceEvidence');
 const { EXPORT_VERSION: LEGACY_PROJECT_VERSION } = require('./dramaExportService');
@@ -64,8 +61,7 @@ function createProjectArchiveV21ExportService({ now = () => new Date() } = {}) {
         const repositories = createV2Repositories(database);
         const snapshot = repositories.projectArchives.exportSnapshot(id);
         if (!snapshot || snapshot.project.dramaUid !== drama.uid) invalid();
-        const structuredRecords = createProjectArchiveV21StructuredData(database)
-          .exportForDrama(drama.uid);
+        const structuredRecords = repositories.projectArchives.exportStructuredV21(drama.uid);
         const legacyRecords = createProjectArchiveV21LegacyData(database).exportForDrama(drama.uid);
         const portable = createProjectArchiveV21PortableSnapshot(database).project({
           dramaUid: drama.uid,

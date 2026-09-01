@@ -26,6 +26,13 @@
       @completed="load"
     />
 
+    <CharacterCandidateExecutionPanel
+      :drama-id="dramaId"
+      :drama-uid="dramaUid"
+      :characters="characters"
+      :results="results"
+    />
+
     <div class="review-grid" v-loading="loading">
       <article v-for="group in groups" :key="group.type" class="review-card">
         <div class="card-title">
@@ -103,6 +110,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { narrativeReviewAPI } from '@/api/v2/narrativeReviews'
+import CharacterCandidateExecutionPanel from '@/components/assets/CharacterCandidateExecutionPanel.vue'
 import NarrativeExecutionPanel from './NarrativeExecutionPanel.vue'
 import {
   createLatestRequestGuard,
@@ -113,6 +121,7 @@ import {
 const props = defineProps({
   dramaId: { type: Number, required: true },
   dramaUid: { type: String, required: true },
+  characters: { type: Array, default: () => [] },
   selections: { type: Array, default: () => [] },
 })
 

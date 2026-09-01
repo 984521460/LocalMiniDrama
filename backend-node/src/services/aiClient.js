@@ -2,6 +2,7 @@
 const aiConfigService = require('./aiConfigService');
 const { applyDeepSeekChatOptions } = require('./deepseekConfig');
 const https = require('https');
+const { types: { isProxy } } = require('node:util');
 const http = require('http');
 
 /**
@@ -61,8 +62,19 @@ function postJSONNonStream(url, headers, body, timeoutMs = 120000) {
  * 避免 undici fetch 在慢链路或大包体（多参考图 base64）下长时间挂起后以模糊的 fetch failed 结束。
  * @returns {Promise<{ statusCode: number, raw: string }>}
  */
-function postJSONWithTimeout(url, headers, body, timeoutMs = 600000) {
+function postJSONWithTimeout(
+  url,
+  headers,
+  body,
+  timeoutMs = 600000,
+  maxResponseBytes = 64 * 1024 * 1024,
+) {
   return new Promise((resolve, reject) => {
+    if (!Number.isSafeInteger(maxResponseBytes)
+      || maxResponseBytes < 1 || maxResponseBytes > 64 * 1024 * 1024) {
+      reject(new TypeError('Image generation response limit is invalid'));
+      return;
+    }
     const parsed = new URL(url);
     const mod = parsed.protocol === 'https:' ? https : http;
     const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
@@ -79,28 +91,50 @@ function postJSONWithTimeout(url, headers, body, timeoutMs = 600000) {
       headers: reqHeaders,
     };
 
+    let settled = false;
+    let timer = null;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clearTimeout(timer);
+      callback(value);
+    };
+
     const req = mod.request(options, (res) => {
       const chunks = [];
-      res.on('data', (c) => chunks.push(c));
+      let responseBytes = 0;
+      res.on('data', (chunk) => {
+        if (settled) return;
+        if (isProxy(chunk) || !Buffer.isBuffer(chunk)
+          || Object.getPrototypeOf(chunk) !== Buffer.prototype) {
+          res.destroy();
+          req.destroy();
+          finish(reject, new Error('Image generation response is invalid'));
+          return;
+        }
+        const bytes = chunk;
+        if (responseBytes > maxResponseBytes - bytes.length) {
+          res.destroy();
+          req.destroy();
+          finish(reject, new Error('Image generation response exceeds byte limit'));
+          return;
+        }
+        responseBytes += bytes.length;
+        chunks[chunks.length] = bytes;
+      });
       res.on('end', () => {
-        clearTimeout(timer);
+        if (settled) return;
         const raw = Buffer.concat(chunks).toString('utf-8');
-        resolve({ statusCode: res.statusCode || 0, raw });
+        finish(resolve, { statusCode: res.statusCode || 0, raw });
       });
-      res.on('error', (e) => {
-        clearTimeout(timer);
-        reject(e);
-      });
+      res.on('error', (error) => finish(reject, error));
     });
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       req.destroy();
-      reject(new Error(`Image generation HTTP timeout after ${timeoutMs}ms`));
+      finish(reject, new Error(`Image generation HTTP timeout after ${timeoutMs}ms`));
     }, timeoutMs);
-    req.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
+    req.on('error', (error) => finish(reject, error));
     req.write(bodyStr);
     req.end();
   });

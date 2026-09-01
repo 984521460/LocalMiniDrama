@@ -293,3 +293,22 @@ under one live attestation and one immediate transaction, so an expiry,
 budget failure, source drift, duplicate, or later-item insert failure leaves
 no partial batch. This local preflight still does not enable or claim any
 Provider, Vault, GPU, media, billing, or instance-return operation.
+
+Migration `0025_narrative_task_executions.sql` reserves each configured-text
+narrative task before its first Provider call and binds the immutable request,
+approved upstream chain, and current source selection to one durable operation
+identity. Interrupted calls become `submission_unknown` and are never replayed
+automatically. Successful completion seals the canonical narrative result and
+reviewable evidence; no credential or raw Provider secret is persisted.
+
+Migration `0026_character_candidate_executions.sql` reserves one durable,
+provider-neutral configured-image operation for an approved extraction fact.
+The operation binds the current Character, source selection, approved
+extraction result, exact static profile/manifest, dimensions, and base seed,
+then records exactly four sequential independent calls. Successful completion
+atomically seals four normalized local PNG AssetVersions, the existing
+CharacterCandidateBatch, and per-call prompt/provider/parameter/hash evidence.
+Interrupted or uncertain Provider work becomes `submission_unknown`; startup
+recovery never replays it. These operational rows are not yet represented by
+Project Archive 2.1, so 2.1 export fails closed for a drama containing them
+instead of silently dropping the audit trail.

@@ -22,9 +22,9 @@ function createMigratedV2Database(t) {
   database.pragma('busy_timeout = 0');
   database.exec(LEGACY_SCHEMA_SQL);
   const migration = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  if (migration.currentVersion !== 25) {
+  if (migration.currentVersion !== 26) {
     database.close();
-    throw new Error(`Expected v2 migration version 25, received ${migration.currentVersion}`);
+    throw new Error(`Expected v2 migration version 26, received ${migration.currentVersion}`);
   }
   t.after(() => {
     if (!database.open) return;

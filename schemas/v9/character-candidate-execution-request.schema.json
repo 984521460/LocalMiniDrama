@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/character-candidate-execution-request.schema.json",
+  "title": "Character candidate execution request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationUid",
+    "dramaUid",
+    "characterUid",
+    "extractionResultUid",
+    "characterFactId",
+    "width",
+    "height",
+    "seed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "character-candidate-execution-request.v1" },
+    "operationUid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "characterUid": { "$ref": "#/$defs/uid" },
+    "extractionResultUid": { "$ref": "#/$defs/uid" },
+    "characterFactId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+    },
+    "width": { "type": "integer", "minimum": 256, "maximum": 2048 },
+    "height": { "type": "integer", "minimum": 256, "maximum": 2048 },
+    "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  },
+  "$comment": "Runtime additionally enforces width*height <= 4194304 and current approved character-source binding."
+}

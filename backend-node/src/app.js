@@ -15,6 +15,9 @@ const { createProductionMvpBenchmarkRuntime } = require('./benchmark/productionR
 const {
   createProductionNarrativeExecutionRuntime,
 } = require('./narrative/execution/productionRuntime');
+const {
+  createProductionCharacterCandidateExecutionRuntime,
+} = require('./characterCandidates/execution/productionRuntime');
 const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
 const { createV2Repositories } = require('./repositories/v2');
 const { createWorkflowRunService } = require('./workflows');
@@ -23,6 +26,7 @@ const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery
 function createApp({
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
   audioTtsDependencies = {}, benchmarkDependencies = {}, narrativeDependencies = {},
+  characterCandidateDependencies = {},
 } = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
@@ -78,6 +82,11 @@ function createApp({
     log,
     dependencies: narrativeDependencies,
   });
+  const characterCandidateRuntime = createProductionCharacterCandidateExecutionRuntime({
+    database: db,
+    localRoot: storageRoot,
+    dependencies: characterCandidateDependencies,
+  });
   const runtime = Object.freeze({
     ...remoteRuntime,
     h3: h3Runtime,
@@ -87,6 +96,7 @@ function createApp({
     ...audioTtsRuntime,
     mvpBenchmark: mvpBenchmarkRuntime,
     ...narrativeRuntime,
+    ...characterCandidateRuntime,
   });
   const taskService = require('./services/taskService');
   const { resumeProcessingVideoGenerations } = require('./services/videoService');
@@ -111,6 +121,7 @@ function createApp({
     h3ApiSubmissions: createH3ApiSubmissionStore(db),
     audioTtsSubmissions: recoveryRepositories.audioTtsSubmissions,
     narrativeExecutions: recoveryRepositories.narrativeExecutions,
+    characterCandidateExecutions: recoveryRepositories.characterCandidateExecutions,
     benchmarkReleases: recoveryRepositories.mvpBenchmarkExecutionAccounting,
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,
