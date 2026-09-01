@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/narrative-execution-request.schema.json",
+  "title": "Narrative execution request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationUid",
+    "dramaUid",
+    "sourceSelectionUid",
+    "resultType",
+    "upstreamResultUid",
+    "upstreamResultHash",
+    "upstreamEnvelopeHash",
+    "upstreamApprovalRef",
+    "durationBudget",
+    "style",
+    "assetVersions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "narrative-execution-request.v1" },
+    "operationUid": { "$ref": "#/$defs/uuid" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "sourceSelectionUid": { "$ref": "#/$defs/uuid" },
+    "resultType": { "enum": ["extraction", "adaptation", "script", "shot"] },
+    "upstreamResultUid": { "anyOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+    "upstreamResultHash": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+    "upstreamEnvelopeHash": { "anyOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+    "upstreamApprovalRef": { "anyOf": [{ "$ref": "#/$defs/reviewRef" }, { "type": "null" }] },
+    "durationBudget": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetSeconds", "toleranceSeconds"],
+          "properties": {
+            "targetSeconds": { "type": "integer", "minimum": 45, "maximum": 75 },
+            "toleranceSeconds": { "type": "integer", "minimum": 0, "maximum": 15 }
+          }
+        }
+      ]
+    },
+    "style": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["genre", "tone", "audience"],
+          "properties": {
+            "genre": { "$ref": "#/$defs/cleanText" },
+            "tone": { "$ref": "#/$defs/cleanText" },
+            "audience": { "$ref": "#/$defs/cleanText" }
+          }
+        }
+      ]
+    },
+    "assetVersions": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["assetVersionRef", "assetType", "bindingRef"],
+        "properties": {
+          "assetVersionRef": {
+            "type": "string",
+            "pattern": "^asset-version:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "assetType": {
+            "enum": ["character", "scene", "prop"]
+          },
+          "bindingRef": { "$ref": "#/$defs/token" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "resultType": { "const": "extraction" } }, "required": ["resultType"] },
+      "then": {
+        "properties": {
+          "upstreamResultUid": { "type": "null" },
+          "upstreamResultHash": { "type": "null" },
+          "upstreamEnvelopeHash": { "type": "null" },
+          "upstreamApprovalRef": { "type": "null" },
+          "durationBudget": { "type": "null" },
+          "style": { "type": "null" },
+          "assetVersions": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "resultType": { "const": "adaptation" } }, "required": ["resultType"] },
+      "then": {
+        "properties": {
+          "upstreamResultUid": { "$ref": "#/$defs/uuid" },
+          "upstreamResultHash": { "$ref": "#/$defs/sha256" },
+          "upstreamEnvelopeHash": { "$ref": "#/$defs/sha256" },
+          "upstreamApprovalRef": { "$ref": "#/$defs/reviewRef" },
+          "durationBudget": { "type": "object" },
+          "style": { "type": "object" },
+          "assetVersions": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "resultType": { "const": "script" } }, "required": ["resultType"] },
+      "then": {
+        "properties": {
+          "upstreamResultUid": { "$ref": "#/$defs/uuid" },
+          "upstreamResultHash": { "$ref": "#/$defs/sha256" },
+          "upstreamEnvelopeHash": { "$ref": "#/$defs/sha256" },
+          "upstreamApprovalRef": { "$ref": "#/$defs/reviewRef" },
+          "durationBudget": { "type": "null" },
+          "style": { "type": "null" },
+          "assetVersions": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "resultType": { "const": "shot" } }, "required": ["resultType"] },
+      "then": {
+        "properties": {
+          "upstreamResultUid": { "$ref": "#/$defs/uuid" },
+          "upstreamResultHash": { "$ref": "#/$defs/sha256" },
+          "upstreamEnvelopeHash": { "$ref": "#/$defs/sha256" },
+          "upstreamApprovalRef": { "$ref": "#/$defs/reviewRef" },
+          "durationBudget": { "type": "null" },
+          "style": { "type": "null" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+      "maxLength": 128
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewRef": {
+      "type": "string",
+      "pattern": "^review:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "cleanText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!.*[\\ud800-\\udfff])(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$"
+    }
+  }
+}

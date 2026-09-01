@@ -18,6 +18,14 @@
       :closable="false"
     />
 
+    <NarrativeExecutionPanel
+      :drama-id="dramaId"
+      :drama-uid="dramaUid"
+      :selections="selections"
+      :results="results"
+      @completed="load"
+    />
+
     <div class="review-grid" v-loading="loading">
       <article v-for="group in groups" :key="group.type" class="review-card">
         <div class="card-title">
@@ -95,6 +103,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { narrativeReviewAPI } from '@/api/v2/narrativeReviews'
+import NarrativeExecutionPanel from './NarrativeExecutionPanel.vue'
 import {
   createLatestRequestGuard,
   groupNarrativeResults,
@@ -103,6 +112,8 @@ import {
 
 const props = defineProps({
   dramaId: { type: Number, required: true },
+  dramaUid: { type: String, required: true },
+  selections: { type: Array, default: () => [] },
 })
 
 const results = ref([])

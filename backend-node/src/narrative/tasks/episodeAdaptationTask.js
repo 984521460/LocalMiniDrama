@@ -36,11 +36,24 @@ function invalidInput() {
 }
 
 function isCleanBoundedText(value) {
+  if (typeof value !== 'string'
+    || value.length < 1
+    || value.length > 256
+    || value !== value.trim()
+    || /[\u0000-\u001f\u007f]/u.test(value)) return false;
+  let codePoints = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const first = value.charCodeAt(index);
+    if (first >= 0xd800 && first <= 0xdbff) {
+      const second = value.charCodeAt(index + 1);
+      if (!(second >= 0xdc00 && second <= 0xdfff)) return false;
+      index += 1;
+    } else if (first >= 0xdc00 && first <= 0xdfff) return false;
+    codePoints += 1;
+    if (codePoints > 128) return false;
+  }
   return typeof value === 'string'
-    && value.length >= 1
-    && value.length <= 128
-    && value === value.trim()
-    && !/[\u0000-\u001f\u007f]/u.test(value);
+    && Buffer.byteLength(value, 'utf8') <= 512;
 }
 
 function normalizeAdaptationDomain(domain) {
@@ -86,6 +99,15 @@ function normalizeAdaptationDomain(domain) {
     durationBudget,
     style,
   };
+}
+
+function createEpisodeAdaptationInputHash(domain) {
+  return sha256Canonical({
+    approval: domain.approval,
+    approvedExtraction: domain.extraction,
+    durationBudget: domain.durationBudget,
+    style: domain.style,
+  });
 }
 
 function assertAdaptationSemantics(domain, output) {
@@ -140,12 +162,7 @@ function createEpisodeAdaptationTask() {
       const domain = normalizeAdaptationDomain(metadata.domain);
       const output = parseStructuredResponse(metadata.rawResponse, validateSchema);
       assertAdaptationSemantics(domain, output);
-      const inputHash = sha256Canonical({
-        approval: domain.approval,
-        approvedExtraction: domain.extraction,
-        durationBudget: domain.durationBudget,
-        style: domain.style,
-      });
+      const inputHash = createEpisodeAdaptationInputHash(domain);
 
       return createAuditedTaskResult({
         taskType: TASK_TYPE,
@@ -167,5 +184,7 @@ function createEpisodeAdaptationTask() {
 module.exports = {
   SCHEMA_VERSION,
   TASK_TYPE,
+  createEpisodeAdaptationInputHash,
   createEpisodeAdaptationTask,
+  normalizeAdaptationDomain,
 };

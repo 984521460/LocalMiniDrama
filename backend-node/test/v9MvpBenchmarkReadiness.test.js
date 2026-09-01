@@ -33,7 +33,7 @@ function productionRuntimeFixture({ full = false } = {}) {
     mediaExports: { service: { start() {} } },
   };
   if (full) {
-    runtime.narrativeTasks = { execute() {} };
+    runtime.narrativeTasks = { execute() {}, get() {}, isAvailable() { return true; } };
     runtime.characterCandidates = { complete() {} };
     runtime.workflows = {
       executeNode() {},
@@ -155,6 +155,32 @@ test('readiness fails closed when a production component is only partially assem
     executeOnly.capabilities.find((item) => item.id === 'workflow-execution').status,
     'blocked',
   );
+
+  const narrativeUnavailable = createMvpBenchmarkReadiness(readinessOptions({
+    narrativeTasks: { execute() {}, get() {}, isAvailable() { return false; } },
+  }, database));
+  assert.equal(
+    narrativeUnavailable.capabilities.find((item) => item.id === 'narrative-execution').status,
+    'blocked',
+  );
+
+  let narrativeAccessorReads = 0;
+  const narrativeTasks = { execute() {}, get() {} };
+  Object.defineProperty(narrativeTasks, 'isAvailable', {
+    enumerable: true,
+    get() {
+      narrativeAccessorReads += 1;
+      throw new Error('synthetic-narrative-availability-sentinel');
+    },
+  });
+  const narrativeAccessor = createMvpBenchmarkReadiness(readinessOptions({
+    narrativeTasks,
+  }, database));
+  assert.equal(
+    narrativeAccessor.capabilities.find((item) => item.id === 'narrative-execution').status,
+    'blocked',
+  );
+  assert.equal(narrativeAccessorReads, 0);
 
   const reordered = createMvpBenchmarkReadiness(readinessOptions({
     workflows: {
@@ -362,6 +388,19 @@ test('readiness fails closed when any version-twenty-three accounting table is m
   }
 });
 
+test('readiness fails closed when the version-twenty-five narrative execution table is missing', (t) => {
+  const database = createMigratedV2Database(t);
+  const repository = createMvpBenchmarkReadinessRepository(database);
+  assert.equal(repository.inspect().contractsReady, true);
+
+  database.exec('DROP TABLE narrative_task_executions');
+
+  assert.deepEqual(repository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness parser binds the whole projection to the current runtime and database', (t) => {
   const database = createMigratedV2Database(t);
   const runtime = productionRuntimeFixture();
@@ -530,16 +569,25 @@ test('actual createApp exposes conservative readiness without external calls', a
       'h3-local-execution',
     ]);
     assert.equal(typeof created.runtime.h3Local.execute, 'function');
+    assert.equal(typeof created.runtime.narrativeTasks.execute, 'function');
     assert.equal(typeof created.runtime.mvpBenchmark.preflight.prepareBatch, 'function');
 
     insertReadyConnection(created.db);
+    const now = '2026-09-01T00:00:00.000Z';
+    created.db.prepare(`
+      INSERT INTO ai_service_configs
+        (service_type, provider, name, base_url, api_key, model,
+         priority, is_default, is_active, created_at, updated_at)
+      VALUES
+        ('text','synthetic-readiness','readiness fixture','https://text.example.invalid',
+         'synthetic-readiness-key','["fixture-model"]',100,1,1,?,?)
+    `).run(now, now);
     const readyConnectionResponse = await fetch(
       `http://127.0.0.1:${address.port}/api/v1/v2/mvp-benchmark/readiness`,
     );
     const readyConnectionBody = await readyConnectionResponse.json();
     assert.equal(readyConnectionResponse.status, 200);
     assert.deepEqual(readyConnectionBody.data.blockedCapabilityIds, [
-      'narrative-execution',
       'character-candidate-execution',
     ]);
     assert.equal(
@@ -547,6 +595,22 @@ test('actual createApp exposes conservative readiness without external calls', a
         (capability) => capability.id === 'h3-local-execution',
       ).status,
       'ready',
+    );
+
+    created.db.prepare(`
+      UPDATE ai_service_configs SET deleted_at=?, updated_at=?
+      WHERE service_type='text'
+    `).run(now, now);
+    const removedProviderResponse = await fetch(
+      `http://127.0.0.1:${address.port}/api/v1/v2/mvp-benchmark/readiness`,
+    );
+    const removedProviderBody = await removedProviderResponse.json();
+    assert.equal(removedProviderResponse.status, 200);
+    assert.equal(
+      removedProviderBody.data.capabilities.find(
+        (capability) => capability.id === 'narrative-execution',
+      ).status,
+      'blocked',
     );
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));

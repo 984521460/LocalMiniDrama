@@ -60,7 +60,12 @@
         @create="saveSelection"
       />
 
-      <NarrativeReviewWorkspace :drama-id="dramaId" />
+      <NarrativeReviewWorkspace
+        v-if="drama?.uid"
+        :drama-id="dramaId"
+        :drama-uid="drama.uid"
+        :selections="activeDocument?.selections || []"
+      />
       <AssetVersionContinuityWorkspace :drama-id="dramaId" />
     </main>
   </div>

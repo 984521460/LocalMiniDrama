@@ -12,6 +12,9 @@ const { createProductionMediaExportRuntime } = require('./media/productionRuntim
 const { createProductionWorkflowRuntime } = require('./workflows/productionRuntime');
 const { createProductionAudioTtsRuntime } = require('./audio/productionRuntime');
 const { createProductionMvpBenchmarkRuntime } = require('./benchmark/productionRuntime');
+const {
+  createProductionNarrativeExecutionRuntime,
+} = require('./narrative/execution/productionRuntime');
 const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
 const { createV2Repositories } = require('./repositories/v2');
 const { createWorkflowRunService } = require('./workflows');
@@ -19,7 +22,7 @@ const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery
 
 function createApp({
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
-  audioTtsDependencies = {}, benchmarkDependencies = {},
+  audioTtsDependencies = {}, benchmarkDependencies = {}, narrativeDependencies = {},
 } = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
@@ -70,6 +73,11 @@ function createApp({
     audioTtsExecution: audioTtsRuntime.audioTts.service,
     dependencies: benchmarkDependencies,
   });
+  const narrativeRuntime = createProductionNarrativeExecutionRuntime({
+    database: db,
+    log,
+    dependencies: narrativeDependencies,
+  });
   const runtime = Object.freeze({
     ...remoteRuntime,
     h3: h3Runtime,
@@ -78,6 +86,7 @@ function createApp({
     ...workflowRuntime,
     ...audioTtsRuntime,
     mvpBenchmark: mvpBenchmarkRuntime,
+    ...narrativeRuntime,
   });
   const taskService = require('./services/taskService');
   const { resumeProcessingVideoGenerations } = require('./services/videoService');
@@ -101,6 +110,7 @@ function createApp({
     mediaExports: mediaExportRuntime.mediaExports.service,
     h3ApiSubmissions: createH3ApiSubmissionStore(db),
     audioTtsSubmissions: recoveryRepositories.audioTtsSubmissions,
+    narrativeExecutions: recoveryRepositories.narrativeExecutions,
     benchmarkReleases: recoveryRepositories.mvpBenchmarkExecutionAccounting,
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,

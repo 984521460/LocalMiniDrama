@@ -38,6 +38,7 @@ const {
 const { createRemoteRepository } = require('./remoteRepository');
 const { createProjectArchiveRepository } = require('./projectArchiveRepository');
 const { createNarrativeReviewRepository } = require('./narrativeReviewRepository');
+const { createNarrativeExecutionRepository } = require('./narrativeExecutionRepository');
 const { createNarrativeApprovalGate } = require('./narrativeApprovalGate');
 const { assertDatabase } = require('./repositorySupport');
 const { createRunRepository } = require('./runRepository');
@@ -104,6 +105,34 @@ function createLazyMediaExportRunRepository(database) {
     },
     start(...args) {
       return getTarget().start(...args);
+    },
+  });
+}
+
+function createLazyNarrativeExecutionRepository(database) {
+  let target;
+  function getTarget() {
+    if (!target) target = createNarrativeExecutionRepository(database);
+    return target;
+  }
+  return Object.freeze({
+    complete(...args) {
+      return getTarget().complete(...args);
+    },
+    fail(...args) {
+      return getTarget().fail(...args);
+    },
+    get(...args) {
+      return getTarget().get(...args);
+    },
+    markUnknown(...args) {
+      return getTarget().markUnknown(...args);
+    },
+    recoverInterrupted(...args) {
+      return getTarget().recoverInterrupted(...args);
+    },
+    reserve(...args) {
+      return getTarget().reserve(...args);
     },
   });
 }
@@ -268,6 +297,7 @@ function createV2Repositories(database) {
   const characterVersions = createCharacterVersionRepository(database);
   const comfyManifests = createComfyManifestRepository(database);
   const narrativeReviews = createNarrativeReviewRepository(database);
+  const narrativeExecutions = createLazyNarrativeExecutionRepository(database);
   const remote = createRemoteRepository(database);
   const scenePropVersions = createScenePropVersionRepository(database);
   const sources = createSourceRepository(database);
@@ -362,6 +392,7 @@ function createV2Repositories(database) {
     mvpBenchmarkReadiness: createMvpBenchmarkReadinessRepository(database),
     mvpBenchmarkSessions,
     narrativeReviews,
+    narrativeExecutions,
     projectArchives: createLazyProjectArchiveRepository(database),
     remote,
     runs,

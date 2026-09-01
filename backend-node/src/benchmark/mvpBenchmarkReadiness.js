@@ -188,6 +188,16 @@ function hasProductionWorkflowExecutor(runtime) {
   }
 }
 
+function hasProductionNarrativeExecutor(runtime) {
+  if (!hasFunction(runtime, ['narrativeTasks', 'execute'])
+    || !hasFunction(runtime, ['narrativeTasks', 'get'])
+    || !hasFunction(runtime, ['narrativeTasks', 'isAvailable'])) return false;
+  const tasks = dataValue(runtime, 'narrativeTasks');
+  const isAvailable = dataValue(tasks, 'isAvailable');
+  if (isProxy(isAvailable)) return false;
+  try { return Reflect.apply(isAvailable, tasks, []) === true; } catch { return false; }
+}
+
 function databaseState(readinessRepository) {
   if (!readinessRepository || typeof readinessRepository !== 'object'
     || isProxy(readinessRepository)) {
@@ -219,7 +229,7 @@ function capabilityStates(runtime, readinessRepository) {
     && hasFunction(runtime, ['remoteExecution', 'remoteEnvironment', 'inspect']);
   const states = Object.freeze({
     'database-contracts': stored.contractsReady,
-    'narrative-execution': hasFunction(runtime, ['narrativeTasks', 'execute']),
+    'narrative-execution': hasProductionNarrativeExecutor(runtime),
     'character-candidate-execution': hasFunction(runtime, ['characterCandidates', 'complete']),
     'workflow-execution': hasProductionWorkflowExecutor(runtime),
     'remote-execution': remoteReady,

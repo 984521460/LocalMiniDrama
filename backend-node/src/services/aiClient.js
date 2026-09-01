@@ -112,8 +112,22 @@ function postJSONWithTimeout(url, headers, body, timeoutMs = 600000) {
  * 彻底解决分镜等长耗时任务的 "fetch failed / timeout" 问题。
  * silenceTimeoutMs：连续多少毫秒无任何数据才判定超时（默认 60 秒）。
  */
-function postJSONStream(url, headers, body, silenceTimeoutMs = 60000, onProgress = null) {
+function postJSONStream(
+  url,
+  headers,
+  body,
+  silenceTimeoutMs = 60000,
+  onProgress = null,
+  maxResponseBytes = null,
+) {
   return new Promise((resolve, reject) => {
+    if (maxResponseBytes !== null
+      && (!Number.isSafeInteger(maxResponseBytes)
+        || maxResponseBytes < 1 || maxResponseBytes > 64 * 1024 * 1024)) {
+      reject(new TypeError('AI stream response limit is invalid'));
+      return;
+    }
+    const responseLimit = maxResponseBytes ?? 64 * 1024 * 1024;
     const parsed = new URL(url);
     const mod = parsed.protocol === 'https:' ? https : http;
     // 强制开启流式输出
@@ -143,23 +157,63 @@ function postJSONStream(url, headers, body, silenceTimeoutMs = 60000, onProgress
 
     const req = mod.request(options, (res) => {
       const statusCode = res.statusCode;
-      // 非 2xx 时先读完整 body 再报错（可能是 JSON 错误信息）
+      // 非 2xx 也执行同一总字节边界，仅保留有界错误预览。
       if (statusCode < 200 || statusCode >= 300) {
         const errChunks = [];
-        res.on('data', (c) => errChunks.push(c));
+        let errBytes = 0;
+        let previewBytes = 0;
+        let responseFailed = false;
+        res.on('data', (chunk) => {
+          if (responseFailed) return;
+          errBytes += chunk.length;
+          if (errBytes > responseLimit) {
+            responseFailed = true;
+            clearTimeout(silenceTimer);
+            res.destroy();
+            req.destroy();
+            reject(new Error('AI stream response exceeded the configured bound'));
+            return;
+          }
+          resetSilenceTimer();
+          if (previewBytes < 4096) {
+            const preview = chunk.subarray(0, Math.min(chunk.length, 4096 - previewBytes));
+            errChunks.push(preview);
+            previewBytes += preview.length;
+          }
+        });
         res.on('end', () => {
+          if (responseFailed) return;
           clearTimeout(silenceTimer);
           reject(new Error(`HTTP ${statusCode}: ${Buffer.concat(errChunks).toString('utf-8').slice(0, 500)}`));
         });
+        res.on('error', (error) => {
+          if (responseFailed) return;
+          responseFailed = true;
+          clearTimeout(silenceTimer);
+          reject(error);
+        });
+        resetSilenceTimer();
         return;
       }
 
       let accumulated = '';
       let sseBuffer = '';
       let firstToken = true;
+      let receivedBytes = 0;
+      let responseFailed = false;
       resetSilenceTimer();
 
       res.on('data', (chunk) => {
+        if (responseFailed) return;
+        receivedBytes += chunk.length;
+        if (receivedBytes > responseLimit) {
+          responseFailed = true;
+          clearTimeout(silenceTimer);
+          res.destroy();
+          req.destroy();
+          reject(new Error('AI stream response exceeded the configured bound'));
+          return;
+        }
         resetSilenceTimer();
         sseBuffer += chunk.toString('utf-8');
         // 按行解析 SSE
@@ -186,6 +240,7 @@ function postJSONStream(url, headers, body, silenceTimeoutMs = 60000, onProgress
       });
 
       res.on('end', () => {
+        if (responseFailed) return;
         clearTimeout(silenceTimer);
         resolve({ status: statusCode, body: accumulated });
       });
@@ -346,7 +401,7 @@ async function generateText(db, log, serviceType, userPrompt, systemPrompt, opti
     }
     // 调用者提供的流式回调（如分镜增量解析），传入当前已积累的完整文本
     if (streamCallback && accumulated) streamCallback(accumulated);
-  });
+  }, options.max_response_bytes ?? null);
   // 流式模式下 res.body 已是拼接好的完整文本内容（非 JSON）
   const content = res.body;
   const elapsedMs = Date.now() - startMs;
@@ -354,6 +409,21 @@ async function generateText(db, log, serviceType, userPrompt, systemPrompt, opti
     throw new Error('AI 返回内容为空');
   }
   log.info('AI raw response received', { model, text_length: content.length, elapsed_ms: elapsedMs, text_preview: content.slice(0, 200) });
+  if (options.return_metadata === true) {
+    return Object.freeze({
+      model: Object.freeze({
+        provider: String(config.provider || config.api_protocol || 'configured-text'),
+        name: model,
+      }),
+      parameters: Object.freeze({
+        temperature: Number(temperature),
+        maxTokens: finalMaxTokens,
+        jsonMode: json_mode === true,
+      }),
+      promptVersion: options.prompt_version,
+      rawResponse: content,
+    });
+  }
   return content;
 }
 
@@ -708,4 +778,5 @@ module.exports = {
   EXTRACT_PROMPTS,
   isRefusalResponse,
   postJSONWithTimeout,
+  postJSONStream,
 };

@@ -51,6 +51,12 @@ const {
   parseMvpBenchmarkResourceReleaseObligation,
   parseMvpBenchmarkResourceReleaseReceipt,
 } = require('../../benchmark/mvpBenchmarkExecutionAccounting');
+const {
+  narrativeExecutionRequestSha256,
+} = require('../../narrative/execution/request');
+const {
+  narrativeExecutionResultMatchesRequestSql,
+} = require('../../narrative/execution/resultBinding');
 
 const MAXIMUM_SPEC_BYTES = 1024 * 1024;
 const MAXIMUM_SEMANTIC_BYTES = 1024 * 1024;
@@ -132,6 +138,12 @@ function mediaExportExecutionPlanSha256(value) {
   } catch {
     return null;
   }
+}
+
+function narrativeExecutionRequestSha256Sql(value) {
+  const parsed = canonicalJson(value, 64 * 1024);
+  if (parsed === null) return null;
+  try { return narrativeExecutionRequestSha256(parsed); } catch { return null; }
 }
 
 function mediaExportReceiptMatchesPlan(planJson, receiptJson) {
@@ -885,6 +897,16 @@ function mvpBenchmarkH3TerminalEvidence(
 
 function registerV2SqlFunctions(database) {
   database.function(
+    'narrative_execution_request_sha256',
+    { deterministic: true },
+    narrativeExecutionRequestSha256Sql,
+  );
+  database.function(
+    'narrative_execution_result_matches_request',
+    { deterministic: true },
+    narrativeExecutionResultMatchesRequestSql,
+  );
+  database.function(
     'audio_mode_narrative_emotion',
     { deterministic: true },
     audioModeNarrativeEmotion,
@@ -1087,5 +1109,6 @@ module.exports = Object.freeze({
   mvpBenchmarkReleaseReceiptRecordValid,
   mvpBenchmarkSessionRecordValid,
   mvpBenchmarkSessionSourceGraphValid,
+  narrativeExecutionRequestSha256Sql,
   registerV2SqlFunctions,
 });

@@ -58,7 +58,7 @@ test('migration eight creates four append-only character version layers', (t) =>
   ]);
   assert.equal(
     database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(),
-    24,
+    25,
   );
 });
 

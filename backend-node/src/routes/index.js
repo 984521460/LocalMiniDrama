@@ -23,6 +23,7 @@ const promptOverridesRoutes = require('./promptOverrides');
 const sceneModelMapRoutes = require('./sceneModelMap');
 const sourceDocumentRoutes = require('./v2/sourceDocuments');
 const narrativeReviewRoutes = require('./v2/narrativeReviews');
+const narrativeExecutionRoutes = require('./v2/narrativeExecutions');
 const workflowRoutes = require('./v2/workflows');
 const characterCandidateRoutes = require('./v2/characterCandidates');
 const characterReferencePackageRoutes = require('./v2/characterReferencePackages');
@@ -64,6 +65,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   const promptOverrides = promptOverridesRoutes.routes(db, log);
   const sourceDocuments = sourceDocumentRoutes(db, log);
   const narrativeReviews = narrativeReviewRoutes(db, log);
+  const narrativeExecutions = narrativeExecutionRoutes(db, log, runtime.narrativeTasks);
   const workflows = workflowRoutes(db, log, runtime.workflows);
   const characterCandidates = characterCandidateRoutes(log, runtime.characterCandidates, db);
   const characterReferencePackages = characterReferencePackageRoutes(
@@ -92,6 +94,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
+  r.use('/v2', narrativeExecutions);
   r.use('/v2', workflows);
   r.use('/v2', characterCandidates);
   r.use('/v2', characterReferencePackages);

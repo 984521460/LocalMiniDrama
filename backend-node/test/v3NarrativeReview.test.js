@@ -184,7 +184,7 @@ function replaceApprovalWithRawSql(database, reviewedResult, reviewUid) {
   `).run(reviewUid, reviewedResult.result.uid);
 }
 
-test('migration creates append-only narrative result and review tables at version five', (t) => {
+test('current migration creates append-only narrative result, review, and execution tables', (t) => {
   const database = createMigratedV2Database(t);
   assert.deepEqual(
     database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'narrative_%' ORDER BY name").all(),
@@ -192,9 +192,10 @@ test('migration creates append-only narrative result and review tables at versio
       { name: 'narrative_results' },
       { name: 'narrative_review_events' },
       { name: 'narrative_stale_events' },
+      { name: 'narrative_task_executions' },
     ],
   );
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 24);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 25);
 });
 
 test('service records and approves the four-result chain with immutable review evidence', (t) => {

@@ -14,13 +14,13 @@ const REQUIRED_TABLES = Object.freeze([
   'mvp_benchmark_resource_release_obligation_seals',
   'mvp_benchmark_resource_release_receipts',
   'mvp_benchmark_resource_release_receipt_seals',
-  'narrative_results', 'remote_connections', 'source_documents',
+  'narrative_results', 'narrative_task_executions', 'remote_connections', 'source_documents',
   'voice_profiles', 'workflow_definitions', 'workflow_runs',
 ]);
-const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
 const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 24;
+const EXPECTED_MIGRATION_VERSION = 25;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -84,6 +84,7 @@ function createMvpBenchmarkReadinessRepository(database) {
         REQUIRED_TABLES[25],
         REQUIRED_TABLES[26],
         REQUIRED_TABLES[27],
+        REQUIRED_TABLES[28],
       );
       const readyConnection = current.readyConnection.get();
       const viewCount = current.viewCount.get(REQUIRED_VIEW);
