@@ -22,6 +22,69 @@ const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
 const { createV2Repositories } = require('./repositories/v2');
 const { createWorkflowRunService } = require('./workflows');
 const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery');
+const response = require('./response');
+
+const PROVIDER_CREDENTIAL_PATH = '/api/v1/v2/provider-credentials';
+
+function providerCredentialPath(pathname) {
+  return pathname === PROVIDER_CREDENTIAL_PATH
+    || pathname.startsWith(`${PROVIDER_CREDENTIAL_PATH}/`);
+}
+
+function trustedProviderCredentialOrigin(value) {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || value.length < 1 || value.length > 256) return false;
+  let parsed;
+  try { parsed = new URL(value); } catch { return false; }
+  const hostname = parsed.hostname.toLowerCase();
+  const loopbackHost = hostname === 'localhost'
+    || hostname === '[::1]'
+    || /^127(?:\.[0-9]{1,3}){3}$/u.test(hostname);
+  if (!loopbackHost || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    || parsed.username !== '' || parsed.password !== '' || parsed.pathname !== '/'
+    || parsed.search !== '' || parsed.hash !== '') return false;
+  return parsed.origin;
+}
+
+function installProviderCredentialBodyBoundary(app) {
+  app.use(PROVIDER_CREDENTIAL_PATH, (req, res, next) => {
+    const trustedOrigin = trustedProviderCredentialOrigin(req.headers.origin);
+    if (trustedOrigin === false) {
+      return response.error(
+        res,
+        403,
+        'PROVIDER_CREDENTIAL_ORIGIN_FORBIDDEN',
+        'Provider credential origin is not allowed',
+      );
+    }
+    if (trustedOrigin !== null) {
+      res.setHeader('Access-Control-Allow-Origin', trustedOrigin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Max-Age', '600');
+      res.setHeader('Vary', 'Origin');
+    }
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    if (req.method === 'POST' && req.is('application/json') !== 'application/json') {
+      return response.error(
+        res,
+        415,
+        'PROVIDER_CREDENTIAL_CONTENT_TYPE_UNSUPPORTED',
+        'Provider credential requests require application/json',
+      );
+    }
+    return next();
+  }, express.json({ limit: '8kb' }));
+}
+
+function installApplicationCors(app, configuredOrigins) {
+  const middleware = cors({
+    origin: configuredOrigins && configuredOrigins.length ? configuredOrigins : '*',
+  });
+  app.use((req, res, next) => (
+    providerCredentialPath(req.path) ? next() : middleware(req, res, next)
+  ));
+}
 
 function createApp({
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
@@ -129,16 +192,11 @@ function createApp({
   const startupRecoveryPromise = startupRecovery.run();
 
   const app = express();
+  installProviderCredentialBodyBoundary(app);
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  app.use(
-    cors({
-      origin: config.server.cors_origins && config.server.cors_origins.length
-        ? config.server.cors_origins
-        : '*',
-    })
-  );
+  installApplicationCors(app, config.server.cors_origins);
 
   app.use((req, res, next) => {
     log.info(req.method, req.path);
@@ -201,14 +259,22 @@ function createApp({
   app.use((err, req, res, next) => {
     log.errorw('Unhandled error', { error: err.message, path: req.path });
     if (!res.headersSent) {
+      const isBodyTooLarge = err.type === 'entity.too.large';
       const isFileTooLarge = err.code === 'LIMIT_FILE_SIZE' || (err.message && err.message.includes('File too large'));
-      const status = isFileTooLarge ? 413 : 500;
-      const message = isFileTooLarge ? '图片大小不能超过 16MB，请压缩后重试' : (err.message || '服务器错误');
-      res.status(status).json({ success: false, error: { code: isFileTooLarge ? 'FILE_TOO_LARGE' : 'INTERNAL_ERROR', message }, timestamp: new Date().toISOString() });
+      const status = isBodyTooLarge || isFileTooLarge ? 413 : 500;
+      const code = isBodyTooLarge ? 'REQUEST_BODY_TOO_LARGE'
+        : isFileTooLarge ? 'FILE_TOO_LARGE' : 'INTERNAL_ERROR';
+      const message = isBodyTooLarge ? '请求体过大'
+        : isFileTooLarge ? '图片大小不能超过 16MB，请压缩后重试' : (err.message || '服务器错误');
+      res.status(status).json({ success: false, error: { code, message }, timestamp: new Date().toISOString() });
     }
   });
 
   return { app, config, db, runtime, startupRecovery, startupRecoveryPromise };
 }
 
-module.exports = { createApp };
+module.exports = {
+  createApp,
+  installApplicationCors,
+  installProviderCredentialBodyBoundary,
+};

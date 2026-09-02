@@ -14,6 +14,7 @@
     </header>
 
     <main class="main">
+      <ProviderCredentialPanel />
       <AIConfigContent />
     </main>
   </div>
@@ -23,6 +24,7 @@
 import { useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import AIConfigContent from '@/components/AIConfigContent.vue'
+import ProviderCredentialPanel from '@/components/ProviderCredentialPanel.vue'
 import { PRODUCT_NAME } from '@/config/productIdentity'
 
 const router = useRouter()

@@ -47,6 +47,9 @@ export const workflowJsonTextRequest = Object.freeze({
   async post(url, input) {
     return dataJsonText(await workflowJsonTextTransport.post(url, input))
   },
+  async delete(url) {
+    return dataJsonText(await workflowJsonTextTransport.delete(url))
+  },
 })
 
 workflowRequest.interceptors.response.use((response) => {

@@ -41,6 +41,16 @@ function createWindowsCredentialError(code, credentialRef) {
   return Object.freeze(error);
 }
 
+function getWindowsCredentialErrorCode(error) {
+  if ((typeof error !== 'object' && typeof error !== 'function') || error === null) return null;
+  return trustedWindowsCredentialErrors.get(error)?.code ?? null;
+}
+
+function getWindowsCredentialErrorCredentialRef(error) {
+  if ((typeof error !== 'object' && typeof error !== 'function') || error === null) return null;
+  return trustedWindowsCredentialErrors.get(error)?.credentialRef ?? null;
+}
+
 function invalidOptions(message = 'Credential vault input must be an exact data object') {
   void message;
   return createWindowsCredentialError('CREDENTIAL_VALUE_INVALID');
@@ -244,6 +254,8 @@ class WindowsCredentialVault {
 }
 
 module.exports = {
+  getWindowsCredentialErrorCode,
+  getWindowsCredentialErrorCredentialRef,
   WindowsCredentialError,
   WindowsCredentialVault,
 };

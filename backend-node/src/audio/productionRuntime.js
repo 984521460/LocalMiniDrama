@@ -66,11 +66,12 @@ function createProductionAudioTtsRuntime({ database, localRoot, dependencies: va
   const storageProvider = new LocalStorageProvider({ projectRoot: localRoot });
   const outputs = createAudioTtsOutputRepository({ database, repositories });
   const timeoutMs = configured.timeoutMs ?? 60_000;
+  const credentialVault = configured.credentialVault ?? new WindowsCredentialVault();
   const service = createAudioTtsExecutionService({
     repositories,
     submissions: repositories.audioTtsSubmissions,
     outputs,
-    vault: configured.credentialVault ?? new WindowsCredentialVault(),
+    vault: credentialVault,
     client: configured.ttsClient ?? createTtsProviderClient(),
     storageProvider,
     mediaProbe: configured.mediaProbe ?? createLocalMediaProbe({
@@ -100,7 +101,7 @@ function createProductionAudioTtsRuntime({ database, localRoot, dependencies: va
     },
   });
   return Object.freeze({
-    audioTts: Object.freeze({ outputs, service: guardedService }),
+    audioTts: Object.freeze({ credentialVault, outputs, service: guardedService }),
     audio: Object.freeze({ tts: guardedService }),
   });
 }
