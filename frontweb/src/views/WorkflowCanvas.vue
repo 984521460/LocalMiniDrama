@@ -113,6 +113,14 @@
               @start="startMediaExport"
             />
           </el-tab-pane>
+          <el-tab-pane label="MVP" name="mvp">
+            <MvpBenchmarkReadinessPanel
+              :readiness="mvpReadiness.readiness.value"
+              :busy="mvpReadiness.busy.value"
+              :error="mvpReadiness.error.value || ''"
+              @refresh="refreshMvpReadiness"
+            />
+          </el-tab-pane>
         </el-tabs>
       </aside>
     </main>
@@ -152,7 +160,9 @@ import WorkflowPalette from '@/components/workflow/WorkflowPalette.vue'
 import WorkflowRunPanel from '@/components/workflow/WorkflowRunPanel.vue'
 import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
+import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
+import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useTheme } from '@/composables/useTheme'
 import { useWorkflowCanvas } from '@/composables/useWorkflowCanvas'
 
@@ -162,6 +172,7 @@ const dramaId = Number(route.params.id)
 const { isDark, toggle: toggleTheme } = useTheme()
 const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
+const mvpReadiness = useMvpBenchmarkReadiness()
 
 const drama = ref(null)
 const createVisible = ref(false)
@@ -313,6 +324,10 @@ async function refreshMediaExports() {
   if (!(await mediaExports.load())) ElMessage.error('成片记录加载失败')
 }
 
+async function refreshMvpReadiness() {
+  if (!(await mvpReadiness.load())) ElMessage.error('MVP 就绪度加载失败')
+}
+
 async function startMediaExport(nodeRunUid) {
   if (await mediaExports.start(nodeRunUid)) {
     ElMessage.success('成片导出已完成验证')
@@ -339,7 +354,7 @@ onMounted(async () => {
     return
   }
   const [dramaResult] = await Promise.allSettled([
-    dramaAPI.get(dramaId), canvas.load(), mediaExports.load(),
+    dramaAPI.get(dramaId), canvas.load(), mediaExports.load(), mvpReadiness.load(),
   ])
   if (dramaResult.status === 'fulfilled') drama.value = dramaResult.value
   window.addEventListener('beforeunload', warnBeforeUnload)
@@ -347,6 +362,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   mediaExports.invalidate()
+  mvpReadiness.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })
 </script>
