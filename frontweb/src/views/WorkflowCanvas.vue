@@ -121,6 +121,14 @@
               :error="mvpSession.error.value || ''"
               @prepare="prepareMvpSession"
             />
+            <MvpBenchmarkAuthorizationPanel
+              :session="mvpSession.session.value"
+              :authorization="mvpAuthorization.authorization.value"
+              :connections="mvpAuthorization.connections.value"
+              :busy="mvpAuthorization.busy.value"
+              :error="mvpAuthorization.error.value || ''"
+              @authorize="authorizeMvpSession"
+            />
             <MvpBenchmarkReadinessPanel
               :readiness="mvpReadiness.readiness.value"
               :busy="mvpReadiness.busy.value"
@@ -168,9 +176,11 @@ import WorkflowRunPanel from '@/components/workflow/WorkflowRunPanel.vue'
 import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
+import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
+import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
 import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
 import { useTheme } from '@/composables/useTheme'
 import { useWorkflowCanvas } from '@/composables/useWorkflowCanvas'
@@ -182,6 +192,7 @@ const { isDark, toggle: toggleTheme } = useTheme()
 const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
 const mvpReadiness = useMvpBenchmarkReadiness()
+const mvpAuthorization = useMvpBenchmarkAuthorization()
 const mvpSession = useMvpBenchmarkSession()
 
 const drama = ref(null)
@@ -345,7 +356,34 @@ async function prepareMvpSession() {
     ElMessage.error('本地基准会话准备失败')
     return
   }
+  await mvpAuthorization.refreshConnections()
   ElMessage.success('本地基准会话已冻结；尚未创建外部授权')
+}
+
+async function authorizeMvpSession(seed) {
+  const session = mvpSession.session.value
+  const connection = mvpAuthorization.connections.value.find(
+    (candidate) => candidate.uid === seed.connectionUid,
+  )
+  if (!session || !connection) {
+    ElMessage.error('本地授权参数无效')
+    return
+  }
+  const expiresAt = new Date(Date.now() + seed.validityDurationMs).toLocaleString()
+  try {
+    await ElMessageBox.confirm(
+      `确认仅创建本地不可变授权记录？连接：${connection.name}；费用硬上限：¥${(seed.maximumCostCnyFen / 100).toFixed(2)}；预计失效：${expiresAt}。该操作不会访问 SSH、Vault、Provider 或 GPU，也不会创建实例或产生费用。`,
+      '确认本地外部授权',
+      { type: 'warning', confirmButtonText: '确认创建', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  if (await mvpAuthorization.authorize(session, seed.connectionUid, seed)) {
+    ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
+  } else {
+    ElMessage.error('本地授权创建失败')
+  }
 }
 
 async function startMediaExport(nodeRunUid) {
@@ -370,7 +408,10 @@ onBeforeRouteLeave(async () => confirmDiscardIfDirty())
 
 watch(
   () => `${canvas.activeRun.value?.run?.uid || ''}:${canvas.activeRun.value?.run?.status || ''}`,
-  () => mvpSession.invalidate(),
+  () => {
+    mvpSession.invalidate()
+    mvpAuthorization.invalidate()
+  },
 )
 
 onMounted(async () => {
@@ -388,6 +429,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   mediaExports.invalidate()
   mvpReadiness.invalidate()
+  mvpAuthorization.invalidate()
   mvpSession.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })

@@ -74,6 +74,7 @@ function exactObject(value, keys, code) {
     const output = OBJECT_CREATE(null);
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index];
+      if (!OBJECT_HAS_OWN(descriptors, key)) fail(code);
       const descriptor = descriptors[key];
       if (!descriptor?.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) fail(code);
       REFLECT_APPLY(OBJECT_DEFINE_PROPERTY, Object, [output, key, {

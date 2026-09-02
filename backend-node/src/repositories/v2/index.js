@@ -195,6 +195,9 @@ function createLazyMvpBenchmarkExternalAuthorizationRepository(database, depende
     prepare(...args) {
       return getTarget().prepare(...args);
     },
+    prepareFromSession(...args) {
+      return getTarget().prepareFromSession(...args);
+    },
     requireActive(...args) {
       return getTarget().requireActive(...args);
     },

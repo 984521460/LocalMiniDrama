@@ -33,6 +33,8 @@ const response = require('../../response');
 const DATE_NOW = Date.now;
 const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
 const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const OBJECT_HAS_OWN = Object.hasOwn;
+const OBJECT_CREATE = Object.create;
 const REFLECT_OWN_KEYS = Reflect.ownKeys;
 
 function exactEmptyBody(value) {
@@ -44,6 +46,29 @@ function exactEmptyBody(value) {
       && Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]).length === 0;
   } catch {
     return false;
+  }
+}
+
+function exactAuthorizationSeed(value) {
+  const keys = ['maximumCostCnyFen', 'validityDurationMs'];
+  if (!value || typeof value !== 'object' || isProxy(value) || Array.isArray(value)) return null;
+  try {
+    const prototype = Reflect.apply(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = Reflect.apply(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== keys.length) return null;
+    const output = Reflect.apply(OBJECT_CREATE, Object, [null]);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (!Reflect.apply(OBJECT_HAS_OWN, Object, [descriptors, key])) return null;
+      const descriptor = descriptors[key];
+      if (!descriptor?.enumerable
+        || !Reflect.apply(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
+      output[key] = descriptor.value;
+    }
+    return output;
+  } catch {
+    return null;
   }
 }
 
@@ -281,6 +306,31 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       }
       try {
         return response.created(res, authorizationRepository.prepare(req.body));
+      } catch (error) {
+        return authorizationError(res, error);
+      }
+    },
+  );
+
+  router.post(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/connections/:connectionUid/authorization',
+    (req, res) => {
+      const seed = exactAuthorizationSeed(req.body);
+      if (!seed) {
+        return response.error(res, 400, 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID', 'MVP benchmark external authorization request is invalid');
+      }
+      try {
+        const dramaUid = parseMvpBenchmarkExternalAuthorizationUid(req.params.dramaUid);
+        const sessionUid = parseMvpBenchmarkExternalAuthorizationUid(req.params.sessionUid);
+        const connectionUid = parseMvpBenchmarkExternalAuthorizationUid(req.params.connectionUid);
+        return response.created(res, authorizationRepository.prepareFromSession({
+          uid: randomUUID(),
+          sessionUid,
+          dramaUid,
+          connectionUid,
+          maximumCostCnyFen: seed.maximumCostCnyFen,
+          validityDurationMs: seed.validityDurationMs,
+        }));
       } catch (error) {
         return authorizationError(res, error);
       }

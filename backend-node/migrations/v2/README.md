@@ -318,3 +318,11 @@ transactional current-source seal to MVP benchmark session insertion. A new
 session is accepted only while the migration-22 ready-session closure still
 binds every H3 current AssetVersion and every current audio narrative,
 continuity, and active VoiceProfile source; a mismatch aborts the INSERT.
+
+Migration `0028_mvp_benchmark_authorization_current_sources.sql` applies the
+same current-source closure when an immutable external-authorization record
+is inserted. Direct SQL, `INSERT OR REPLACE`, and disabled recursive triggers
+cannot authorize a session after its H3 current AssetVersion or audio
+narrative, continuity, active VoiceProfile, workflow, or connection evidence
+has drifted. The trigger writes no external evidence and performs no SSH,
+Vault, Provider, GPU, billing, media, or instance operation.

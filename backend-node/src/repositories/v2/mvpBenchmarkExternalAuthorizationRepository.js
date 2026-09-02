@@ -1,5 +1,7 @@
 'use strict';
 
+const { types: { isProxy } } = require('node:util');
+
 const {
   MvpBenchmarkExternalAuthorizationError,
   assertMvpBenchmarkExternalAuthorizationActive,
@@ -19,9 +21,51 @@ const { executeWrite } = require('./repositorySupport');
 
 const ENTITY = 'MVP benchmark external authorization';
 const JSON_PARSE = JSON.parse;
+const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const OBJECT_HAS_OWN = Object.hasOwn;
+const OBJECT_CREATE = Object.create;
+const OBJECT_FREEZE = Object.freeze;
+const REFLECT_OWN_KEYS = Reflect.ownKeys;
+const DERIVED_KEYS = Object.freeze([
+  'uid', 'sessionUid', 'dramaUid', 'connectionUid',
+  'maximumCostCnyFen', 'validityDurationMs',
+]);
 
 function invalidData() {
   throw new V2RepositoryDataError(ENTITY, 'persisted record');
+}
+
+function derivedInput(value) {
+  try {
+    if (!value || typeof value !== 'object' || isProxy(value) || Array.isArray(value)) {
+      throw new TypeError('MVP benchmark external authorization request is invalid');
+    }
+    const prototype = Reflect.apply(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = Reflect.apply(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== DERIVED_KEYS.length) {
+      throw new TypeError('MVP benchmark external authorization request is invalid');
+    }
+    const output = Reflect.apply(OBJECT_CREATE, Object, [null]);
+    for (let index = 0; index < DERIVED_KEYS.length; index += 1) {
+      const key = DERIVED_KEYS[index];
+      if (!Reflect.apply(OBJECT_HAS_OWN, Object, [descriptors, key])) {
+        throw new TypeError('MVP benchmark external authorization request is invalid');
+      }
+      const descriptor = descriptors[key];
+      if (!descriptor?.enumerable
+        || !Reflect.apply(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) {
+        throw new TypeError('MVP benchmark external authorization request is invalid');
+      }
+      output[key] = descriptor.value;
+    }
+    return Reflect.apply(OBJECT_FREEZE, Object, [output]);
+  } catch (error) {
+    if (error instanceof TypeError
+      && error.message === 'MVP benchmark external authorization request is invalid') throw error;
+    throw new TypeError('MVP benchmark external authorization request is invalid');
+  }
 }
 
 function createMvpBenchmarkExternalAuthorizationRepository(database, dependencies) {
@@ -135,7 +179,90 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
     return true;
   }
 
-  const insertAndRead = database.transaction((request, authorization) => {
+  const prepareAndRead = database.transaction((request, nowEpochMs) => {
+    const existing = statements.get.get(request.uid) ?? statements.getBySession.get(request.sessionUid);
+    if (existing) {
+      const mapped = mapRow(existing);
+      if (existing.request_json !== serializeMvpBenchmarkExternalAuthorizationJson(request)) {
+        throw new V2RepositoryConflictError(ENTITY, 'authorized');
+      }
+      return mapped;
+    }
+    const session = assertSources(
+      request,
+      () => { throw new V2RepositoryConflictError(ENTITY, 'authorized'); },
+    );
+    const authorization = createMvpBenchmarkExternalAuthorization({
+      request,
+      h3SubmissionLimit: session.h3Tasks.length,
+      ttsSubmissionLimit: session.audioIntents.length,
+      authorizedAtEpochMs: nowEpochMs,
+    });
+    statements.insert.run({
+      uid: authorization.uid,
+      sessionUid: authorization.sessionUid,
+      dramaUid: authorization.dramaUid,
+      requestJson: serializeMvpBenchmarkExternalAuthorizationJson(request),
+      authorizationJson: serializeMvpBenchmarkExternalAuthorizationJson(authorization),
+      authorizationSha256: authorization.authorizationSha256,
+      authorizedAtEpochMs: authorization.authorizedAtEpochMs,
+      expiresAtEpochMs: authorization.expiresAtEpochMs,
+    });
+    return mapRow(statements.get.get(authorization.uid));
+  });
+
+  function sameDerivedRequest(left, right) {
+    return left.sessionUid === right.sessionUid
+      && left.dramaUid === right.dramaUid
+      && left.sessionPlanSha256 === right.sessionPlanSha256
+      && left.connectionUid === right.connectionUid
+      && left.connectionEvidenceSha256 === right.connectionEvidenceSha256
+      && left.maximumCostCnyFen === right.maximumCostCnyFen
+      && left.validityDurationMs === right.validityDurationMs;
+  }
+
+  const prepareDerivedAndRead = database.transaction((input, nowEpochMs) => {
+    let session;
+    let connection;
+    try {
+      session = mvpBenchmarkSessions.get(input.sessionUid);
+      connection = remote.getConnection(input.connectionUid);
+    } catch {
+      throw new V2RepositoryConflictError(ENTITY, 'authorized');
+    }
+    if (session.dramaUid !== input.dramaUid) {
+      throw new V2RepositoryConflictError(ENTITY, 'authorized');
+    }
+    const request = parseMvpBenchmarkExternalAuthorizationRequest({
+      schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+      uid: input.uid,
+      sessionUid: session.uid,
+      dramaUid: session.dramaUid,
+      sessionPlanSha256: session.planSha256,
+      connectionUid: connection.uid,
+      connectionEvidenceSha256: remoteConnectionEvidenceSha256(connection),
+      maximumCostCnyFen: input.maximumCostCnyFen,
+      validityDurationMs: input.validityDurationMs,
+    });
+    const existing = statements.getBySession.get(session.uid);
+    if (existing) {
+      const stored = mapStoredRow(existing);
+      const mapped = mapRow(existing);
+      if (!sameDerivedRequest(stored.request, request)) {
+        throw new V2RepositoryConflictError(ENTITY, 'authorized');
+      }
+      return mapped;
+    }
+    const currentSession = assertSources(
+      request,
+      () => { throw new V2RepositoryConflictError(ENTITY, 'authorized'); },
+    );
+    const authorization = createMvpBenchmarkExternalAuthorization({
+      request,
+      h3SubmissionLimit: currentSession.h3Tasks.length,
+      ttsSubmissionLimit: currentSession.audioIntents.length,
+      authorizedAtEpochMs: nowEpochMs,
+    });
     statements.insert.run({
       uid: authorization.uid,
       sessionUid: authorization.sessionUid,
@@ -166,27 +293,17 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
         if (isMvpBenchmarkExternalAuthorizationError(error)) throw error;
         throw new TypeError('MVP benchmark external authorization request is invalid');
       }
-      const existing = statements.get.get(request.uid) ?? statements.getBySession.get(request.sessionUid);
-      if (existing) {
-        const mapped = mapRow(existing);
-        if (existing.request_json !== serializeMvpBenchmarkExternalAuthorizationJson(request)) {
-          throw new V2RepositoryConflictError(ENTITY, 'authorized');
-        }
-        return mapped;
-      }
-      const session = assertSources(
-        request,
-        () => { throw new V2RepositoryConflictError(ENTITY, 'authorized'); },
-      );
-      const authorization = createMvpBenchmarkExternalAuthorization({
-        request,
-        h3SubmissionLimit: session.h3Tasks.length,
-        ttsSubmissionLimit: session.audioIntents.length,
-        authorizedAtEpochMs: nowEpochMs,
-      });
       let result;
       executeWrite(ENTITY, 'authorized', () => {
-        result = insertAndRead.immediate(request, authorization);
+        result = prepareAndRead.immediate(request, nowEpochMs);
+      });
+      return result;
+    },
+    prepareFromSession(value, { nowEpochMs = Date.now() } = {}) {
+      const input = derivedInput(value);
+      let result;
+      executeWrite(ENTITY, 'authorized', () => {
+        result = prepareDerivedAndRead.immediate(input, nowEpochMs);
       });
       return result;
     },

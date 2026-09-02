@@ -19,6 +19,9 @@ const { PROJECT_ARCHIVE_CATALOG } = require('../src/adapters/v2/zip/projectArchi
 const {
   V2RepositoryDataError,
 } = require('../src/repositories/v2');
+const {
+  createMvpBenchmarkExternalAuthorizationRepository,
+} = require('../src/repositories/v2/mvpBenchmarkExternalAuthorizationRepository');
 const { remoteConnectionEvidenceSha256 } = require('../src/remote/connectionProfile');
 const { createRemoteTaskService } = require('../src/remote/remoteTaskService');
 const audioTtsExecutionRoutes = require('../src/routes/v2/audioTtsExecution');
@@ -56,6 +59,58 @@ function counts(database) {
       (SELECT count(*) FROM asset_versions) AS asset_versions
   `).get();
   return row;
+}
+
+function activateReplacementVoiceProfile(current, profileUid, selectionUid) {
+  const replacement = current.repositories.voiceProfiles.create({
+    schemaVersion: current.profile.schemaVersion,
+    uid: profileUid,
+    dramaUid: current.profile.dramaUid,
+    characterUid: current.profile.characterUid,
+    characterVoiceVersionUid: current.profile.characterVoiceVersionUid,
+    parentUid: current.profile.uid,
+    revision: 2,
+    provider: current.profile.provider,
+    model: current.profile.model,
+    voiceKey: 'replacement-voice',
+    credentialRef: current.profile.credentialRef,
+    sourceKind: current.profile.sourceKind,
+    status: current.profile.status,
+    defaultEmotion: current.profile.defaultEmotion,
+    emotionMap: current.profile.emotionMap,
+    minimumSpeedPermille: current.profile.minimumSpeedPermille,
+    defaultSpeedPermille: current.profile.defaultSpeedPermille,
+    maximumSpeedPermille: current.profile.maximumSpeedPermille,
+    createdAtEpochMs: 60,
+  });
+  current.repositories.voiceProfiles.activate({
+    schemaVersion: '8.0',
+    uid: selectionUid,
+    dramaUid: current.profile.dramaUid,
+    characterUid: current.profile.characterUid,
+    voiceProfileUid: replacement.uid,
+    previousVoiceProfileUid: current.profile.uid,
+    stateVersion: 2,
+    changedAtEpochMs: 61,
+  });
+}
+
+function insertAuthorization(database, request, authorization, verb = 'INSERT') {
+  return database.prepare(`
+    ${verb} INTO mvp_benchmark_external_authorizations
+      (uid,session_uid,drama_uid,request_json,authorization_json,authorization_sha256,
+       authorized_at_epoch_ms,expires_at_epoch_ms)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(
+    authorization.uid,
+    authorization.sessionUid,
+    authorization.dramaUid,
+    serializeMvpBenchmarkExternalAuthorizationJson(request),
+    serializeMvpBenchmarkExternalAuthorizationJson(authorization),
+    authorization.authorizationSha256,
+    authorization.authorizedAtEpochMs,
+    authorization.expiresAtEpochMs,
+  );
 }
 
 async function listen(app) {
@@ -283,6 +338,114 @@ test('database rejects coordinated wrong-target inserts and replacement conflict
   ).pluck().get(), valid.uid);
 });
 
+test('database rejects a new authorization after current H3 source drift', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const request = parseMvpBenchmarkExternalAuthorizationRequest(requestFor(current, session));
+  const authorization = createMvpBenchmarkExternalAuthorization({
+    request,
+    h3SubmissionLimit: session.h3Tasks.length,
+    ttsSubmissionLimit: session.audioIntents.length,
+    authorizedAtEpochMs: 1_000,
+  });
+  const intent = current.h3Intents[0];
+  current.repositories.assets.addVersion({
+    uid: uid(99580),
+    assetUid: intent.assetUid,
+    storageProvider: 'local',
+    logicalUri: `asset://dramas/${session.dramaUid}/benchmark/drift/${uid(99580)}`,
+    relativePath: `projects/${session.dramaUid}/assets/video/drift-${uid(99580)}.mp4`,
+    sha256: 'f'.repeat(64),
+    mimeType: 'video/mp4',
+    width: 608,
+    height: 352,
+    durationMs: 1625,
+    parentUid: intent.parentVersionUid,
+    status: 'ready',
+  }, { makeCurrent: true });
+  current.database.pragma('recursive_triggers = OFF');
+  assert.throws(
+    () => insertAuthorization(current.database, request, authorization, 'INSERT OR REPLACE'),
+    /current sources invalid/u,
+  );
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM mvp_benchmark_external_authorizations',
+  ).pluck().get(), 0);
+});
+
+test('database rejects a new authorization after active VoiceProfile drift', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const request = parseMvpBenchmarkExternalAuthorizationRequest(requestFor(current, session));
+  const authorization = createMvpBenchmarkExternalAuthorization({
+    request,
+    h3SubmissionLimit: session.h3Tasks.length,
+    ttsSubmissionLimit: session.audioIntents.length,
+    authorizedAtEpochMs: 1_000,
+  });
+  activateReplacementVoiceProfile(current, uid(99581), uid(99582));
+  current.database.pragma('recursive_triggers = OFF');
+  assert.throws(
+    () => insertAuthorization(current.database, request, authorization, 'INSERT OR REPLACE'),
+    /current sources invalid/u,
+  );
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM mvp_benchmark_external_authorizations',
+  ).pluck().get(), 0);
+});
+
+test('derived authorization rolls back a source change injected during current-source validation', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const replacementUid = uid(99583);
+  let shifted = false;
+  const repository = createMvpBenchmarkExternalAuthorizationRepository(current.database, {
+    mvpBenchmarkSessions: Object.freeze({
+      get(sessionUid) {
+        const value = current.repositories.mvpBenchmarkSessions.get(sessionUid);
+        if (!shifted) {
+          shifted = true;
+          const intent = current.h3Intents[0];
+          current.repositories.assets.addVersion({
+            uid: replacementUid,
+            assetUid: intent.assetUid,
+            storageProvider: 'local',
+            logicalUri: `asset://dramas/${session.dramaUid}/benchmark/drift/${replacementUid}`,
+            relativePath: `projects/${session.dramaUid}/assets/video/drift-${replacementUid}.mp4`,
+            sha256: 'e'.repeat(64),
+            mimeType: 'video/mp4',
+            width: 608,
+            height: 352,
+            durationMs: 1625,
+            parentUid: intent.parentVersionUid,
+            status: 'ready',
+          }, { makeCurrent: true });
+        }
+        return value;
+      },
+    }),
+    remote: current.repositories.remote,
+  });
+  assert.throws(
+    () => repository.prepareFromSession({
+      uid: uid(99584),
+      sessionUid: session.uid,
+      dramaUid: session.dramaUid,
+      connectionUid: current.connection.uid,
+      maximumCostCnyFen: 374,
+      validityDurationMs: 7_200_000,
+    }, { nowEpochMs: 1_000 }),
+    { code: 'V2_REPOSITORY_CONFLICT' },
+  );
+  assert.equal(shifted, true);
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM mvp_benchmark_external_authorizations',
+  ).pluck().get(), 0);
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM asset_versions WHERE uid=?',
+  ).pluck().get(replacementUid), 0);
+});
+
 test('benchmark session and external authorization stay outside project archives', () => {
   assert.equal(PROJECT_ARCHIVE_CATALOG.excludedTables.includes('mvp_benchmark_sessions'), true);
   assert.equal(
@@ -331,6 +494,70 @@ test('public routes create and read the authorization but reject cross-session a
     `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/authorizations/not-a-uuid`,
   );
   assert.equal(malformedUid.status, 400);
+});
+
+test('path-bound route derives authorization identity and source evidence from local records', async (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const app = express();
+  app.use(express.json());
+  app.use('/api/v1/v2', mvpBenchmarkRoutes(
+    Object.freeze({ error() {} }),
+    Object.freeze({}),
+    current.database,
+  ));
+  const { server, base } = await listen(app);
+  t.after(() => server.close());
+  const invalid = await fetch(
+    `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/connections/${current.connection.uid}/authorization`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        maximumCostCnyFen: 374,
+        validityDurationMs: 2 * 60 * 60 * 1000,
+        extra: true,
+      }),
+    },
+  );
+  assert.equal(invalid.status, 400);
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM mvp_benchmark_external_authorizations',
+  ).pluck().get(), 0);
+  const result = await fetch(
+    `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/connections/${current.connection.uid}/authorization`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ maximumCostCnyFen: 374, validityDurationMs: 2 * 60 * 60 * 1000 }),
+    },
+  );
+  assert.equal(result.status, 201);
+  const authorization = (await result.json()).data;
+  assert.equal(authorization.sessionUid, session.uid);
+  assert.equal(authorization.dramaUid, session.dramaUid);
+  assert.equal(authorization.sessionPlanSha256, session.planSha256);
+  assert.equal(authorization.connectionUid, current.connection.uid);
+  assert.equal(
+    authorization.connectionEvidenceSha256,
+    remoteConnectionEvidenceSha256(current.repositories.remote.getConnection(current.connection.uid)),
+  );
+  assert.equal(authorization.maximumCostCnyFen, 374);
+  assert.equal(authorization.expiresAtEpochMs - authorization.authorizedAtEpochMs, 7_200_000);
+  assert.doesNotMatch(JSON.stringify(authorization), /credential:v1:|password|secret/iu);
+  const retry = await fetch(
+    `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/connections/${current.connection.uid}/authorization`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ maximumCostCnyFen: 374, validityDurationMs: 2 * 60 * 60 * 1000 }),
+    },
+  );
+  assert.equal(retry.status, 201);
+  assert.deepEqual((await retry.json()).data, authorization);
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM mvp_benchmark_external_authorizations',
+  ).pluck().get(), 1);
 });
 
 test('benchmark-reserved H3 and TTS items cannot use existing execution routes', async (t) => {
@@ -543,6 +770,27 @@ test('authorization request rejects Proxy and accessor inputs without executing 
     { code: 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID' },
   );
   assert.equal(getterReads, 0);
+
+  const missing = { ...value };
+  delete missing.schemaVersion;
+  missing.extra = true;
+  let inheritedReads = 0;
+  Object.defineProperty(Object.prototype, 'schemaVersion', {
+    configurable: true,
+    get() {
+      inheritedReads += 1;
+      return 'mvp-benchmark-external-authorization-request.v1';
+    },
+  });
+  try {
+    assert.throws(
+      () => parseMvpBenchmarkExternalAuthorizationRequest(missing),
+      { code: 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID' },
+    );
+    assert.equal(inheritedReads, 0);
+  } finally {
+    delete Object.prototype.schemaVersion;
+  }
 });
 
 test('connection evidence hashing does not execute inherited toJSON accessors', (t) => {

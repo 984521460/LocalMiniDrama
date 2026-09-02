@@ -38,6 +38,7 @@ function exactEnvelope(value) {
   const output = Object.create(null)
   for (let index = 0; index < expectedKeys.length; index += 1) {
     const key = expectedKeys[index]
+    if (!Object.hasOwn(descriptors, key)) invalid()
     const descriptor = descriptors[key]
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) invalid()
     output[key] = descriptor.value
