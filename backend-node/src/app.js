@@ -23,6 +23,10 @@ const { createV2Repositories } = require('./repositories/v2');
 const { createWorkflowRunService } = require('./workflows');
 const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery');
 const response = require('./response');
+const {
+  installLocalV2OriginBoundary,
+  localV2ApiPath,
+} = require('./security/localV2OriginBoundary');
 
 const PROVIDER_CREDENTIAL_PATH = '/api/v1/v2/provider-credentials';
 
@@ -82,7 +86,9 @@ function installApplicationCors(app, configuredOrigins) {
     origin: configuredOrigins && configuredOrigins.length ? configuredOrigins : '*',
   });
   app.use((req, res, next) => (
-    providerCredentialPath(req.path) ? next() : middleware(req, res, next)
+    localV2ApiPath(req.path) || providerCredentialPath(req.path)
+      ? next()
+      : middleware(req, res, next)
   ));
 }
 
@@ -193,6 +199,7 @@ function createApp({
 
   const app = express();
   installProviderCredentialBodyBoundary(app);
+  installLocalV2OriginBoundary(app);
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
@@ -276,5 +283,6 @@ function createApp({
 module.exports = {
   createApp,
   installApplicationCors,
+  installLocalV2OriginBoundary,
   installProviderCredentialBodyBoundary,
 };
