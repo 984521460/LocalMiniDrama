@@ -136,6 +136,14 @@
               :error="mvpPreflight.error.value || ''"
               @preflight="preflightMvpSession"
             />
+            <MvpBenchmarkExecutionPanel
+              :authorization="mvpAuthorization.authorization.value"
+              :batch="mvpPreflight.batch.value"
+              :step="mvpExecution.step.value"
+              :busy="mvpExecution.busy.value"
+              :error="mvpExecution.error.value || ''"
+              @execute="executeNextMvpItem"
+            />
             <MvpBenchmarkReadinessPanel
               :readiness="mvpReadiness.readiness.value"
               :busy="mvpReadiness.busy.value"
@@ -184,11 +192,13 @@ import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
+import MvpBenchmarkExecutionPanel from '@/components/benchmark/MvpBenchmarkExecutionPanel.vue'
 import MvpBenchmarkPreflightPanel from '@/components/benchmark/MvpBenchmarkPreflightPanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
+import { useMvpBenchmarkExecution } from '@/composables/useMvpBenchmarkExecution'
 import { useMvpBenchmarkPreflight } from '@/composables/useMvpBenchmarkPreflight'
 import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
 import { useTheme } from '@/composables/useTheme'
@@ -202,6 +212,7 @@ const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
 const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
+const mvpExecution = useMvpBenchmarkExecution()
 const mvpPreflight = useMvpBenchmarkPreflight()
 const mvpSession = useMvpBenchmarkSession()
 
@@ -390,6 +401,7 @@ async function authorizeMvpSession(seed) {
     return
   }
   if (await mvpAuthorization.authorize(session, seed.connectionUid, seed)) {
+    mvpExecution.invalidate()
     mvpPreflight.invalidate()
     ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
   } else {
@@ -413,10 +425,49 @@ async function preflightMvpSession() {
   } catch {
     return
   }
+  mvpExecution.invalidate()
   if (await mvpPreflight.preflight(session, authorization)) {
     ElMessage.success('live preflight 已完成；尚未执行任何生成任务')
   } else {
     ElMessage.error('live preflight 失败')
+  }
+}
+
+async function executeNextMvpItem() {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  const batch = mvpPreflight.batch.value
+  const completedCount = mvpExecution.step.value?.completedCount ?? 0
+  const reservation = batch?.reservations?.[completedCount]
+  if (!session || !authorization || !batch || !reservation
+    || mvpExecution.step.value?.batchComplete) {
+    ElMessage.error('当前没有可安全确认的下一项')
+    return
+  }
+  let completedEstimateCnyFen = 0
+  for (let index = 0; index < completedCount; index += 1) {
+    completedEstimateCnyFen += batch.reservations[index].estimatedCostCnyFen
+  }
+  const remainingCnyFen = Math.max(
+    0, authorization.maximumCostCnyFen - completedEstimateCnyFen,
+  )
+  try {
+    await ElMessageBox.confirm(
+      `确认执行第 ${completedCount + 1}/${batch.reservations.length} 项？类型：${reservation.itemKind.toUpperCase()}；项目 UID：${reservation.itemUid}；本项预检估算：¥${(reservation.estimatedCostCnyFen / 100).toFixed(2)}；按预检估算的授权剩余额度：¥${(remainingCnyFen / 100).toFixed(2)}。本动作会重新读取本地 Vault 凭据、进行 SSH live environment 检查，并提交恰好一个真实 H3 或 TTS Provider 作业，可能消耗 GPU/API 资源并产生费用。不会自动执行下一项，本项成功也不代表费用已结算或实例已归还。`,
+      '确认逐项付费执行',
+      { type: 'error', confirmButtonText: '确认执行这一项', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  if (await mvpExecution.executeNext(session, authorization, batch)) {
+    if (mvpExecution.step.value?.batchComplete) {
+      ElMessage.success('预检批次项目均已完成；费用结算与实例归还仍待后续验证')
+    } else {
+      ElMessage.success('本项已取得可信成功回执；下一项不会自动执行')
+    }
+  } else {
+    ElMessage.error('本项执行失败或回执不可信；进度未推进')
   }
 }
 
@@ -446,6 +497,7 @@ watch(
     mvpSession.invalidate()
     mvpAuthorization.invalidate()
     mvpPreflight.invalidate()
+    mvpExecution.invalidate()
   },
 )
 
@@ -466,6 +518,7 @@ onBeforeUnmount(() => {
   mvpReadiness.invalidate()
   mvpAuthorization.invalidate()
   mvpPreflight.invalidate()
+  mvpExecution.invalidate()
   mvpSession.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })

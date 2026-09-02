@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-production-execution-request.schema.json",
+  "title": "MVP Benchmark Production Execution Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "expectedBatchSha256",
+    "expectedOrdinal",
+    "expectedItemKind",
+    "expectedItemUid"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-production-execution-request.v1" },
+    "expectedBatchSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "expectedOrdinal": { "type": "integer", "minimum": 0, "maximum": 63 },
+    "expectedItemKind": { "enum": ["h3", "tts"] },
+    "expectedItemUid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  },
+  "$comment": "Runtime additionally binds all expected fields to the current frozen preflight batch and rejects a stale or out-of-order confirmation before live inspection or provider execution."
+}

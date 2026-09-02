@@ -14,18 +14,21 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_EPOCH_MS = 253402300799999;
 const SCHEMA_VERSION = 'mvp-benchmark-production-execution-step.v1';
+const REQUEST_SCHEMA_VERSION = 'mvp-benchmark-production-execution-request.v1';
 const ARRAY_IS_ARRAY = Array.isArray;
 const BUFFER_FROM = Buffer.from;
 const BUFFER_TO_STRING = Buffer.prototype.toString;
 const MAP_DELETE = Map.prototype.delete;
 const MAP_GET = Map.prototype.get;
 const MAP_SET = Map.prototype.set;
+const NUMBER_IS_SAFE_INTEGER = Number.isSafeInteger;
 const OBJECT_CREATE = Object.create;
 const OBJECT_FREEZE = Object.freeze;
 const OBJECT_GET_OWN_PROPERTY_DESCRIPTOR = Object.getOwnPropertyDescriptor;
 const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
 const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
 const OBJECT_HAS_OWN = Object.hasOwn;
+const PROMISE = Promise;
 const REFLECT_APPLY = Reflect.apply;
 const REFLECT_OWN_KEYS = Reflect.ownKeys;
 
@@ -96,8 +99,8 @@ function exactConfiguration(value) {
   const input = OBJECT_CREATE(null);
   for (let index = 0; index < allowed.length; index += 1) {
     const key = allowed[index];
+    if (!OBJECT_HAS_OWN(descriptors, key)) continue;
     const descriptor = descriptors[key];
-    if (!descriptor) continue;
     if (!descriptor.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
       throw new TypeError('MVP benchmark production execution service configuration is invalid');
     }
@@ -144,23 +147,52 @@ function request(value) {
       fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
     }
     const descriptors = OBJECT_GET_OWN_PROPERTY_DESCRIPTORS(value);
-    const keys = ['authorizationUid', 'dramaUid', 'sessionUid'];
+    const keys = [
+      'schemaVersion', 'authorizationUid', 'dramaUid', 'sessionUid', 'expectedBatchSha256',
+      'expectedOrdinal', 'expectedItemKind', 'expectedItemUid',
+    ];
     if (REFLECT_OWN_KEYS(descriptors).length !== keys.length) {
       fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
     }
     const output = OBJECT_CREATE(null);
     for (let index = 0; index < keys.length; index += 1) {
+      if (!OBJECT_HAS_OWN(descriptors, keys[index])) {
+        fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
+      }
       const descriptor = descriptors[keys[index]];
       if (!descriptor?.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
         fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
       }
-      output[keys[index]] = uid(descriptor.value);
+      output[keys[index]] = descriptor.value;
+    }
+    output.authorizationUid = uid(output.authorizationUid);
+    output.dramaUid = uid(output.dramaUid);
+    output.sessionUid = uid(output.sessionUid);
+    output.expectedItemUid = uid(output.expectedItemUid);
+    if (output.schemaVersion !== REQUEST_SCHEMA_VERSION
+      || typeof output.expectedBatchSha256 !== 'string'
+      || !SHA256.test(output.expectedBatchSha256)
+      || !REFLECT_APPLY(NUMBER_IS_SAFE_INTEGER, Number, [output.expectedOrdinal])
+      || output.expectedOrdinal < 0 || output.expectedOrdinal > 63
+      || (output.expectedItemKind !== 'h3' && output.expectedItemKind !== 'tts')) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
     }
     return OBJECT_FREEZE(output);
   } catch (error) {
     if (error instanceof MvpBenchmarkProductionExecutionError) throw error;
     return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
   }
+}
+
+function sameRequest(left, right) {
+  return left.schemaVersion === right.schemaVersion
+    && left.authorizationUid === right.authorizationUid
+    && left.dramaUid === right.dramaUid
+    && left.sessionUid === right.sessionUid
+    && left.expectedBatchSha256 === right.expectedBatchSha256
+    && left.expectedOrdinal === right.expectedOrdinal
+    && left.expectedItemKind === right.expectedItemKind
+    && left.expectedItemUid === right.expectedItemUid;
 }
 
 function nextUid(configured) {
@@ -179,7 +211,8 @@ function now(configured) {
   try { value = REFLECT_APPLY(configured.nowEpochMs, undefined, []); } catch {
     return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
-  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_EPOCH_MS) {
+  if (!REFLECT_APPLY(NUMBER_IS_SAFE_INTEGER, Number, [value])
+    || value < 0 || value > MAX_EPOCH_MS) {
     fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
   return value;
@@ -207,15 +240,27 @@ function denseArray(value, minimum, maximum) {
     fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
   const descriptors = OBJECT_GET_OWN_PROPERTY_DESCRIPTORS(value);
-  const length = descriptors.length?.value;
-  if (!Number.isSafeInteger(length) || length < minimum || length > maximum
+  if (!OBJECT_HAS_OWN(descriptors, 'length')) {
+    fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+  }
+  const lengthDescriptor = descriptors.length;
+  if (!OBJECT_HAS_OWN(lengthDescriptor, 'value')) {
+    fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+  }
+  const length = lengthDescriptor.value;
+  if (!REFLECT_APPLY(NUMBER_IS_SAFE_INTEGER, Number, [length])
+    || length < minimum || length > maximum
     || REFLECT_OWN_KEYS(descriptors).length !== length + 1) {
     fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
   const output = [];
   for (let index = 0; index < length; index += 1) {
-    const descriptor = descriptors[String(index)];
-    if (!descriptor?.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
+    const key = String(index);
+    if (!OBJECT_HAS_OWN(descriptors, key)) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+    }
+    const descriptor = descriptors[key];
+    if (!descriptor.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
       fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
     }
     output[index] = descriptor.value;
@@ -241,11 +286,15 @@ function exactDataObject(value, keys) {
   }
   const output = OBJECT_CREATE(null);
   for (let index = 0; index < keys.length; index += 1) {
-    const descriptor = descriptors[keys[index]];
-    if (!descriptor?.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
+    const key = keys[index];
+    if (!OBJECT_HAS_OWN(descriptors, key)) {
       fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
     }
-    output[keys[index]] = descriptor.value;
+    const descriptor = descriptors[key];
+    if (!descriptor.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+    }
+    output[key] = descriptor.value;
   }
   return output;
 }
@@ -259,12 +308,18 @@ function executionContext(value, expected) {
     return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
   if (REFLECT_OWN_KEYS(descriptors).length !== 2
-    || !descriptors.batch?.enumerable || !OBJECT_HAS_OWN(descriptors.batch, 'value')
-    || !descriptors.environmentRequest?.enumerable
-    || !OBJECT_HAS_OWN(descriptors.environmentRequest, 'value')) {
+    || !OBJECT_HAS_OWN(descriptors, 'batch')
+    || !OBJECT_HAS_OWN(descriptors, 'environmentRequest')) {
     fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
-  const batchInput = exactDataObject(descriptors.batch.value, [
+  const batchDescriptor = descriptors.batch;
+  const environmentDescriptor = descriptors.environmentRequest;
+  if (!batchDescriptor.enumerable || !OBJECT_HAS_OWN(batchDescriptor, 'value')
+    || !environmentDescriptor.enumerable
+    || !OBJECT_HAS_OWN(environmentDescriptor, 'value')) {
+    fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+  }
+  const batchInput = exactDataObject(batchDescriptor.value, [
     'schemaVersion', 'authorizationUid', 'sessionUid', 'dramaUid', 'attestationUid',
     'reservations', 'estimatedCostCnyFen', 'preparedAtEpochMs', 'batchSha256',
   ]);
@@ -274,9 +329,9 @@ function executionContext(value, expected) {
     || !UUID_V4.test(batchInput.authorizationUid) || !UUID_V4.test(batchInput.sessionUid)
     || !UUID_V4.test(batchInput.dramaUid) || !UUID_V4.test(batchInput.attestationUid)
     || !SHA256.test(batchInput.batchSha256)
-    || !Number.isSafeInteger(batchInput.estimatedCostCnyFen)
+    || !REFLECT_APPLY(NUMBER_IS_SAFE_INTEGER, Number, [batchInput.estimatedCostCnyFen])
     || batchInput.estimatedCostCnyFen < 0
-    || !Number.isSafeInteger(batchInput.preparedAtEpochMs)
+    || !REFLECT_APPLY(NUMBER_IS_SAFE_INTEGER, Number, [batchInput.preparedAtEpochMs])
     || batchInput.preparedAtEpochMs < 0 || batchInput.preparedAtEpochMs > MAX_EPOCH_MS) {
     fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
@@ -294,7 +349,7 @@ function executionContext(value, expected) {
     'approvedEnvironmentSha256',
   ];
   const environmentRequest = exactDataObject(
-    descriptors.environmentRequest.value,
+    environmentDescriptor.value,
     environmentKeys,
   );
   if (environmentRequest.authorizationUid !== expected.authorizationUid
@@ -327,7 +382,8 @@ function h3Request(intent, task) {
   if (intent.manifestUid !== bundle.manifest.uid
     || task.workflowManifestUid !== bundle.manifest.uid
     || task.uid !== intent.taskUid
-    || !Number.isSafeInteger(task.stateVersion) || task.stateVersion < 0) {
+    || !REFLECT_APPLY(NUMBER_IS_SAFE_INTEGER, Number, [task.stateVersion])
+    || task.stateVersion < 0) {
     fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
   }
   return OBJECT_FREEZE({
@@ -351,15 +407,17 @@ function h3Request(intent, task) {
 }
 
 function step(context, completedCount, item) {
+  const batchComplete = completedCount === context.reservations.length;
   return OBJECT_FREEZE({
     schemaVersion: SCHEMA_VERSION,
     authorizationUid: context.batch.authorizationUid,
     sessionUid: context.batch.sessionUid,
     dramaUid: context.batch.dramaUid,
+    batchSha256: context.batch.batchSha256,
     completedCount,
     totalCount: context.reservations.length,
-    batchComplete: completedCount === context.reservations.length,
-    item,
+    batchComplete,
+    item: batchComplete ? null : item,
   });
 }
 
@@ -446,6 +504,13 @@ function createMvpBenchmarkProductionExecutionService(value) {
 
   async function execute(input) {
     const context = loadContext(input);
+    const expectedReservation = context.reservations[input.expectedOrdinal];
+    if (context.batch.batchSha256 !== input.expectedBatchSha256
+      || !expectedReservation
+      || expectedReservation.itemKind !== input.expectedItemKind
+      || expectedReservation.itemUid !== input.expectedItemUid) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+    }
     let firstIncomplete = -1;
     const taskStates = [];
     for (let index = 0; index < context.reservations.length; index += 1) {
@@ -497,9 +562,14 @@ function createMvpBenchmarkProductionExecutionService(value) {
     }
 
     if (firstIncomplete === -1) {
-      return step(context, context.reservations.length, null);
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
     }
     const reservation = context.reservations[firstIncomplete];
+    if (firstIncomplete !== input.expectedOrdinal
+      || reservation.itemKind !== input.expectedItemKind
+      || reservation.itemUid !== input.expectedItemUid) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+    }
     if (reservation.itemKind === 'h3') {
       const task = taskStates[firstIncomplete];
       let intent;
@@ -563,18 +633,27 @@ function createMvpBenchmarkProductionExecutionService(value) {
     executeNext(valueToExecute) {
       const input = request(valueToExecute);
       const existing = REFLECT_APPLY(MAP_GET, active, [input.authorizationUid]);
-      if (existing) return existing;
+      if (existing) {
+        if (sameRequest(existing.input, input)) return existing.pending;
+        return (async () => fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_IN_PROGRESS'))();
+      }
+      let releaseStart;
+      const start = new PROMISE((resolve) => { releaseStart = resolve; });
+      let entry;
       let pending;
       pending = (async () => {
+        await start;
         try {
           return await execute(input);
         } finally {
-          if (REFLECT_APPLY(MAP_GET, active, [input.authorizationUid]) === pending) {
+          if (REFLECT_APPLY(MAP_GET, active, [input.authorizationUid]) === entry) {
             REFLECT_APPLY(MAP_DELETE, active, [input.authorizationUid]);
           }
         }
       })();
-      REFLECT_APPLY(MAP_SET, active, [input.authorizationUid, pending]);
+      entry = OBJECT_FREEZE({ input, pending });
+      REFLECT_APPLY(MAP_SET, active, [input.authorizationUid, entry]);
+      releaseStart();
       return pending;
     },
   });

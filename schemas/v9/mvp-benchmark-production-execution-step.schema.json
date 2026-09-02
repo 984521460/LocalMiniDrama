@@ -9,6 +9,7 @@
     "authorizationUid",
     "sessionUid",
     "dramaUid",
+    "batchSha256",
     "completedCount",
     "totalCount",
     "batchComplete",
@@ -19,6 +20,10 @@
     "authorizationUid": { "$ref": "#/$defs/uuid" },
     "sessionUid": { "$ref": "#/$defs/uuid" },
     "dramaUid": { "$ref": "#/$defs/uuid" },
+    "batchSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "completedCount": { "type": "integer", "minimum": 1, "maximum": 64 },
     "totalCount": { "type": "integer", "minimum": 2, "maximum": 64 },
     "batchComplete": { "type": "boolean" },
@@ -46,7 +51,7 @@
       "else": { "properties": { "item": { "type": "object" } } }
     }
   ],
-  "$comment": "Runtime additionally enforces completedCount <= totalCount, batchComplete iff the counts are equal, and a non-null item ordinal of completedCount - 1.",
+  "$comment": "Runtime additionally binds batchSha256 to the frozen preflight batch, enforces completedCount <= totalCount, batchComplete iff the counts are equal, and a non-null item ordinal of completedCount - 1.",
   "$defs": {
     "uuid": {
       "type": "string",

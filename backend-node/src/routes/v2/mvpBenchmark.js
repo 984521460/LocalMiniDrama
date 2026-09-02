@@ -31,19 +31,21 @@ const {
 const response = require('../../response');
 
 const DATE_NOW = Date.now;
+const ARRAY_IS_ARRAY = Array.isArray;
 const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
 const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
 const OBJECT_HAS_OWN = Object.hasOwn;
 const OBJECT_CREATE = Object.create;
 const REFLECT_OWN_KEYS = Reflect.ownKeys;
+const REFLECT_APPLY = Reflect.apply;
 
 function exactEmptyBody(value) {
-  if (!value || typeof value !== 'object' || isProxy(value) || Array.isArray(value)) return false;
+  if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) return false;
   try {
-    const prototype = Reflect.apply(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
-    const descriptors = Reflect.apply(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    const prototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = REFLECT_APPLY(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
     return (prototype === Object.prototype || prototype === null)
-      && Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]).length === 0;
+      && REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]).length === 0;
   } catch {
     return false;
   }
@@ -51,19 +53,45 @@ function exactEmptyBody(value) {
 
 function exactAuthorizationSeed(value) {
   const keys = ['maximumCostCnyFen', 'validityDurationMs'];
-  if (!value || typeof value !== 'object' || isProxy(value) || Array.isArray(value)) return null;
+  if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) return null;
   try {
-    const prototype = Reflect.apply(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
-    const descriptors = Reflect.apply(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    const prototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = REFLECT_APPLY(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
     if ((prototype !== Object.prototype && prototype !== null)
-      || Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== keys.length) return null;
-    const output = Reflect.apply(OBJECT_CREATE, Object, [null]);
+      || REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== keys.length) return null;
+    const output = REFLECT_APPLY(OBJECT_CREATE, Object, [null]);
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index];
-      if (!Reflect.apply(OBJECT_HAS_OWN, Object, [descriptors, key])) return null;
+      if (!REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptors, key])) return null;
       const descriptor = descriptors[key];
       if (!descriptor?.enumerable
-        || !Reflect.apply(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
+        || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
+      output[key] = descriptor.value;
+    }
+    return output;
+  } catch {
+    return null;
+  }
+}
+
+function exactExecutionSeed(value) {
+  const keys = [
+    'schemaVersion', 'expectedBatchSha256', 'expectedOrdinal', 'expectedItemKind',
+    'expectedItemUid',
+  ];
+  if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) return null;
+  try {
+    const prototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = REFLECT_APPLY(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== keys.length) return null;
+    const output = REFLECT_APPLY(OBJECT_CREATE, Object, [null]);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (!REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptors, key])) return null;
+      const descriptor = descriptors[key];
+      if (!descriptor.enumerable
+        || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
       output[key] = descriptor.value;
     }
     return output;
@@ -277,7 +305,7 @@ function mvpBenchmarkRoutes(log, runtime, database) {
           uid: randomUUID(),
           dramaUid: req.params.dramaUid,
           workflowRunUid: req.params.workflowRunUid,
-          createdAtEpochMs: Reflect.apply(DATE_NOW, Date, []),
+          createdAtEpochMs: REFLECT_APPLY(DATE_NOW, Date, []),
         }));
       } catch (error) {
         return sessionError(res, error);
@@ -370,7 +398,7 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         if (!configured) {
           return response.error(res, 503, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNAVAILABLE', 'MVP benchmark execution preflight is unavailable');
         }
-        const result = await Reflect.apply(
+        const result = await REFLECT_APPLY(
           configured.prepareBatch, configured.service, [authorization.uid],
         );
         return response.created(res, result);
@@ -398,7 +426,8 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/execute-next',
     async (req, res) => {
       try {
-        if (!exactEmptyBody(req.body)) {
+        const seed = exactExecutionSeed(req.body);
+        if (!seed) {
           return response.error(
             res, 400, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID',
             'MVP benchmark production execution input is invalid',
@@ -411,12 +440,17 @@ function mvpBenchmarkRoutes(log, runtime, database) {
             'MVP benchmark production execution is unavailable',
           );
         }
-        const result = await Reflect.apply(configured.executeNext, configured.service, [{
+        const result = await REFLECT_APPLY(configured.executeNext, configured.service, [{
+          schemaVersion: seed.schemaVersion,
           authorizationUid: parseMvpBenchmarkExternalAuthorizationUid(
             req.params.authorizationUid,
           ),
           dramaUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.dramaUid),
           sessionUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.sessionUid),
+          expectedBatchSha256: seed.expectedBatchSha256,
+          expectedOrdinal: seed.expectedOrdinal,
+          expectedItemKind: seed.expectedItemKind,
+          expectedItemUid: seed.expectedItemUid,
         }]);
         return response.success(res, result);
       } catch (error) {
