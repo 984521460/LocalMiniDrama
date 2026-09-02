@@ -15,6 +15,9 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_EPOCH_MS = 253402300799999;
 const SCHEMA_VERSION = 'mvp-benchmark-production-execution-step.v1';
 const REQUEST_SCHEMA_VERSION = 'mvp-benchmark-production-execution-request.v1';
+const PROGRESS_SCHEMA_VERSION = 'mvp-benchmark-production-execution-progress.v1';
+const PROGRESS_REQUEST_SCHEMA_VERSION =
+  'mvp-benchmark-production-execution-progress-request.v1';
 const ARRAY_IS_ARRAY = Array.isArray;
 const BUFFER_FROM = Buffer.from;
 const BUFFER_TO_STRING = Buffer.prototype.toString;
@@ -110,6 +113,9 @@ function exactConfiguration(value) {
   const configured = OBJECT_FREEZE({
     audioExecute: captureMethod(input.audioTtsExecution, 'execute'),
     audioGet: captureMethod(input.audioTtsExecution, 'get'),
+    audioGetPersisted: captureMethod(input.audioTtsExecution, 'getPersisted'),
+    audioIntent: captureMethod(repositories?.audioModeIntents, 'getExecutionSource'),
+    audioNode: captureMethod(repositories?.runs, 'getNode'),
     assertAudio: captureMethod(input.executionGate, 'assertAudioIntentExecutionOpen'),
     assertH3: captureMethod(input.executionGate, 'assertH3TaskExecutionOpen'),
     h3Execute: captureMethod(input.h3LocalExecution, 'execute'),
@@ -122,7 +128,8 @@ function exactConfiguration(value) {
     createUid: input.createUid ?? crypto.randomUUID,
     nowEpochMs: input.nowEpochMs ?? Date.now,
   });
-  if (!configured.audioExecute || !configured.audioGet || !configured.assertAudio
+  if (!configured.audioExecute || !configured.audioGet || !configured.audioGetPersisted
+    || !configured.audioIntent || !configured.audioNode || !configured.assertAudio
     || !configured.assertH3 || !configured.h3Execute || !configured.h3Get
     || !configured.h3Intent || !configured.inspect || !configured.loadBatch
     || !configured.openItem || !configured.remoteTask
@@ -175,6 +182,47 @@ function request(value) {
       || !REFLECT_APPLY(NUMBER_IS_SAFE_INTEGER, Number, [output.expectedOrdinal])
       || output.expectedOrdinal < 0 || output.expectedOrdinal > 63
       || (output.expectedItemKind !== 'h3' && output.expectedItemKind !== 'tts')) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
+    }
+    return OBJECT_FREEZE(output);
+  } catch (error) {
+    if (error instanceof MvpBenchmarkProductionExecutionError) throw error;
+    return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
+  }
+}
+
+function progressRequest(value) {
+  try {
+    if (!value || typeof value !== 'object' || ARRAY_IS_ARRAY(value) || isProxy(value)
+      || OBJECT_GET_PROTOTYPE_OF(value) !== Object.prototype) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
+    }
+    const descriptors = OBJECT_GET_OWN_PROPERTY_DESCRIPTORS(value);
+    const keys = [
+      'schemaVersion', 'authorizationUid', 'dramaUid', 'sessionUid',
+      'expectedBatchSha256',
+    ];
+    if (REFLECT_OWN_KEYS(descriptors).length !== keys.length) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
+    }
+    const output = OBJECT_CREATE(null);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (!OBJECT_HAS_OWN(descriptors, key)) {
+        fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
+      }
+      const descriptor = descriptors[key];
+      if (!descriptor.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) {
+        fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
+      }
+      output[key] = descriptor.value;
+    }
+    output.authorizationUid = uid(output.authorizationUid);
+    output.dramaUid = uid(output.dramaUid);
+    output.sessionUid = uid(output.sessionUid);
+    if (output.schemaVersion !== PROGRESS_REQUEST_SCHEMA_VERSION
+      || typeof output.expectedBatchSha256 !== 'string'
+      || !SHA256.test(output.expectedBatchSha256)) {
       fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID');
     }
     return OBJECT_FREEZE(output);
@@ -430,6 +478,26 @@ function completedItem(ordinal, reservation) {
   });
 }
 
+function progress(context, completedCount) {
+  const batchComplete = completedCount === context.reservations.length;
+  const reservation = batchComplete ? null : context.reservations[completedCount];
+  return OBJECT_FREEZE({
+    schemaVersion: PROGRESS_SCHEMA_VERSION,
+    authorizationUid: context.batch.authorizationUid,
+    sessionUid: context.batch.sessionUid,
+    dramaUid: context.batch.dramaUid,
+    batchSha256: context.batch.batchSha256,
+    completedCount,
+    totalCount: context.reservations.length,
+    batchComplete,
+    nextItem: reservation === null ? null : OBJECT_FREEZE({
+      ordinal: completedCount,
+      itemKind: reservation.itemKind,
+      itemUid: reservation.itemUid,
+    }),
+  });
+}
+
 function audioResult(value, reservation, dramaUid) {
   if (!value || typeof value !== 'object' || ARRAY_IS_ARRAY(value) || isProxy(value)
     || value.intentUid !== reservation.itemUid || value.dramaUid !== dramaUid) {
@@ -502,16 +570,28 @@ function createMvpBenchmarkProductionExecutionService(value) {
     }
   }
 
-  async function execute(input) {
-    const context = loadContext(input);
-    const expectedReservation = context.reservations[input.expectedOrdinal];
-    if (context.batch.batchSha256 !== input.expectedBatchSha256
-      || !expectedReservation
-      || expectedReservation.itemKind !== input.expectedItemKind
-      || expectedReservation.itemUid !== input.expectedItemUid) {
+  function assertQueuedAudioItem(context, reservation) {
+    let intent;
+    let node;
+    try {
+      intent = call(configured.audioIntent, [reservation.itemUid]);
+      node = call(configured.audioNode, [intent.nodeRunUid]);
+    } catch {
+      return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+    }
+    if (intent.uid !== reservation.itemUid
+      || intent.dramaUid !== context.batch.dramaUid
+      || intent.plan.planSha256 !== reservation.requestSha256
+      || node.uid !== intent.nodeRunUid
+      || node.workflowRunUid !== intent.workflowRunUid
+      || node.status !== 'queued') {
       fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
     }
+  }
+
+  async function scanProgress(context, durableOnly = false) {
     let firstIncomplete = -1;
+    let completedCount = 0;
     const taskStates = [];
     for (let index = 0; index < context.reservations.length; index += 1) {
       const reservation = context.reservations[index];
@@ -527,15 +607,21 @@ function createMvpBenchmarkProductionExecutionService(value) {
           if (firstIncomplete !== -1) {
             return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
           }
+          completedCount += 1;
           continue;
         }
         let task;
         try { task = call(configured.remoteTask, [reservation.itemUid]); } catch {
           return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_FAILED');
         }
-        if (firstIncomplete === -1) firstIncomplete = index;
-        else if (task.stage !== 'prepared' || task.status !== 'queued'
-          || task.promptId !== null || task.outputAssetVersionUid !== null) {
+        const initial = task.stage === 'prepared' && task.status === 'queued'
+          && task.promptId === null && task.outputAssetVersionUid === null;
+        if (firstIncomplete === -1) {
+          if (durableOnly && !initial) {
+            return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+          }
+          firstIncomplete = index;
+        } else if (!initial) {
           return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
         }
         taskStates[index] = task;
@@ -544,9 +630,13 @@ function createMvpBenchmarkProductionExecutionService(value) {
 
       let existing;
       try {
-        existing = await settle(call(configured.audioGet, [
-          reservation.itemUid, context.batch.dramaUid,
-        ]));
+        existing = durableOnly
+          ? call(configured.audioGetPersisted, [
+            reservation.itemUid, context.batch.dramaUid,
+          ])
+          : await settle(call(configured.audioGet, [
+            reservation.itemUid, context.batch.dramaUid,
+          ]));
       } catch (error) {
         if (error instanceof MvpBenchmarkProductionExecutionError) throw error;
         return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_FAILED');
@@ -556,10 +646,26 @@ function createMvpBenchmarkProductionExecutionService(value) {
         if (firstIncomplete !== -1) {
           return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
         }
-      } else if (firstIncomplete === -1) {
-        firstIncomplete = index;
+        completedCount += 1;
+      } else {
+        if (durableOnly) assertQueuedAudioItem(context, reservation);
+        if (firstIncomplete === -1) firstIncomplete = index;
       }
     }
+    return OBJECT_FREEZE({ completedCount, firstIncomplete, taskStates });
+  }
+
+  async function execute(input) {
+    const context = loadContext(input);
+    const expectedReservation = context.reservations[input.expectedOrdinal];
+    if (context.batch.batchSha256 !== input.expectedBatchSha256
+      || !expectedReservation
+      || expectedReservation.itemKind !== input.expectedItemKind
+      || expectedReservation.itemUid !== input.expectedItemUid) {
+      fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+    }
+    const scanned = await scanProgress(context);
+    const { firstIncomplete, taskStates } = scanned;
 
     if (firstIncomplete === -1) {
       fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
@@ -630,6 +736,18 @@ function createMvpBenchmarkProductionExecutionService(value) {
   }
 
   return OBJECT_FREEZE({
+    async readProgress(valueToRead) {
+      const input = progressRequest(valueToRead);
+      if (REFLECT_APPLY(MAP_GET, active, [input.authorizationUid])) {
+        return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_IN_PROGRESS');
+      }
+      const context = loadContext(input);
+      if (context.batch.batchSha256 !== input.expectedBatchSha256) {
+        return fail('MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE');
+      }
+      const scanned = await scanProgress(context, true);
+      return progress(context, scanned.completedCount);
+    },
     executeNext(valueToExecute) {
       const input = request(valueToExecute);
       const existing = REFLECT_APPLY(MAP_GET, active, [input.authorizationUid]);

@@ -591,6 +591,7 @@ test('production preflight route binds drama, session, and authorization before 
     }),
     audioTtsExecution: Object.freeze({
       get() { return Promise.resolve(null); },
+      getPersisted() { return null; },
       execute() { throw new Error('must not execute'); },
     }),
     dependencies: Object.freeze({

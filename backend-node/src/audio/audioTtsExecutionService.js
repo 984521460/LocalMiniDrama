@@ -261,6 +261,15 @@ function createAudioTtsExecutionService(value) {
     return record;
   }
 
+  function getPersisted(intentUidValue, expectedDramaUidValue) {
+    const intentUid = canonicalUid(intentUidValue, INPUT_CODE);
+    const expectedDramaUid = expectedDrama(expectedDramaUidValue);
+    const completed = config.getOutput(intentUid);
+    if (!completed) return null;
+    requireDrama(completed.dramaUid, expectedDramaUid);
+    return completed;
+  }
+
   function execute(intentUidValue, expectedDramaUidValue) {
     const pending = (async () => {
       const intentUid = canonicalUid(intentUidValue, INPUT_CODE);
@@ -359,17 +368,14 @@ function createAudioTtsExecutionService(value) {
 
   function get(intentUidValue, expectedDramaUidValue) {
     const pending = (async () => {
-      const intentUid = canonicalUid(intentUidValue, INPUT_CODE);
-      const expectedDramaUid = expectedDrama(expectedDramaUidValue);
-      const completed = config.getOutput(intentUid);
+      const completed = getPersisted(intentUidValue, expectedDramaUidValue);
       if (!completed) return null;
-      requireDrama(completed.dramaUid, expectedDramaUid);
       return validateCompleted(completed);
     })();
     return settleTtsPromise(pending);
   }
 
-  return Object.freeze({ execute, get });
+  return Object.freeze({ execute, get, getPersisted });
 }
 
 module.exports = Object.freeze({ MAX_AUDIO_BYTES, createAudioTtsExecutionService });

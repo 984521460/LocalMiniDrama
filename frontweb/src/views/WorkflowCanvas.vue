@@ -140,9 +140,11 @@
               :authorization="mvpAuthorization.authorization.value"
               :batch="mvpPreflight.batch.value"
               :step="mvpExecution.step.value"
+              :progress="mvpExecution.progress.value"
               :busy="mvpExecution.busy.value"
               :error="mvpExecution.error.value || ''"
               @execute="executeNextMvpItem"
+              @refresh="refreshMvpExecution"
             />
             <MvpBenchmarkReadinessPanel
               :readiness="mvpReadiness.readiness.value"
@@ -437,10 +439,13 @@ async function executeNextMvpItem() {
   const session = mvpSession.session.value
   const authorization = mvpAuthorization.authorization.value
   const batch = mvpPreflight.batch.value
-  const completedCount = mvpExecution.step.value?.completedCount ?? 0
+  const completedCount = mvpExecution.step.value?.completedCount
+    ?? mvpExecution.progress.value?.completedCount
+    ?? 0
   const reservation = batch?.reservations?.[completedCount]
   if (!session || !authorization || !batch || !reservation
-    || mvpExecution.step.value?.batchComplete) {
+    || mvpExecution.step.value?.batchComplete
+    || mvpExecution.progress.value?.batchComplete) {
     ElMessage.error('当前没有可安全确认的下一项')
     return
   }
@@ -467,7 +472,22 @@ async function executeNextMvpItem() {
       ElMessage.success('本项已取得可信成功回执；下一项不会自动执行')
     }
   } else {
-    ElMessage.error('本项执行失败或回执不可信；进度未推进')
+    ElMessage.error('本项执行失败或回执不可信；请刷新可信进度核对持久结果，不会自动重试')
+  }
+}
+
+async function refreshMvpExecution() {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  const batch = mvpPreflight.batch.value
+  if (!session || !authorization || !batch) {
+    ElMessage.error('请先完成有效的本地授权与 live preflight')
+    return
+  }
+  if (await mvpExecution.refresh(session, authorization, batch)) {
+    ElMessage.success('已从本地持久成功证据重建进度；未提交任务、结算费用或归还实例')
+  } else {
+    ElMessage.error('可信进度刷新失败；不会自动重试')
   }
 }
 

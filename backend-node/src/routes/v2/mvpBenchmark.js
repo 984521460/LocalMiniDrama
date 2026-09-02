@@ -38,6 +38,7 @@ const OBJECT_HAS_OWN = Object.hasOwn;
 const OBJECT_CREATE = Object.create;
 const REFLECT_OWN_KEYS = Reflect.ownKeys;
 const REFLECT_APPLY = Reflect.apply;
+const SHA256 = /^[0-9a-f]{64}$/u;
 
 function exactEmptyBody(value) {
   if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) return false;
@@ -135,8 +136,10 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       const service = Object.getOwnPropertyDescriptor(benchmarkRuntime, 'execution')?.value;
       if (!service || typeof service !== 'object' || isProxy(service)) return null;
       const executeNext = Object.getOwnPropertyDescriptor(service, 'executeNext')?.value;
-      if (typeof executeNext !== 'function' || isProxy(executeNext)) return null;
-      return Object.freeze({ service, executeNext });
+      const readProgress = Object.getOwnPropertyDescriptor(service, 'readProgress')?.value;
+      if (typeof executeNext !== 'function' || isProxy(executeNext)
+        || typeof readProgress !== 'function' || isProxy(readProgress)) return null;
+      return Object.freeze({ service, executeNext, readProgress });
     } catch {
       return null;
     }
@@ -336,6 +339,40 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         return response.created(res, authorizationRepository.prepare(req.body));
       } catch (error) {
         return authorizationError(res, error);
+      }
+    },
+  );
+
+  router.get(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/execution-progress/:batchSha256',
+    async (req, res) => {
+      try {
+        const expectedBatchSha256 = req.params.batchSha256;
+        if (typeof expectedBatchSha256 !== 'string' || !SHA256.test(expectedBatchSha256)) {
+          return response.error(
+            res, 400, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID',
+            'MVP benchmark production execution input is invalid',
+          );
+        }
+        const configured = executionService();
+        if (!configured) {
+          return response.error(
+            res, 503, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE',
+            'MVP benchmark production execution is unavailable',
+          );
+        }
+        const result = await REFLECT_APPLY(configured.readProgress, configured.service, [{
+          schemaVersion: 'mvp-benchmark-production-execution-progress-request.v1',
+          authorizationUid: parseMvpBenchmarkExternalAuthorizationUid(
+            req.params.authorizationUid,
+          ),
+          dramaUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.dramaUid),
+          sessionUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.sessionUid),
+          expectedBatchSha256,
+        }]);
+        return response.success(res, result);
+      } catch (error) {
+        return executionError(res, error);
       }
     },
   );

@@ -8,6 +8,7 @@ const Ajv2020 = require('ajv/dist/2020');
 
 const executionStepSchema = require('../../schemas/v9/mvp-benchmark-production-execution-step.schema.json');
 const executionRequestSchema = require('../../schemas/v9/mvp-benchmark-production-execution-request.schema.json');
+const executionProgressSchema = require('../../schemas/v9/mvp-benchmark-production-execution-progress.schema.json');
 
 const {
   APPROVED_LIVE_ENVIRONMENT,
@@ -147,6 +148,16 @@ function executionSeed(request) {
   };
 }
 
+function progressRequest(authorization, session, batch) {
+  return Object.freeze({
+    schemaVersion: 'mvp-benchmark-production-execution-progress-request.v1',
+    authorizationUid: authorization.uid,
+    dramaUid: session.dramaUid,
+    sessionUid: session.uid,
+    expectedBatchSha256: batch.batchSha256,
+  });
+}
+
 async function listen(app) {
   const server = await new Promise((resolve, reject) => {
     const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
@@ -159,6 +170,8 @@ async function listen(app) {
 function executionFixture(current, options = {}) {
   const h3Completed = new Map();
   let completedAudio = null;
+  let audioMediaReads = 0;
+  let audioPersistedReads = 0;
   const calls = [];
   const fresh = freshExecutionDependencies(current);
   const h3LocalExecution = Object.freeze({
@@ -172,9 +185,16 @@ function executionFixture(current, options = {}) {
   });
   const audioTtsExecution = Object.freeze({
     get(intentUid, dramaUid) {
+      audioMediaReads += 1;
       assert.equal(intentUid, current.audioIntent.uid);
       assert.equal(dramaUid, current.audioIntent.dramaUid);
       return Promise.resolve(completedAudio);
+    },
+    getPersisted(intentUid, dramaUid) {
+      audioPersistedReads += 1;
+      assert.equal(intentUid, current.audioIntent.uid);
+      assert.equal(dramaUid, current.audioIntent.dramaUid);
+      return completedAudio;
     },
     execute(intentUid, dramaUid, permit) {
       calls.push(Object.freeze({ kind: 'tts', intentUid, dramaUid, permit }));
@@ -183,7 +203,10 @@ function executionFixture(current, options = {}) {
     },
   });
   return Object.freeze({
+    audioMediaReads: () => audioMediaReads,
+    audioPersistedReads: () => audioPersistedReads,
     calls,
+    completeAudio() { completedAudio = audioResult(current); },
     h3Completed,
     inspections: options.inspections ?? fresh.inspections,
     service: createMvpBenchmarkProductionExecutionService({
@@ -263,6 +286,103 @@ test('execute-next derives the exact H3 request and advances at most one frozen 
   assert.equal(second.item.itemUid, session.h3Tasks[1].taskUid);
   assert.equal(fixture.calls.length, 2);
   assert.equal(fixture.inspections(), 2);
+});
+
+test('read-only progress reconstructs a lost success receipt without new external work', async (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const { authorization, batch, session } = await preparedBatch(current);
+  const execution = executionFixture(current);
+  const request = progressRequest(authorization, session, batch);
+
+  const initial = await execution.service.readProgress(request);
+  const validateProgress = new Ajv2020({ strict: true }).compile(executionProgressSchema);
+  assert.equal(validateProgress(initial), true, JSON.stringify(validateProgress.errors));
+  assert.deepEqual(initial, {
+    schemaVersion: 'mvp-benchmark-production-execution-progress.v1',
+    authorizationUid: authorization.uid,
+    sessionUid: session.uid,
+    dramaUid: session.dramaUid,
+    batchSha256: batch.batchSha256,
+    completedCount: 0,
+    totalCount: batch.reservations.length,
+    batchComplete: false,
+    nextItem: {
+      ordinal: 0,
+      itemKind: batch.reservations[0].itemKind,
+      itemUid: batch.reservations[0].itemUid,
+    },
+  });
+  assert.equal(execution.inspections(), 0);
+  assert.equal(execution.calls.length, 0);
+
+  await execution.service.executeNext(executionRequest(authorization, session, batch, 0));
+  const inspectionsAfterExecution = execution.inspections();
+  const callsAfterExecution = execution.calls.length;
+
+  const recovered = await execution.service.readProgress(request);
+  assert.equal(validateProgress(recovered), true, JSON.stringify(validateProgress.errors));
+  assert.equal(recovered.completedCount, 1);
+  assert.equal(recovered.batchComplete, false);
+  assert.deepEqual(recovered.nextItem, {
+    ordinal: 1,
+    itemKind: batch.reservations[1].itemKind,
+    itemUid: batch.reservations[1].itemUid,
+  });
+  assert.equal(execution.inspections(), inspectionsAfterExecution);
+  assert.equal(execution.calls.length, callsAfterExecution);
+});
+
+test('read-only progress rejects a started item and never reads or probes TTS media', async (t) => {
+  const started = createMvpBenchmarkSessionFixture(t);
+  const startedBatch = await preparedBatch(started);
+  const startedExecution = executionFixture(started);
+  started.repositories.remote.transitionFormalTask({
+    uid: startedBatch.session.h3Tasks[0].taskUid,
+    expectedStateVersion: 0,
+    nextStage: 'uploading',
+    nextStatus: 'running',
+    recoveryState: 'none',
+  });
+  await assert.rejects(startedExecution.service.readProgress(progressRequest(
+    startedBatch.authorization, startedBatch.session, startedBatch.batch,
+  )), { code: 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE' });
+  assert.equal(startedExecution.audioMediaReads(), 0);
+  assert.equal(startedExecution.inspections(), 0);
+  assert.equal(startedExecution.calls.length, 0);
+
+  const ttsStarted = createMvpBenchmarkSessionFixture(t);
+  const ttsStartedBatch = await preparedBatch(ttsStarted);
+  const ttsStartedExecution = executionFixture(ttsStarted);
+  ttsStarted.repositories.runs.transitionNodeStatus({
+    uid: ttsStarted.audioIntent.nodeRunUid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+    inputSnapshot: {},
+  });
+  await assert.rejects(ttsStartedExecution.service.readProgress(progressRequest(
+    ttsStartedBatch.authorization, ttsStartedBatch.session, ttsStartedBatch.batch,
+  )), { code: 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNAVAILABLE' });
+  assert.equal(ttsStartedExecution.audioMediaReads(), 0);
+  assert.equal(ttsStartedExecution.inspections(), 0);
+  assert.equal(ttsStartedExecution.calls.length, 0);
+
+  const completed = createMvpBenchmarkSessionFixture(t);
+  const completedBatch = await preparedBatch(completed);
+  const completedExecution = executionFixture(completed);
+  for (let index = 0; index < completedBatch.session.h3Tasks.length; index += 1) {
+    const taskUid = completedBatch.session.h3Tasks[index].taskUid;
+    completedExecution.h3Completed.set(taskUid, h3Result(taskUid, index + 1));
+  }
+  completedExecution.completeAudio();
+  const terminal = await completedExecution.service.readProgress(progressRequest(
+    completedBatch.authorization, completedBatch.session, completedBatch.batch,
+  ));
+  assert.equal(terminal.batchComplete, true);
+  assert.equal(terminal.completedCount, completedBatch.batch.reservations.length);
+  assert.equal(completedExecution.audioMediaReads(), 0);
+  assert.ok(completedExecution.audioPersistedReads() > 0);
+  assert.equal(completedExecution.inspections(), 0);
+  assert.equal(completedExecution.calls.length, 0);
 });
 
 test('the terminal execute-next response is Schema-valid and does not report a second item', async (t) => {
@@ -478,6 +598,7 @@ test('execute-next coalesces concurrent calls and a recreated service skips dura
   });
   const audio = Object.freeze({
     get() { return Promise.resolve(null); },
+    getPersisted() { return null; },
     execute() { throw new Error('not reached'); },
   });
   function service() {
@@ -573,6 +694,7 @@ test('missing preflight and a failed current item never reach a later executor',
     }),
     audioTtsExecution: Object.freeze({
       get() { missingCalls += 1; return Promise.resolve(null); },
+      getPersisted() { missingCalls += 1; return null; },
       execute() { missingCalls += 1; return Promise.resolve(null); },
     }),
     liveEnvironmentVerifier: missingFresh.liveEnvironmentVerifier,
@@ -608,6 +730,7 @@ test('missing preflight and a failed current item never reach a later executor',
     }),
     audioTtsExecution: Object.freeze({
       get() { return Promise.resolve(null); },
+      getPersisted() { return null; },
       execute() { laterCalls += 1; return Promise.resolve(null); },
     }),
     liveEnvironmentVerifier: failedFresh.liveEnvironmentVerifier,
@@ -636,6 +759,7 @@ test('source drift during the fresh inspection is rejected before the item execu
     }),
     audioTtsExecution: Object.freeze({
       get() { return Promise.resolve(null); },
+      getPersisted() { return null; },
       execute() { executeCalls += 1; return Promise.resolve(null); },
     }),
     liveEnvironmentVerifier: Object.freeze({
@@ -671,6 +795,7 @@ test('a durable out-of-order completion is rejected instead of being normalized'
     }),
     audioTtsExecution: Object.freeze({
       get() { return Promise.resolve(null); },
+      getPersisted() { return null; },
       execute() { executeCalls += 1; return Promise.resolve(null); },
     }),
     liveEnvironmentVerifier: fresh.liveEnvironmentVerifier,
@@ -735,6 +860,24 @@ test('localhost execute-next accepts only an exact expected item and path-bound 
   assert.equal(fixture.inspections(), 1);
   assert.equal(fixture.calls.length, 1);
 
+  const progressSuffix = `mvp-benchmark/sessions/${session.uid}/authorizations/${authorization.uid}/execution-progress/${batch.batchSha256}`;
+  const progress = await fetch(
+    `${base}/api/v1/v2/dramas/${session.dramaUid}/${progressSuffix}`,
+  );
+  const progressBody = await progress.json();
+  assert.equal(progress.status, 200, JSON.stringify(progressBody));
+  assert.equal(progressBody.data.completedCount, 1);
+  assert.equal(progressBody.data.nextItem.itemUid, batch.reservations[1].itemUid);
+  assert.equal(fixture.inspections(), 1);
+  assert.equal(fixture.calls.length, 1);
+
+  const wrongProgress = await fetch(
+    `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/authorizations/${authorization.uid}/execution-progress/${'0'.repeat(64)}`,
+  );
+  assert.equal(wrongProgress.status, 503);
+  assert.equal(fixture.inspections(), 1);
+  assert.equal(fixture.calls.length, 1);
+
   const stale = await fetch(`${base}/api/v1/v2/dramas/${session.dramaUid}/${suffix}`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(seed),
   });
@@ -794,6 +937,12 @@ test('localhost rejects a concurrent different-item confirmation before new side
   assert.equal(fixture.inspections(), 1);
   assert.equal(fixture.calls.length, 0);
 
+  const progressEndpoint = `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/authorizations/${authorization.uid}/execution-progress/${batch.batchSha256}`;
+  const activeProgress = await fetch(progressEndpoint);
+  assert.equal(activeProgress.status, 409);
+  assert.equal(fixture.inspections(), 1);
+  assert.equal(fixture.calls.length, 0);
+
   const conflicting = await fetch(endpoint, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(secondSeed),
   });
@@ -804,6 +953,12 @@ test('localhost rejects a concurrent different-item confirmation before new side
   releaseFirstInspection();
   const first = await firstResponse;
   assert.equal(first.status, 200);
+  const recoveredProgress = await fetch(progressEndpoint);
+  const recoveredBody = await recoveredProgress.json();
+  assert.equal(recoveredProgress.status, 200, JSON.stringify(recoveredBody));
+  assert.equal(recoveredBody.data.completedCount, 1);
+  assert.equal(fixture.inspections(), 1);
+  assert.equal(fixture.calls.length, 1);
   const second = await fetch(endpoint, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(secondSeed),
   });

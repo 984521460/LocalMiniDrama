@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-production-execution-progress.schema.json",
+  "title": "MVP Benchmark Production Execution Progress",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authorizationUid",
+    "sessionUid",
+    "dramaUid",
+    "batchSha256",
+    "completedCount",
+    "totalCount",
+    "batchComplete",
+    "nextItem"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-production-execution-progress.v1" },
+    "authorizationUid": { "$ref": "#/$defs/uuid" },
+    "sessionUid": { "$ref": "#/$defs/uuid" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "batchSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "completedCount": { "type": "integer", "minimum": 0, "maximum": 64 },
+    "totalCount": { "type": "integer", "minimum": 2, "maximum": 64 },
+    "batchComplete": { "type": "boolean" },
+    "nextItem": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ordinal", "itemKind", "itemUid"],
+          "properties": {
+            "ordinal": { "type": "integer", "minimum": 0, "maximum": 63 },
+            "itemKind": { "enum": ["h3", "tts"] },
+            "itemUid": { "$ref": "#/$defs/uuid" }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "batchComplete": { "const": true } } },
+      "then": { "properties": { "nextItem": { "type": "null" } } },
+      "else": { "properties": { "nextItem": { "type": "object" } } }
+    }
+  ],
+  "$comment": "Runtime additionally binds all identities to the stored preflight batch, requires completedCount to be the exact continuous durable-success prefix, enforces batchComplete iff completedCount equals totalCount, and binds nextItem to reservations[completedCount]. Reading progress performs no live inspection, permit creation, Provider call, settlement, release, or database write.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

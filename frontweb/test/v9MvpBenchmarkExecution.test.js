@@ -4,7 +4,9 @@ import path from 'node:path'
 import test from 'node:test'
 
 import {
+  mvpBenchmarkProductionExecutionProgressView,
   mvpBenchmarkProductionExecutionStepView,
+  parseMvpBenchmarkProductionExecutionProgressJson,
   parseMvpBenchmarkProductionExecutionStepJson,
 } from '../src/benchmark/mvpExecution.js'
 import { parseMvpBenchmarkPreflightBatchJson } from '../src/benchmark/mvpPreflight.js'
@@ -147,6 +149,33 @@ function parsedStep(completedCount = 1) {
   )
 }
 
+function rawProgress(completedCount = 0) {
+  const currentBatch = rawBatch()
+  const complete = completedCount === currentBatch.reservations.length
+  const reservation = currentBatch.reservations[completedCount]
+  return {
+    schemaVersion: 'mvp-benchmark-production-execution-progress.v1',
+    authorizationUid: currentBatch.authorizationUid,
+    sessionUid: currentBatch.sessionUid,
+    dramaUid: currentBatch.dramaUid,
+    batchSha256: currentBatch.batchSha256,
+    completedCount,
+    totalCount: currentBatch.reservations.length,
+    batchComplete: complete,
+    nextItem: complete ? null : {
+      ordinal: completedCount,
+      itemKind: reservation.itemKind,
+      itemUid: reservation.itemUid,
+    },
+  }
+}
+
+function parsedProgress(completedCount = 0) {
+  return parseMvpBenchmarkProductionExecutionProgressJson(
+    JSON.stringify(rawProgress(completedCount)), session(), authorization(), batch(),
+  )
+}
+
 test('execution step is exact, batch-bound, ordered, and terminal-safe', () => {
   assert.deepEqual(parsedStep(1), rawStep(1))
   assert.deepEqual(parsedStep(5), rawStep(5))
@@ -170,9 +199,33 @@ test('execution step is exact, batch-bound, ordered, and terminal-safe', () => {
   ))
 })
 
+test('execution progress is exact, batch-bound, continuous, and terminal-safe', () => {
+  assert.deepEqual(parsedProgress(0), rawProgress(0))
+  assert.deepEqual(parsedProgress(1), rawProgress(1))
+  assert.deepEqual(parsedProgress(5), rawProgress(5))
+  assert.throws(() => parseMvpBenchmarkProductionExecutionProgressJson(
+    JSON.stringify({ ...rawProgress(1), extra: true }), session(), authorization(), batch(),
+  ))
+  assert.throws(() => parseMvpBenchmarkProductionExecutionProgressJson(
+    JSON.stringify({ ...rawProgress(1), batchSha256: 'f'.repeat(64) }),
+    session(), authorization(), batch(),
+  ))
+  const skipped = rawProgress(1)
+  skipped.nextItem.ordinal = 2
+  assert.throws(() => parseMvpBenchmarkProductionExecutionProgressJson(
+    JSON.stringify(skipped), session(), authorization(), batch(),
+  ))
+  assert.throws(() => parseMvpBenchmarkProductionExecutionProgressJson(
+    JSON.stringify({ ...rawProgress(5), nextItem: rawProgress(1).nextItem }),
+    session(), authorization(), batch(),
+  ))
+})
+
 test('execution view accepts only strict-JSON branded values and ignores later intrinsic pollution', () => {
   const trusted = parsedStep(1)
   const untrusted = structuredClone(trusted)
+  const trustedProgress = parsedProgress(1)
+  const untrustedProgress = structuredClone(trustedProgress)
   const originalApply = Reflect.apply
   const originalWeakSetHas = WeakSet.prototype.has
   let proxyReads = 0
@@ -192,8 +245,14 @@ test('execution view accepts only strict-JSON branded values and ignores later i
     assert.throws(() => mvpBenchmarkProductionExecutionStepView(
       hostile, session(), authorization(), batch(),
     ))
+    assert.throws(() => mvpBenchmarkProductionExecutionProgressView(
+      untrustedProgress, session(), authorization(), batch(),
+    ))
     assert.equal(mvpBenchmarkProductionExecutionStepView(
       trusted, session(), authorization(), batch(),
+    ).completedCount, 1)
+    assert.equal(mvpBenchmarkProductionExecutionProgressView(
+      trustedProgress, session(), authorization(), batch(),
     ).completedCount, 1)
     assert.equal(proxyReads, 0)
   } finally {
@@ -212,6 +271,7 @@ test('execution state advances by one verified response and never auto-executes'
       ordinals.push(ordinal)
       return new Promise((resolve, reject) => pending.push({ resolve, reject }))
     },
+    getProgress() { throw new Error('unexpected progress read') },
   })
   const first = state.executeNext(session(), authorization(), batch())
   assert.equal(calls, 1)
@@ -234,6 +294,7 @@ test('execution state advances by one verified response and never auto-executes'
   assert.deepEqual(ordinals, [0, 1, 1])
   state.invalidate()
   assert.equal(state.step.value, null)
+  assert.equal(state.progress.value, null)
 })
 
 test('latest execution response wins without advancing from a stale response', async () => {
@@ -242,6 +303,7 @@ test('latest execution response wins without advancing from a stale response', a
     executeNext() {
       return new Promise((resolve, reject) => pending.push({ resolve, reject }))
     },
+    getProgress() { throw new Error('unexpected progress read') },
   })
   const first = state.executeNext(session(), authorization(), batch())
   const second = state.executeNext(session(), authorization(), batch())
@@ -252,6 +314,48 @@ test('latest execution response wins without advancing from a stale response', a
   assert.equal(state.step.value.completedCount, 1)
 })
 
+test('read-only refresh reconstructs a lost receipt and resumes at the exact next item', async () => {
+  const executedOrdinals = []
+  let progressCalls = 0
+  const state = createMvpBenchmarkExecutionState({
+    executeNext(_session, _authorization, _batch, ordinal) {
+      executedOrdinals.push(ordinal)
+      return Promise.resolve(parsedStep(ordinal + 1))
+    },
+    getProgress() {
+      progressCalls += 1
+      return Promise.resolve(parsedProgress(1))
+    },
+  })
+  assert.equal(await state.refresh(session(), authorization(), batch()), true)
+  assert.equal(state.progress.value.completedCount, 1)
+  assert.equal(state.step.value, null)
+  assert.equal(progressCalls, 1)
+  assert.deepEqual(executedOrdinals, [])
+
+  assert.equal(await state.executeNext(session(), authorization(), batch()), true)
+  assert.deepEqual(executedOrdinals, [1])
+  assert.equal(state.step.value.completedCount, 2)
+  assert.equal(state.progress.value, null)
+})
+
+test('stale progress refresh cannot overwrite a newer execution response', async () => {
+  let resolveProgress
+  const state = createMvpBenchmarkExecutionState({
+    executeNext() { return Promise.resolve(parsedStep(1)) },
+    getProgress() {
+      return new Promise((resolve) => { resolveProgress = resolve })
+    },
+  })
+  const refresh = state.refresh(session(), authorization(), batch())
+  const execute = state.executeNext(session(), authorization(), batch())
+  assert.equal(await execute, true)
+  resolveProgress(parsedProgress(0))
+  assert.equal(await refresh, false)
+  assert.equal(state.step.value.completedCount, 1)
+  assert.equal(state.progress.value, null)
+})
+
 test('execution UI requires per-item paid confirmation and exposes no automation or release claim', () => {
   const api = fs.readFileSync(path.resolve('src/api/v2/mvpBenchmarkExecution.js'), 'utf8')
   const panel = fs.readFileSync(
@@ -259,16 +363,22 @@ test('execution UI requires per-item paid confirmation and exposes no automation
   )
   const canvas = fs.readFileSync(path.resolve('src/views/WorkflowCanvas.vue'), 'utf8')
   assert.match(api, /execute-next/u)
+  assert.match(api, /execution-progress/u)
+  assert.match(api, /\.get\(/u)
   assert.match(api, /mvp-benchmark-production-execution-request\.v1/u)
   assert.match(api, /expectedBatchSha256/u)
   assert.match(api, /expectedOrdinal/u)
   assert.match(api, /expectedItemKind/u)
   assert.match(api, /expectedItemUid/u)
   assert.match(panel, /仅执行这一项/u)
+  assert.match(panel, /刷新可信进度/u)
+  assert.match(panel, /刷新不会提交任务/u)
   assert.match(panel, /未结算|尚未归还/u)
   assert.match(canvas, /ElMessageBox\.confirm/u)
   assert.match(canvas, /真实 H3 或 TTS Provider 作业/u)
   assert.match(canvas, /可能消耗 GPU\/API 资源/u)
+  assert.match(canvas, /@refresh="refreshMvpExecution"/u)
+  assert.match(canvas, /本地持久成功证据重建进度/u)
   assert.doesNotMatch(api, /release|accounting|instance/u)
   assert.doesNotMatch(panel, /自动执行|自动归还/u)
   assert.doesNotMatch(api + panel + canvas, /credentialRef|password|secret/u)

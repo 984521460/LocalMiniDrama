@@ -114,6 +114,10 @@ test('local TTS execution seals decoded audio and is idempotent without a second
   assert.equal(validate(first), true, JSON.stringify(validate.errors));
   assert.deepEqual(current.calls, { vault: 1, provider: 1 });
 
+  const persisted = current.service.getPersisted(current.intent.uid, current.intent.dramaUid);
+  assert.deepEqual(persisted, first);
+  assert.deepEqual(current.calls, { vault: 1, provider: 1 });
+
   const reservation = current.outputs.reservation(current.intent, 0);
   assert.deepEqual(await current.storageProvider.read(reservation.locator), current.audio);
   assert.equal(
@@ -221,6 +225,12 @@ test('oversize unknown and completed local audio fail before probe, provider, or
     timeoutMs: 30_000,
     nowEpochMs: Date.now,
   });
+  const persistedWithoutMedia = readOnlyService.getPersisted(
+    completed.intent.uid,
+    completed.intent.dramaUid,
+  );
+  assert.equal(persistedWithoutMedia.intentUid, completed.intent.uid);
+  assert.equal(completedProbeCalls, 0);
   await assert.rejects(
     () => readOnlyService.get(completed.intent.uid),
     { code: 'AUDIO_TTS_EXECUTION_FAILED' },

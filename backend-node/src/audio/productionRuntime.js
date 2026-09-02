@@ -99,6 +99,9 @@ function createProductionAudioTtsRuntime({ database, localRoot, dependencies: va
     get(intentUid, dramaUid) {
       return service.get(intentUid, dramaUid);
     },
+    getPersisted(intentUid, dramaUid) {
+      return service.getPersisted(intentUid, dramaUid);
+    },
   });
   return Object.freeze({
     audioTts: Object.freeze({ credentialVault, outputs, service: guardedService }),
