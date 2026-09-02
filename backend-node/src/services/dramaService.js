@@ -302,6 +302,7 @@ function rowToDrama(r) {
   }
   return {
     id: r.id,
+    uid: r.uid,
     title: r.title,
     description: r.description,
     genre: r.genre,
@@ -399,6 +400,7 @@ function rowToStoryboard(r) {
 function rowToCharacter(r) {
   return {
     id: r.id,
+    uid: r.uid,
     drama_id: r.drama_id,
     name: r.name,
     role: r.role,

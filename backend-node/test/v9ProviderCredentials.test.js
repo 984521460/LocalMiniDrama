@@ -328,6 +328,7 @@ test('production audio runtime exposes the exact vault instance used by TTS', (t
     dependencies: { credentialVault },
   });
   assert.equal(runtime.audioTts.credentialVault, credentialVault);
+  assert.equal(runtime.voiceProfiles.credentialVault, credentialVault);
 });
 
 test('production app applies the provider credential body cap before the global JSON parser', async (t) => {

@@ -57,6 +57,9 @@ function createCharacterVersionRepository(database) {
   function mapPersisted(kind, row) {
     try {
       const metadata = JSON.parse(row.metadata_json);
+      if (JSON.stringify(metadata) !== row.metadata_json) {
+        throw new TypeError('character version metadata is not canonical');
+      }
       return createCharacterVersionRecord({
         schemaVersion: '5.0',
         kind,
@@ -72,6 +75,53 @@ function createCharacterVersionRepository(database) {
     }
   }
 
+  function validateLineage(kind, rows, characterUid) {
+    const records = [];
+    const byUid = Object.create(null);
+    for (let index = 0; index < rows.length; index += 1) {
+      const record = mapPersisted(kind, rows[index]);
+      if (record.characterUid !== characterUid || Object.hasOwn(byUid, record.uid)) {
+        throw new V2RepositoryDataError(`character ${kind} version`, 'owner lineage');
+      }
+      records.push(record);
+      byUid[record.uid] = record;
+    }
+    let identities = null;
+    if (kind !== 'identity') {
+      identities = Object.create(null);
+      const identityRows = getStatements().identity.list.all(characterUid);
+      const identityRecords = validateLineage('identity', identityRows, characterUid);
+      for (let index = 0; index < identityRecords.length; index += 1) {
+        identities[identityRecords[index].uid] = identityRecords[index];
+      }
+    }
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      if (identities && !Object.hasOwn(identities, record.identityVersionUid)) {
+        throw new V2RepositoryDataError(`character ${kind} version`, 'identity lineage');
+      }
+      const seen = Object.create(null);
+      let current = record;
+      while (current.parentUid !== null) {
+        if (Object.hasOwn(seen, current.uid)) {
+          throw new V2RepositoryDataError(`character ${kind} version`, 'parent lineage');
+        }
+        seen[current.uid] = true;
+        const parent = byUid[current.parentUid];
+        if (
+          !parent
+          || parent.characterUid !== characterUid
+          || parent.createdAtEpochMs > current.createdAtEpochMs
+          || (kind !== 'identity' && parent.identityVersionUid !== current.identityVersionUid)
+        ) {
+          throw new V2RepositoryDataError(`character ${kind} version`, 'parent lineage');
+        }
+        current = parent;
+      }
+    }
+    return freezeSnapshot(records);
+  }
+
   function get(kind, uid) {
     const canonicalKind = assertKind(kind);
     const prepared = getStatements();
@@ -80,33 +130,58 @@ function createCharacterVersionRepository(database) {
       `character ${canonicalKind} version`,
       uid,
     );
-    return mapPersisted(canonicalKind, row);
+    const initial = mapPersisted(canonicalKind, row);
+    const records = list(canonicalKind, initial.characterUid);
+    let matched = null;
+    for (let index = 0; index < records.length; index += 1) {
+      if (records[index].uid === initial.uid) matched = records[index];
+    }
+    if (!matched) {
+      throw new V2RepositoryDataError(`character ${canonicalKind} version`, 'owner lineage');
+    }
+    return matched;
   }
 
   function list(kind, characterUid) {
     const canonicalKind = assertKind(kind);
     const prepared = getStatements();
-    return freezeSnapshot(
-      prepared[canonicalKind].list.all(characterUid)
-        .map((row) => mapPersisted(canonicalKind, row)),
+    return validateLineage(
+      canonicalKind,
+      prepared[canonicalKind].list.all(characterUid),
+      characterUid,
     );
   }
+
+  const createTransaction = database.transaction((record) => {
+    list(record.kind, record.characterUid);
+    const prepared = getStatements();
+    prepared[record.kind].insert.run({
+      uid: record.uid,
+      characterUid: record.characterUid,
+      ...(record.kind === 'identity' ? {} : { identityVersionUid: record.identityVersionUid }),
+      parentUid: record.parentUid,
+      metadataJson: JSON.stringify(record.metadata),
+      createdAtEpochMs: record.createdAtEpochMs ?? null,
+    });
+    const records = list(record.kind, record.characterUid);
+    let created = null;
+    for (let index = 0; index < records.length; index += 1) {
+      if (records[index].uid === record.uid) created = records[index];
+    }
+    if (!created) {
+      throw new V2RepositoryDataError(`character ${record.kind} version`, 'created record');
+    }
+    return created;
+  });
 
   return Object.freeze({
     create(value) {
       const record = createCharacterVersionRecord(value);
-      const prepared = getStatements();
-      executeWrite(`character ${record.kind} version`, 'created', () => {
-        prepared[record.kind].insert.run({
-          uid: record.uid,
-          characterUid: record.characterUid,
-          ...(record.kind === 'identity' ? {} : { identityVersionUid: record.identityVersionUid }),
-          parentUid: record.parentUid,
-          metadataJson: JSON.stringify(record.metadata),
-          createdAtEpochMs: record.createdAtEpochMs ?? null,
-        });
-      });
-      return get(record.kind, record.uid);
+      return executeWrite(
+        `character ${record.kind} version`,
+        'created',
+        () => createTransaction(record),
+      );
     },
 
     get,

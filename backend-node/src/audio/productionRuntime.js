@@ -103,6 +103,7 @@ function createProductionAudioTtsRuntime({ database, localRoot, dependencies: va
   return Object.freeze({
     audioTts: Object.freeze({ credentialVault, outputs, service: guardedService }),
     audio: Object.freeze({ tts: guardedService }),
+    voiceProfiles: Object.freeze({ credentialVault, timeoutMs }),
   });
 }
 

@@ -243,6 +243,13 @@
                   <div class="drama-res-desc">{{ (item.description || item.prompt || '').slice(0, 80) }}</div>
                   <div class="drama-res-actions">
                     <el-button size="small" @click="openEditDramaChar(item)">编辑</el-button>
+                    <el-button
+                      size="small"
+                      type="primary"
+                      plain
+                      :disabled="!drama?.uid || !item.uid"
+                      @click="openVoiceProfileConfiguration(item)"
+                    >音色配置</el-button>
                   </div>
                 </div>
               </div>
@@ -302,6 +309,20 @@
         </template>
       </section>
     </main>
+
+    <el-dialog
+      v-model="voiceProfileVisible"
+      :title="`${voiceProfileCharacter?.name || '角色'} · 音色配置`"
+      width="min(920px, 94vw)"
+      destroy-on-close
+      @closed="voiceProfileCharacter = null"
+    >
+      <CharacterVoiceProfilePanel
+        v-if="voiceProfileCharacter && drama?.uid"
+        :drama-uid="drama.uid"
+        :character="voiceProfileCharacter"
+      />
+    </el-dialog>
 
     <!-- 制作角色 编辑 -->
     <el-dialog v-model="editDramaCharVisible" title="编辑制作角色" width="500px" @close="editDramaCharForm = null">
@@ -535,6 +556,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { PRODUCT_NAME } from '@/config/productIdentity'
 import { ArrowLeft, Connection, VideoPlay, Plus, Delete, Sunny, Moon, PictureFilled, Grid, Document } from '@element-plus/icons-vue'
 import EpisodeBatchImportDialog from '@/components/EpisodeBatchImportDialog.vue'
+import CharacterVoiceProfilePanel from '@/components/CharacterVoiceProfilePanel.vue'
 import StylePickerButton from '@/components/StylePickerButton.vue'
 import { useTheme } from '@/composables/useTheme'
 import { dramaAPI } from '@/api/drama'
@@ -572,6 +594,8 @@ const dramaPropFileRef  = ref(null)
 const editDramaCharVisible = ref(false)
 const editDramaCharForm    = ref(null)
 const editDramaCharSaving  = ref(false)
+const voiceProfileVisible = ref(false)
+const voiceProfileCharacter = ref(null)
 
 const editDramaSceneVisible = ref(false)
 const editDramaSceneForm    = ref(null)
@@ -922,6 +946,15 @@ function saveInfo() {
 
 function goCreate() {
   router.push(`/film/${dramaId}`)
+}
+
+function openVoiceProfileConfiguration(item) {
+  if (!drama.value?.uid || !item?.uid) {
+    ElMessage.warning('当前角色缺少 v2 身份标识，无法配置固定音色')
+    return
+  }
+  voiceProfileCharacter.value = item
+  voiceProfileVisible.value = true
 }
 
 function goNarrative() {

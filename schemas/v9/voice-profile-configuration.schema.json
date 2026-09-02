@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.example/schemas/v9/voice-profile-configuration.schema.json",
+  "title": "VoiceProfileConfigurationStateV9",
+  "$comment": "Secret-free configuration projection. Character-version lineage, active selection history, and current credential availability are revalidated by backend runtime and SQLite; this schema only describes the public transport structure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "dramaUid",
+    "characterUid",
+    "identityVersions",
+    "voiceVersions",
+    "profiles",
+    "active"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "voice-profile-configuration.v1"},
+    "dramaUid": {"$ref": "#/$defs/uid"},
+    "characterUid": {"$ref": "#/$defs/uid"},
+    "identityVersions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "https://local-mini-drama.example/schemas/v5/character-version.schema.json#/$defs/identity"
+      }
+    },
+    "voiceVersions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "https://local-mini-drama.example/schemas/v5/character-version.schema.json#/$defs/voice"
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "https://local-mini-drama.example/schemas/v8/voice-profile.schema.json"
+      }
+    },
+    "active": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/active"}
+      ]
+    }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "active": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileUid", "stateVersion", "changedAtEpochMs"],
+      "properties": {
+        "profileUid": {"$ref": "#/$defs/uid"},
+        "stateVersion": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "changedAtEpochMs": {"type": "integer", "minimum": 0, "maximum": 253402300799999}
+      }
+    }
+  }
+}

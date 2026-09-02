@@ -1,29 +1,45 @@
-const { randomUUID } = require('node:crypto');
 const express = require('express');
 
 const {
-  createVoiceProfileActivationRequest,
-  createVoiceProfilePublicRecord,
-  createVoiceProfileRequest,
-} = require('../../audio/voiceProfile');
+  createVoiceProfileConfigurationService,
+  getVoiceProfileConfigurationErrorCode,
+} = require('../../audio/voiceProfileConfigurationService');
 const response = require('../../response');
 const {
-  createV2Repositories,
   V2RepositoryConflictError,
   V2RepositoryDataError,
   V2RepositoryNotFoundError,
 } = require('../../repositories/v2');
 
+function dataProperty(value, name) {
+  if (!value || typeof value !== 'object') return undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, name);
+    return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function voiceProfileRoutes(log, runtime = {}, database) {
   const router = express.Router();
-  const repository = database ? createV2Repositories(database).voiceProfiles : null;
-  const createProfileUid = typeof runtime.createProfileUid === 'function'
-    ? runtime.createProfileUid
-    : randomUUID;
-  const createSelectionUid = typeof runtime.createSelectionUid === 'function'
-    ? runtime.createSelectionUid
-    : randomUUID;
-  const nowEpochMs = typeof runtime.nowEpochMs === 'function' ? runtime.nowEpochMs : Date.now;
+  let service = null;
+  if (database) {
+    try {
+      service = createVoiceProfileConfigurationService({
+        database,
+        credentialVault: dataProperty(runtime, 'credentialVault'),
+        createUid: dataProperty(runtime, 'createUid'),
+        createVersionUid: dataProperty(runtime, 'createVersionUid'),
+        createProfileUid: dataProperty(runtime, 'createProfileUid'),
+        createSelectionUid: dataProperty(runtime, 'createSelectionUid'),
+        nowEpochMs: dataProperty(runtime, 'nowEpochMs'),
+        timeoutMs: dataProperty(runtime, 'timeoutMs'),
+      });
+    } catch {
+      service = null;
+    }
+  }
 
   function unavailable(res) {
     return response.error(
@@ -35,6 +51,15 @@ function voiceProfileRoutes(log, runtime = {}, database) {
   }
 
   function knownError(res, error) {
+    const configurationCode = getVoiceProfileConfigurationErrorCode(error);
+    if (configurationCode === 'VOICE_PROFILE_CREDENTIAL_INVALID') {
+      response.error(res, 409, configurationCode, 'Voice profile credential is invalid');
+      return true;
+    }
+    if (configurationCode === 'VOICE_PROFILE_CREDENTIAL_UNAVAILABLE') {
+      response.error(res, 503, configurationCode, 'Voice profile credential state is unavailable');
+      return true;
+    }
     if (error instanceof V2RepositoryNotFoundError) {
       response.error(res, 404, 'VOICE_PROFILE_NOT_FOUND', 'Voice profile was not found');
       return true;
@@ -54,52 +79,68 @@ function voiceProfileRoutes(log, runtime = {}, database) {
     return response.error(res, 400, 'VOICE_PROFILE_INPUT_INVALID', 'Voice profile request is invalid');
   }
 
-  function matchesRoute(record, req) {
-    return record.dramaUid === req.params.dramaUid
-      && record.characterUid === req.params.characterUid;
-  }
-
-  router.post('/dramas/:dramaUid/characters/:characterUid/voice-profiles', (req, res) => {
-    if (!repository) return unavailable(res);
+  router.get('/dramas/:dramaUid/characters/:characterUid/voice-configuration', (req, res) => {
+    if (!service) return unavailable(res);
     try {
-      const request = createVoiceProfileRequest(req.body);
-      const profile = repository.create({
-        schemaVersion: '8.0',
-        uid: createProfileUid(),
-        dramaUid: req.params.dramaUid,
-        characterUid: req.params.characterUid,
-        characterVoiceVersionUid: request.characterVoiceVersionUid,
-        parentUid: request.parentUid,
-        revision: request.revision,
-        provider: request.provider,
-        model: request.model,
-        voiceKey: request.voiceKey,
-        credentialRef: request.credentialRef,
-        sourceKind: 'provider-preset',
-        status: 'ready',
-        defaultEmotion: request.defaultEmotion,
-        emotionMap: request.emotionMap,
-        minimumSpeedPermille: request.minimumSpeedPermille,
-        defaultSpeedPermille: request.defaultSpeedPermille,
-        maximumSpeedPermille: request.maximumSpeedPermille,
-        createdAtEpochMs: nowEpochMs(),
-      });
-      return response.created(res, createVoiceProfilePublicRecord(profile));
+      return response.success(
+        res,
+        service.getState(req.params.dramaUid, req.params.characterUid),
+      );
     } catch (error) {
       if (knownError(res, error)) return undefined;
       if (error instanceof TypeError) return inputError(res);
-      log?.error?.('voice-profile-create-unexpected', { code: 'VOICE_PROFILE_UNEXPECTED' });
+      return response.error(res, 500, 'VOICE_PROFILE_UNEXPECTED', 'Voice profile operation failed');
+    }
+  });
+
+  router.post('/dramas/:dramaUid/characters/:characterUid/identity-versions', (req, res) => {
+    if (!service) return unavailable(res);
+    try {
+      return response.created(res, service.createIdentityVersion(
+        req.params.dramaUid, req.params.characterUid, req.body,
+      ));
+    } catch (error) {
+      if (knownError(res, error)) return undefined;
+      if (error instanceof TypeError) return inputError(res);
+      return response.error(res, 500, 'VOICE_PROFILE_UNEXPECTED', 'Voice profile operation failed');
+    }
+  });
+
+  router.post('/dramas/:dramaUid/characters/:characterUid/voice-versions', (req, res) => {
+    if (!service) return unavailable(res);
+    try {
+      return response.created(res, service.createVoiceVersion(
+        req.params.dramaUid, req.params.characterUid, req.body,
+      ));
+    } catch (error) {
+      if (knownError(res, error)) return undefined;
+      if (error instanceof TypeError) return inputError(res);
+      return response.error(res, 500, 'VOICE_PROFILE_UNEXPECTED', 'Voice profile operation failed');
+    }
+  });
+
+  router.post('/dramas/:dramaUid/characters/:characterUid/voice-profiles', async (req, res) => {
+    if (!service) return unavailable(res);
+    try {
+      const profile = await service.createProfile(
+        req.params.dramaUid, req.params.characterUid, req.body,
+      );
+      return response.created(res, profile);
+    } catch (error) {
+      if (knownError(res, error)) return undefined;
+      if (error instanceof TypeError) return inputError(res);
+      try { log?.error?.('voice-profile-create-unexpected', { code: 'VOICE_PROFILE_UNEXPECTED' }); } catch { /* fixed */ }
       return response.error(res, 500, 'VOICE_PROFILE_UNEXPECTED', 'Voice profile operation failed');
     }
   });
 
   router.get('/dramas/:dramaUid/characters/:characterUid/voice-profiles', (req, res) => {
-    if (!repository) return unavailable(res);
+    if (!service) return unavailable(res);
     try {
-      const profiles = repository.list(req.params.characterUid)
-        .filter((profile) => profile.dramaUid === req.params.dramaUid)
-        .map(createVoiceProfilePublicRecord);
-      return response.success(res, Object.freeze(profiles));
+      return response.success(
+        res,
+        service.getState(req.params.dramaUid, req.params.characterUid).profiles,
+      );
     } catch (error) {
       if (knownError(res, error)) return undefined;
       return inputError(res);
@@ -107,16 +148,12 @@ function voiceProfileRoutes(log, runtime = {}, database) {
   });
 
   router.get('/dramas/:dramaUid/characters/:characterUid/voice-profiles/active', (req, res) => {
-    if (!repository) return unavailable(res);
+    if (!service) return unavailable(res);
     try {
-      const active = repository.getActive(req.params.characterUid);
-      if (!active || !matchesRoute(active.profile, req)) {
-        return response.error(res, 404, 'VOICE_PROFILE_NOT_FOUND', 'Voice profile was not found');
-      }
-      return response.success(res, Object.freeze({
-        selection: active.selection,
-        profile: createVoiceProfilePublicRecord(active.profile),
-      }));
+      return response.success(
+        res,
+        service.getActive(req.params.dramaUid, req.params.characterUid),
+      );
     } catch (error) {
       if (knownError(res, error)) return undefined;
       return inputError(res);
@@ -124,13 +161,11 @@ function voiceProfileRoutes(log, runtime = {}, database) {
   });
 
   router.get('/dramas/:dramaUid/characters/:characterUid/voice-profiles/:profileUid', (req, res) => {
-    if (!repository) return unavailable(res);
+    if (!service) return unavailable(res);
     try {
-      const profile = repository.get(req.params.profileUid);
-      if (!matchesRoute(profile, req)) {
-        return response.error(res, 404, 'VOICE_PROFILE_NOT_FOUND', 'Voice profile was not found');
-      }
-      return response.success(res, createVoiceProfilePublicRecord(profile));
+      return response.success(res, service.getProfile(
+        req.params.dramaUid, req.params.characterUid, req.params.profileUid,
+      ));
     } catch (error) {
       if (knownError(res, error)) return undefined;
       return inputError(res);
@@ -139,37 +174,19 @@ function voiceProfileRoutes(log, runtime = {}, database) {
 
   router.post(
     '/dramas/:dramaUid/characters/:characterUid/voice-profiles/:profileUid/activate',
-    (req, res) => {
-      if (!repository) return unavailable(res);
+    async (req, res) => {
+      if (!service) return unavailable(res);
       try {
-        const request = createVoiceProfileActivationRequest(req.body);
-        const profile = repository.get(req.params.profileUid);
-        if (!matchesRoute(profile, req)) {
-          return response.error(res, 404, 'VOICE_PROFILE_NOT_FOUND', 'Voice profile was not found');
-        }
-        const current = repository.getActive(req.params.characterUid);
-        const currentStateVersion = current?.selection.stateVersion ?? 0;
-        if (request.expectedStateVersion !== currentStateVersion) {
-          throw new V2RepositoryConflictError('voice profile selection', 'created');
-        }
-        const selection = repository.activate({
-          schemaVersion: '8.0',
-          uid: createSelectionUid(),
-          dramaUid: req.params.dramaUid,
-          characterUid: req.params.characterUid,
-          voiceProfileUid: profile.uid,
-          previousVoiceProfileUid: current?.profile.uid ?? null,
-          stateVersion: currentStateVersion + 1,
-          changedAtEpochMs: nowEpochMs(),
-        });
-        return response.created(res, Object.freeze({
-          selection,
-          profile: createVoiceProfilePublicRecord(profile),
-        }));
+        return response.created(res, await service.activateProfile(
+          req.params.dramaUid,
+          req.params.characterUid,
+          req.params.profileUid,
+          req.body,
+        ));
       } catch (error) {
         if (knownError(res, error)) return undefined;
         if (error instanceof TypeError) return inputError(res);
-        log?.error?.('voice-profile-activate-unexpected', { code: 'VOICE_PROFILE_UNEXPECTED' });
+        try { log?.error?.('voice-profile-activate-unexpected', { code: 'VOICE_PROFILE_UNEXPECTED' }); } catch { /* fixed */ }
         return response.error(res, 500, 'VOICE_PROFILE_UNEXPECTED', 'Voice profile operation failed');
       }
     },

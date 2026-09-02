@@ -596,6 +596,11 @@ test('localhost routes create, activate, and list public fixed-voice DTOs', asyn
   const app = express();
   app.use(express.json({ limit: '32kb' }));
   app.use(voiceProfileRoutes(null, {
+    credentialVault: Object.freeze({
+      inspect(ref) {
+        return Promise.resolve(Object.freeze({ ref, kind: 'api_key', configured: true }));
+      },
+    }),
     createProfileUid: () => uid(80040),
     createSelectionUid: () => uid(80041),
     nowEpochMs: () => 10,
