@@ -129,6 +129,13 @@
               :error="mvpAuthorization.error.value || ''"
               @authorize="authorizeMvpSession"
             />
+            <MvpBenchmarkPreflightPanel
+              :authorization="mvpAuthorization.authorization.value"
+              :batch="mvpPreflight.batch.value"
+              :busy="mvpPreflight.busy.value"
+              :error="mvpPreflight.error.value || ''"
+              @preflight="preflightMvpSession"
+            />
             <MvpBenchmarkReadinessPanel
               :readiness="mvpReadiness.readiness.value"
               :busy="mvpReadiness.busy.value"
@@ -177,10 +184,12 @@ import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
+import MvpBenchmarkPreflightPanel from '@/components/benchmark/MvpBenchmarkPreflightPanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
+import { useMvpBenchmarkPreflight } from '@/composables/useMvpBenchmarkPreflight'
 import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
 import { useTheme } from '@/composables/useTheme'
 import { useWorkflowCanvas } from '@/composables/useWorkflowCanvas'
@@ -193,6 +202,7 @@ const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
 const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
+const mvpPreflight = useMvpBenchmarkPreflight()
 const mvpSession = useMvpBenchmarkSession()
 
 const drama = ref(null)
@@ -380,9 +390,33 @@ async function authorizeMvpSession(seed) {
     return
   }
   if (await mvpAuthorization.authorize(session, seed.connectionUid, seed)) {
+    mvpPreflight.invalidate()
     ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
   } else {
     ElMessage.error('本地授权创建失败')
+  }
+}
+
+async function preflightMvpSession() {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  if (!session || !authorization) {
+    ElMessage.error('请先创建有效的本地外部授权记录')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认运行 live preflight？连接：${authorization.connectionUid}；授权费用上限：¥${(authorization.maximumCostCnyFen / 100).toFixed(2)}；授权失效：${new Date(authorization.expiresAtEpochMs).toLocaleString()}。本动作将读取本地 Vault 中该连接的凭据并发起 SSH 环境检查，同时写入本地预检、预约和归还义务证据；不会提交 H3/TTS Provider 作业，不会创建或租用 GPU 实例，也不会产生模型生成费用。`,
+      '确认 live 环境预检',
+      { type: 'warning', confirmButtonText: '确认预检', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  if (await mvpPreflight.preflight(session, authorization)) {
+    ElMessage.success('live preflight 已完成；尚未执行任何生成任务')
+  } else {
+    ElMessage.error('live preflight 失败')
   }
 }
 
@@ -411,6 +445,7 @@ watch(
   () => {
     mvpSession.invalidate()
     mvpAuthorization.invalidate()
+    mvpPreflight.invalidate()
   },
 )
 
@@ -430,6 +465,7 @@ onBeforeUnmount(() => {
   mediaExports.invalidate()
   mvpReadiness.invalidate()
   mvpAuthorization.invalidate()
+  mvpPreflight.invalidate()
   mvpSession.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })

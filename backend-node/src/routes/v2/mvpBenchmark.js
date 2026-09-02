@@ -363,8 +363,7 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     async (req, res) => {
       try {
         const authorization = pathAuthorization(req.params);
-        if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)
-          || Reflect.ownKeys(req.body).length !== 0) {
+        if (!exactEmptyBody(req.body)) {
           return response.error(res, 400, 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_INPUT_INVALID', 'MVP benchmark execution preflight request is invalid');
         }
         const configured = preflightService();
@@ -399,8 +398,7 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/execute-next',
     async (req, res) => {
       try {
-        if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)
-          || Reflect.ownKeys(req.body).length !== 0) {
+        if (!exactEmptyBody(req.body)) {
           return response.error(
             res, 400, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_INPUT_INVALID',
             'MVP benchmark production execution input is invalid',
