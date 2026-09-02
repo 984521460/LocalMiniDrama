@@ -17,6 +17,9 @@ const {
   V2RepositoryConflictError,
   V2RepositoryDataError,
 } = require('../src/repositories/v2');
+const {
+  createMvpBenchmarkSessionRepository,
+} = require('../src/repositories/v2/mvpBenchmarkSessionRepository');
 const mvpBenchmarkRoutes = require('../src/routes/v2/mvpBenchmark');
 const sessionSchema = require('../../schemas/v9/mvp-benchmark-session.schema.json');
 const { createMvpBenchmarkSessionFixture } = require('./helpers/v9MvpBenchmarkSessionFixture');
@@ -28,6 +31,60 @@ async function listen(app) {
       server,
       base: `http://127.0.0.1:${server.address().port}`,
     }));
+  });
+}
+
+function makeCurrentReplacement(current, replacementVersionUid) {
+  const intent = current.h3Intents[0];
+  current.repositories.assets.addVersion({
+    uid: replacementVersionUid,
+    assetUid: intent.assetUid,
+    storageProvider: 'local',
+    logicalUri:
+      `asset://dramas/${current.dramaUid}/benchmark/video/${intent.assetUid}/${replacementVersionUid}`,
+    relativePath:
+      `projects/${current.dramaUid}/assets/video/${intent.assetUid}/${replacementVersionUid}.mp4`,
+    sha256: '9'.repeat(64),
+    mimeType: 'video/mp4',
+    width: 608,
+    height: 352,
+    durationMs: 1625,
+    parentUid: intent.parentVersionUid,
+    status: 'ready',
+  }, { makeCurrent: true });
+}
+
+function activateReplacementVoiceProfile(current, profileUid, selectionUid) {
+  const replacement = current.repositories.voiceProfiles.create({
+    schemaVersion: current.profile.schemaVersion,
+    uid: profileUid,
+    dramaUid: current.profile.dramaUid,
+    characterUid: current.profile.characterUid,
+    characterVoiceVersionUid: current.profile.characterVoiceVersionUid,
+    parentUid: current.profile.uid,
+    revision: 2,
+    provider: current.profile.provider,
+    model: current.profile.model,
+    voiceKey: 'replacement-voice',
+    credentialRef: current.profile.credentialRef,
+    sourceKind: current.profile.sourceKind,
+    status: current.profile.status,
+    defaultEmotion: current.profile.defaultEmotion,
+    emotionMap: current.profile.emotionMap,
+    minimumSpeedPermille: current.profile.minimumSpeedPermille,
+    defaultSpeedPermille: current.profile.defaultSpeedPermille,
+    maximumSpeedPermille: current.profile.maximumSpeedPermille,
+    createdAtEpochMs: 60,
+  });
+  current.repositories.voiceProfiles.activate({
+    schemaVersion: '8.0',
+    uid: selectionUid,
+    dramaUid: current.profile.dramaUid,
+    characterUid: current.profile.characterUid,
+    voiceProfileUid: replacement.uid,
+    previousVoiceProfileUid: current.profile.uid,
+    stateVersion: 2,
+    changedAtEpochMs: 61,
   });
 }
 
@@ -133,6 +190,217 @@ test('real repositories prepare one immutable same-workflow benchmark session', 
     /immutable/u,
   );
   assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 1);
+});
+
+test('real repositories derive one idempotent benchmark session from a queued workflow run', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const first = current.repositories.mvpBenchmarkSessions.prepareFromWorkflow({
+    uid: uid(99730),
+    dramaUid: current.dramaUid,
+    workflowRunUid: current.run.run.uid,
+    createdAtEpochMs: current.request.createdAtEpochMs,
+  });
+  assert.equal(first.schemaVersion, 'mvp-benchmark-session-plan.v1');
+  assert.equal(first.dramaUid, current.dramaUid);
+  assert.equal(first.workflowRunUid, current.run.run.uid);
+  assert.deepEqual(
+    first.h3Tasks.map((item) => item.taskUid).sort(),
+    structuredClone(current.request.h3TaskUids).sort(),
+  );
+  assert.deepEqual(
+    first.audioIntents.map((item) => item.intentUid).sort(),
+    structuredClone(current.request.audioIntentUids).sort(),
+  );
+
+  const second = current.repositories.mvpBenchmarkSessions.prepareFromWorkflow({
+    uid: uid(99731),
+    dramaUid: current.dramaUid,
+    workflowRunUid: current.run.run.uid,
+    createdAtEpochMs: current.request.createdAtEpochMs + 1,
+  });
+  assert.deepEqual(second, first);
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 1);
+  assert.equal(current.database.prepare('SELECT count(*) FROM generation_runs').pluck().get(), 0);
+  assert.equal(current.database.prepare('SELECT count(*) FROM audio_tts_submissions').pluck().get(), 0);
+  assert.equal(current.database.prepare('SELECT count(*) FROM audio_tts_outputs').pluck().get(), 0);
+});
+
+test('automatic session derivation fails atomically when a required source is no longer queued', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const audioIntent = current.repositories.audioModeIntents.get(current.request.audioIntentUids[0]);
+  current.repositories.runs.transitionNodeStatus({
+    uid: audioIntent.nodeRunUid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+    inputSnapshot: {},
+  });
+  assert.throws(
+    () => current.repositories.mvpBenchmarkSessions.prepareFromWorkflow({
+      uid: uid(99732),
+      dramaUid: current.dramaUid,
+      workflowRunUid: current.run.run.uid,
+      createdAtEpochMs: current.request.createdAtEpochMs,
+    }),
+    (error) => error instanceof V2RepositoryConflictError,
+  );
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
+});
+
+test('automatic session derivation rejects H3 assets whose frozen parent is no longer current', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  makeCurrentReplacement(current, uid(99734));
+  assert.throws(
+    () => current.repositories.mvpBenchmarkSessions.prepareFromWorkflow({
+      uid: uid(99735),
+      dramaUid: current.dramaUid,
+      workflowRunUid: current.run.run.uid,
+      createdAtEpochMs: current.request.createdAtEpochMs,
+    }),
+    (error) => error instanceof V2RepositoryConflictError,
+  );
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
+});
+
+test('automatic session assembly rolls back a current-source drift before insert', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const originalIntent = current.h3Intents[0];
+  let shifted = false;
+  const repository = createMvpBenchmarkSessionRepository(current.database, {
+    assets: current.repositories.assets,
+    audioModeIntents: current.repositories.audioModeIntents,
+    h3GenerationIntents: Object.freeze({
+      getExecutionSource(taskUid) {
+        const intent = current.repositories.h3GenerationIntents.getExecutionSource(taskUid);
+        if (!shifted) {
+          shifted = true;
+          makeCurrentReplacement(current, uid(99735));
+        }
+        return intent;
+      },
+    }),
+    remote: current.repositories.remote,
+    runs: current.repositories.runs,
+    workflows: current.repositories.workflows,
+  });
+
+  assert.throws(
+    () => repository.prepareFromWorkflow({
+      uid: uid(99736),
+      dramaUid: current.dramaUid,
+      workflowRunUid: current.run.run.uid,
+      createdAtEpochMs: current.request.createdAtEpochMs,
+    }),
+    (error) => error instanceof V2RepositoryConflictError,
+  );
+  assert.equal(shifted, true);
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
+  assert.equal(
+    current.repositories.assets.get(originalIntent.assetUid).currentVersionUid,
+    originalIntent.parentVersionUid,
+  );
+  assert.equal(current.database.prepare('SELECT count(*) FROM asset_versions WHERE uid=?')
+    .pluck().get(uid(99735)), 0);
+});
+
+test('database rejects a session insert after its current H3 source drifts', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const row = current.database.prepare('SELECT * FROM mvp_benchmark_sessions WHERE uid=?')
+    .get(session.uid);
+  current.database.exec('DROP TRIGGER v2_mvp_benchmark_sessions_append_only');
+  current.database.prepare('DELETE FROM mvp_benchmark_sessions WHERE uid=?').run(session.uid);
+  makeCurrentReplacement(current, uid(99738));
+
+  assert.throws(
+    () => current.database.prepare(`
+      INSERT INTO mvp_benchmark_sessions
+        (uid,drama_uid,workflow_run_uid,request_json,plan_json,plan_sha256,created_at_epoch_ms)
+      VALUES (?,?,?,?,?,?,?)
+    `).run(
+      row.uid,
+      row.drama_uid,
+      row.workflow_run_uid,
+      row.request_json,
+      row.plan_json,
+      row.plan_sha256,
+      row.created_at_epoch_ms,
+    ),
+    /current sources invalid/u,
+  );
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
+});
+
+test('database rejects a session insert after its active VoiceProfile drifts', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const row = current.database.prepare('SELECT * FROM mvp_benchmark_sessions WHERE uid=?')
+    .get(session.uid);
+  current.database.exec('DROP TRIGGER v2_mvp_benchmark_sessions_append_only');
+  current.database.prepare('DELETE FROM mvp_benchmark_sessions WHERE uid=?').run(session.uid);
+  activateReplacementVoiceProfile(current, uid(99739), uid(99740));
+
+  assert.throws(
+    () => current.database.prepare(`
+      INSERT INTO mvp_benchmark_sessions
+        (uid,drama_uid,workflow_run_uid,request_json,plan_json,plan_sha256,created_at_epoch_ms)
+      VALUES (?,?,?,?,?,?,?)
+    `).run(
+      row.uid,
+      row.drama_uid,
+      row.workflow_run_uid,
+      row.request_json,
+      row.plan_json,
+      row.plan_sha256,
+      row.created_at_epoch_ms,
+    ),
+    /current sources invalid/u,
+  );
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
+});
+
+test('session read fails closed when an H3 frozen parent asset stops being current', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepareFromWorkflow({
+    uid: uid(99736),
+    dramaUid: current.dramaUid,
+    workflowRunUid: current.run.run.uid,
+    createdAtEpochMs: current.request.createdAtEpochMs,
+  });
+  makeCurrentReplacement(current, uid(99737));
+  assert.throws(
+    () => current.repositories.mvpBenchmarkSessions.get(session.uid),
+    (error) => error instanceof V2RepositoryDataError,
+  );
+});
+
+test('automatic session seed rejects Proxy and accessor values without executing traps', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  let reads = 0;
+  const proxy = new Proxy({}, {
+    ownKeys() { reads += 1; throw new Error('workflow-session-proxy-sentinel'); },
+  });
+  assert.throws(
+    () => current.repositories.mvpBenchmarkSessions.prepareFromWorkflow(proxy),
+    TypeError,
+  );
+  assert.equal(reads, 0);
+
+  const accessor = {
+    uid: uid(99733),
+    dramaUid: current.dramaUid,
+    workflowRunUid: current.run.run.uid,
+    createdAtEpochMs: current.request.createdAtEpochMs,
+  };
+  Object.defineProperty(accessor, 'uid', {
+    enumerable: true,
+    get() { reads += 1; return uid(99733); },
+  });
+  assert.throws(
+    () => current.repositories.mvpBenchmarkSessions.prepareFromWorkflow(accessor),
+    TypeError,
+  );
+  assert.equal(reads, 0);
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
 });
 
 test('session read fails closed after persisted plan drift even when its update guard is absent', (t) => {
@@ -262,37 +530,7 @@ test('session read fails closed after its frozen remote connection evidence chan
 test('session read fails closed after the active VoiceProfile changes', (t) => {
   const current = createMvpBenchmarkSessionFixture(t);
   const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
-  const replacement = current.repositories.voiceProfiles.create({
-    schemaVersion: current.profile.schemaVersion,
-    uid: uid(99720),
-    dramaUid: current.profile.dramaUid,
-    characterUid: current.profile.characterUid,
-    characterVoiceVersionUid: current.profile.characterVoiceVersionUid,
-    parentUid: current.profile.uid,
-    revision: 2,
-    provider: current.profile.provider,
-    model: current.profile.model,
-    voiceKey: 'replacement-voice',
-    credentialRef: current.profile.credentialRef,
-    sourceKind: current.profile.sourceKind,
-    status: current.profile.status,
-    defaultEmotion: current.profile.defaultEmotion,
-    emotionMap: current.profile.emotionMap,
-    minimumSpeedPermille: current.profile.minimumSpeedPermille,
-    defaultSpeedPermille: current.profile.defaultSpeedPermille,
-    maximumSpeedPermille: current.profile.maximumSpeedPermille,
-    createdAtEpochMs: 60,
-  });
-  current.repositories.voiceProfiles.activate({
-    schemaVersion: '8.0',
-    uid: uid(99721),
-    dramaUid: current.profile.dramaUid,
-    characterUid: current.profile.characterUid,
-    voiceProfileUid: replacement.uid,
-    previousVoiceProfileUid: current.profile.uid,
-    stateVersion: 2,
-    changedAtEpochMs: 61,
-  });
+  activateReplacementVoiceProfile(current, uid(99720), uid(99721));
   assert.throws(
     () => current.repositories.mvpBenchmarkSessions.get(session.uid),
     (error) => error instanceof V2RepositoryDataError,
@@ -401,6 +639,58 @@ test('public route returns the current secret-free plan and rejects cross-drama 
     `${base}/api/v1/v2/dramas/${uid(99999)}/mvp-benchmark/sessions/${created.uid}`,
   );
   assert.equal(wrongDrama.status, 404);
+});
+
+test('public route derives a session from an empty local-only workflow request exactly once', async (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const app = express();
+  app.use(express.json());
+  app.use('/api/v1/v2', mvpBenchmarkRoutes(
+    Object.freeze({ error() {} }),
+    Object.freeze({}),
+    current.database,
+  ));
+  const { server, base } = await listen(app);
+  t.after(() => server.close());
+  const path = `${base}/api/v1/v2/dramas/${current.dramaUid}/mvp-benchmark/workflow-runs/${current.run.run.uid}/session`;
+
+  const nonempty = await fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ h3TaskUids: current.request.h3TaskUids }),
+  });
+  assert.equal(nonempty.status, 400);
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
+
+  const wrongDrama = await fetch(
+    `${base}/api/v1/v2/dramas/${uid(99998)}/mvp-benchmark/workflow-runs/${current.run.run.uid}/session`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    },
+  );
+  assert.equal(wrongDrama.status, 409);
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 0);
+
+  const responses = await Promise.all([0, 1].map(() => fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  })));
+  assert.deepEqual(responses.map((item) => item.status), [201, 201]);
+  const plans = await Promise.all(responses.map(async (item) => (await item.json()).data));
+  assert.deepEqual(plans[1], plans[0]);
+  const validate = new Ajv2020({ strict: true }).compile(sessionSchema);
+  assert.equal(validate(plans[0]), true, JSON.stringify(validate.errors));
+  assert.equal(plans[0].workflowRunUid, current.run.run.uid);
+  assert.equal(plans[0].dramaUid, current.dramaUid);
+  assert.equal(plans[0].h3Tasks.length, 4);
+  assert.equal(plans[0].audioIntents.length, 1);
+  assert.equal(current.database.prepare('SELECT count(*) FROM mvp_benchmark_sessions').pluck().get(), 1);
+  assert.equal(current.database.prepare('SELECT count(*) FROM generation_runs').pluck().get(), 0);
+  assert.equal(current.database.prepare('SELECT count(*) FROM audio_tts_submissions').pluck().get(), 0);
+  assert.equal(current.database.prepare('SELECT count(*) FROM audio_tts_outputs').pluck().get(), 0);
 });
 
 test('session request rejects Proxy and accessor values before executing traps', () => {

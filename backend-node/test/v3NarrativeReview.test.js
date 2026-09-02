@@ -195,7 +195,7 @@ test('current migration creates append-only narrative result, review, and execut
       { name: 'narrative_task_executions' },
     ],
   );
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 26);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 27);
 });
 
 test('service records and approves the four-result chain with immutable review evidence', (t) => {

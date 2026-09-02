@@ -114,6 +114,13 @@
             />
           </el-tab-pane>
           <el-tab-pane label="MVP" name="mvp">
+            <MvpBenchmarkSessionPanel
+              :run="canvas.activeRun.value?.run || null"
+              :session="mvpSession.session.value"
+              :busy="mvpSession.busy.value"
+              :error="mvpSession.error.value || ''"
+              @prepare="prepareMvpSession"
+            />
             <MvpBenchmarkReadinessPanel
               :readiness="mvpReadiness.readiness.value"
               :busy="mvpReadiness.busy.value"
@@ -139,7 +146,7 @@
 </template>
 
 <script setup>
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { VueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -161,8 +168,10 @@ import WorkflowRunPanel from '@/components/workflow/WorkflowRunPanel.vue'
 import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
+import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
+import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
 import { useTheme } from '@/composables/useTheme'
 import { useWorkflowCanvas } from '@/composables/useWorkflowCanvas'
 
@@ -173,6 +182,7 @@ const { isDark, toggle: toggleTheme } = useTheme()
 const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
 const mvpReadiness = useMvpBenchmarkReadiness()
+const mvpSession = useMvpBenchmarkSession()
 
 const drama = ref(null)
 const createVisible = ref(false)
@@ -328,6 +338,16 @@ async function refreshMvpReadiness() {
   if (!(await mvpReadiness.load())) ElMessage.error('MVP 就绪度加载失败')
 }
 
+async function prepareMvpSession() {
+  const dramaUid = canvas.activeWorkflow.value?.dramaUid
+  const workflowRunUid = canvas.activeRun.value?.run?.uid
+  if (!(await mvpSession.prepare(dramaUid, workflowRunUid))) {
+    ElMessage.error('本地基准会话准备失败')
+    return
+  }
+  ElMessage.success('本地基准会话已冻结；尚未创建外部授权')
+}
+
 async function startMediaExport(nodeRunUid) {
   if (await mediaExports.start(nodeRunUid)) {
     ElMessage.success('成片导出已完成验证')
@@ -348,6 +368,11 @@ function warnBeforeUnload(event) {
 
 onBeforeRouteLeave(async () => confirmDiscardIfDirty())
 
+watch(
+  () => `${canvas.activeRun.value?.run?.uid || ''}:${canvas.activeRun.value?.run?.status || ''}`,
+  () => mvpSession.invalidate(),
+)
+
 onMounted(async () => {
   if (!Number.isSafeInteger(dramaId) || dramaId < 1) {
     router.replace('/')
@@ -363,6 +388,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   mediaExports.invalidate()
   mvpReadiness.invalidate()
+  mvpSession.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })
 </script>

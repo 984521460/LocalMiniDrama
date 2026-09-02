@@ -312,3 +312,9 @@ Interrupted or uncertain Provider work becomes `submission_unknown`; startup
 recovery never replays it. These operational rows are not yet represented by
 Project Archive 2.1, so 2.1 export fails closed for a drama containing them
 instead of silently dropping the audit trail.
+
+Migration `0027_mvp_benchmark_session_current_sources.sql` adds a final
+transactional current-source seal to MVP benchmark session insertion. A new
+session is accepted only while the migration-22 ready-session closure still
+binds every H3 current AssetVersion and every current audio narrative,
+continuity, and active VoiceProfile source; a mismatch aborts the INSERT.

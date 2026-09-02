@@ -1,5 +1,7 @@
 'use strict';
 
+const { types: { isProxy } } = require('node:util');
+
 const { sha256Canonical } = require('../../h3/contract');
 const {
   createMvpBenchmarkSessionPlan,
@@ -25,6 +27,13 @@ const MAP_CONSTRUCTOR = Map;
 const MAP_GET = Map.prototype.get;
 const MAP_HAS = Map.prototype.has;
 const MAP_SET = Map.prototype.set;
+const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const OBJECT_HAS_OWN = Object.hasOwn;
+const REFLECT_OWN_KEYS = Reflect.ownKeys;
+const WORKFLOW_PREPARATION_KEYS = Object.freeze([
+  'uid', 'dramaUid', 'workflowRunUid', 'createdAtEpochMs',
+]);
 
 function append(target, value) {
   Reflect.apply(DEFINE_PROPERTY, Object, [target, String(target.length), {
@@ -62,13 +71,46 @@ function sameStrings(left, right) {
   return true;
 }
 
+function workflowPreparationSeed(value) {
+  if (!value || typeof value !== 'object' || isProxy(value) || Array.isArray(value)) {
+    throw new TypeError('MVP benchmark workflow preparation request is invalid');
+  }
+  let descriptors;
+  let prototype;
+  try {
+    descriptors = Reflect.apply(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    prototype = Reflect.apply(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+  } catch {
+    throw new TypeError('MVP benchmark workflow preparation request is invalid');
+  }
+  const keys = Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+  if ((prototype !== Object.prototype && prototype !== null)
+    || keys.length !== WORKFLOW_PREPARATION_KEYS.length) {
+    throw new TypeError('MVP benchmark workflow preparation request is invalid');
+  }
+  const output = Object.create(null);
+  for (let index = 0; index < WORKFLOW_PREPARATION_KEYS.length; index += 1) {
+    const key = WORKFLOW_PREPARATION_KEYS[index];
+    if (!Reflect.apply(OBJECT_HAS_OWN, Object, [descriptors, key])) {
+      throw new TypeError('MVP benchmark workflow preparation request is invalid');
+    }
+    const descriptor = descriptors[key];
+    if (!descriptor || descriptor.enumerable !== true
+      || !Reflect.apply(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) {
+      throw new TypeError('MVP benchmark workflow preparation request is invalid');
+    }
+    output[key] = descriptor.value;
+  }
+  return output;
+}
+
 function createMvpBenchmarkSessionRepository(database, dependencies) {
   const {
     assets, audioModeIntents, h3GenerationIntents, remote, runs, workflows,
   } = dependencies ?? {};
   if (!assets || typeof assets.get !== 'function'
-    || !audioModeIntents || typeof audioModeIntents.get !== 'function'
-    || !h3GenerationIntents || typeof h3GenerationIntents.getByTask !== 'function'
+    || !audioModeIntents || typeof audioModeIntents.getExecutionSource !== 'function'
+    || !h3GenerationIntents || typeof h3GenerationIntents.getExecutionSource !== 'function'
     || !remote || typeof remote.getFormalTask !== 'function'
     || !runs || typeof runs.getWorkflowWithNodes !== 'function' || typeof runs.getNode !== 'function'
     || !workflows || typeof workflows.getDefinition !== 'function') {
@@ -122,6 +164,19 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
     audioCount: database.prepare(
       'SELECT count(*) FROM audio_mode_intents WHERE workflow_run_uid=?',
     ).pluck(),
+    h3TaskUidsByWorkflow: database.prepare(`
+      SELECT task.uid
+      FROM h3_generation_intents AS intent
+      JOIN remote_tasks AS task ON task.uid=intent.task_uid
+      WHERE task.workflow_run_uid=?
+      ORDER BY task.uid
+    `).pluck(),
+    audioIntentUidsByWorkflow: database.prepare(`
+      SELECT uid
+      FROM audio_mode_intents
+      WHERE workflow_run_uid=?
+      ORDER BY uid
+    `).pluck(),
   });
 
   function planNodes(plan, nodeType) {
@@ -194,7 +249,7 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
       let node;
       let asset;
       try {
-        intent = h3GenerationIntents.getByTask(taskUid);
+        intent = h3GenerationIntents.getExecutionSource(taskUid);
         task = remote.getFormalTask(taskUid);
         if (typeof task.idempotencyKey !== 'string'
           || !Reflect.apply(STRING_STARTS_WITH, task.idempotencyKey, [REMOTE_TASK_PREFIX])) {
@@ -237,7 +292,7 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
       let intent;
       let node;
       try {
-        intent = audioModeIntents.get(intentUid);
+        intent = audioModeIntents.getExecutionSource(intentUid);
         node = nodeRun(aggregate, intent.nodeRunUid);
       } catch {
         throw new V2RepositoryConflictError(ENTITY, 'prepared');
@@ -310,7 +365,7 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
       const item = plan.h3Tasks[index];
       const row = statements.h3.get(item.taskUid);
       let intent;
-      try { intent = h3GenerationIntents.getByTask(item.taskUid); } catch { return invalidData(); }
+      try { intent = h3GenerationIntents.getExecutionSource(item.taskUid); } catch { return invalidData(); }
       if (!row || row.intent_uid !== item.intentUid || row.asset_uid !== item.assetUid
         || row.manifest_uid !== item.manifestUid
         || row.generation_spec_sha256 !== item.generationSpecSha256
@@ -332,7 +387,7 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
       const item = plan.audioIntents[index];
       const row = statements.audio.get(item.intentUid);
       let intent;
-      try { intent = audioModeIntents.get(item.intentUid); } catch { return invalidData(); }
+      try { intent = audioModeIntents.getExecutionSource(item.intentUid); } catch { return invalidData(); }
       if (!row || row.workflow_run_uid !== plan.workflowRunUid
         || row.node_run_uid !== item.nodeRunUid || row.node_uid !== item.nodeUid
         || row.plan_sha256 !== item.planSha256 || row.node_status !== 'queued'
@@ -384,35 +439,79 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
     return mapRow(statements.get.get(uid));
   }
 
-  return Object.freeze({
-    get,
-    prepare(value) {
-      let request;
-      try { request = parseMvpBenchmarkSessionRequest(value); } catch (error) {
-        if (isMvpBenchmarkSessionError(error)) throw error;
-        throw new TypeError('MVP benchmark session request is invalid');
+  function prepareRequest(request) {
+    const plan = buildPlan(request);
+    const existing = statements.get.get(request.uid) ?? statements.getByWorkflow.get(request.workflowRunUid);
+    if (existing) {
+      const mapped = mapRow(existing);
+      if (mapped.uid !== plan.uid || mapped.planSha256 !== plan.planSha256) {
+        throw new V2RepositoryConflictError(ENTITY, 'prepared');
       }
-      const plan = buildPlan(request);
-      const existing = statements.get.get(request.uid) ?? statements.getByWorkflow.get(request.workflowRunUid);
-      if (existing) {
-        const mapped = mapRow(existing);
-        if (mapped.uid !== plan.uid || mapped.planSha256 !== plan.planSha256) {
-          throw new V2RepositoryConflictError(ENTITY, 'prepared');
-        }
-        return mapped;
+      return mapped;
+    }
+    executeWrite(ENTITY, 'prepared', () => statements.insert.run({
+      uid: request.uid,
+      dramaUid: request.dramaUid,
+      workflowRunUid: request.workflowRunUid,
+      requestJson: serializeMvpBenchmarkSessionJson(request),
+      planJson: serializeMvpBenchmarkSessionJson(plan),
+      planSha256: plan.planSha256,
+      createdAtEpochMs: request.createdAtEpochMs,
+    }));
+    return get(request.uid);
+  }
+
+  const prepareTransaction = database.transaction((request) => prepareRequest(request));
+
+  function prepare(value) {
+    let request;
+    try { request = parseMvpBenchmarkSessionRequest(value); } catch (error) {
+      if (isMvpBenchmarkSessionError(error)) throw error;
+      throw new TypeError('MVP benchmark session request is invalid');
+    }
+    return prepareTransaction.immediate(request);
+  }
+
+  const prepareFromWorkflowTransaction = database.transaction((seed) => {
+    const h3TaskUids = statements.h3TaskUidsByWorkflow.all(seed.workflowRunUid);
+    const audioIntentUids = statements.audioIntentUidsByWorkflow.all(seed.workflowRunUid);
+    if (h3TaskUids.length < 4 || h3TaskUids.length > 6
+      || audioIntentUids.length < 1 || audioIntentUids.length > 32) {
+      throw new V2RepositoryConflictError(ENTITY, 'prepared');
+    }
+    let request;
+    try {
+      request = parseMvpBenchmarkSessionRequest({
+        schemaVersion: 'mvp-benchmark-session-request.v1',
+        uid: seed.uid,
+        dramaUid: seed.dramaUid,
+        workflowRunUid: seed.workflowRunUid,
+        h3TaskUids,
+        audioIntentUids,
+        createdAtEpochMs: seed.createdAtEpochMs,
+      });
+    } catch (error) {
+      if (isMvpBenchmarkSessionError(error)) throw error;
+      throw new TypeError('MVP benchmark workflow preparation request is invalid');
+    }
+    const existing = statements.getByWorkflow.get(request.workflowRunUid);
+    if (existing) {
+      const mapped = mapRow(existing);
+      if (mapped.dramaUid !== request.dramaUid
+        || mapped.workflowRunUid !== request.workflowRunUid) {
+        throw new V2RepositoryConflictError(ENTITY, 'prepared');
       }
-      executeWrite(ENTITY, 'prepared', () => statements.insert.run({
-        uid: request.uid,
-        dramaUid: request.dramaUid,
-        workflowRunUid: request.workflowRunUid,
-        requestJson: serializeMvpBenchmarkSessionJson(request),
-        planJson: serializeMvpBenchmarkSessionJson(plan),
-        planSha256: plan.planSha256,
-        createdAtEpochMs: request.createdAtEpochMs,
-      }));
-      return get(request.uid);
-    },
+      return mapped;
+    }
+    return prepareRequest(request);
   });
+
+  function prepareFromWorkflow(value) {
+    const seed = workflowPreparationSeed(value);
+    return prepareFromWorkflowTransaction.immediate(seed);
+  }
+
+  return Object.freeze({ get, prepare, prepareFromWorkflow });
 }
 
 module.exports = Object.freeze({ createMvpBenchmarkSessionRepository });

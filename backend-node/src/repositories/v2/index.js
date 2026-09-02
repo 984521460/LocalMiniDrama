@@ -170,6 +170,9 @@ function createLazyMvpBenchmarkSessionRepository(database, dependencies) {
     prepare(...args) {
       return getTarget().prepare(...args);
     },
+    prepareFromWorkflow(...args) {
+      return getTarget().prepareFromWorkflow(...args);
+    },
   });
 }
 

@@ -20,8 +20,9 @@ const REQUIRED_TABLES = Object.freeze([
 ]);
 const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
 const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
+const REQUIRED_TRIGGER = 'v2_mvp_benchmark_sessions_current_sources_insert';
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 26;
+const EXPECTED_MIGRATION_VERSION = 27;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -37,6 +38,10 @@ function createMvpBenchmarkReadinessRepository(database) {
         viewCount: database.prepare(`
           SELECT count(*) AS count FROM sqlite_schema
           WHERE type='view' AND name=?
+        `).pluck(),
+        triggerCount: database.prepare(`
+          SELECT count(*) AS count FROM sqlite_schema
+          WHERE type='trigger' AND name=?
         `).pluck(),
         readyConnection: database.prepare(`
           SELECT EXISTS(
@@ -91,10 +96,12 @@ function createMvpBenchmarkReadinessRepository(database) {
       );
       const readyConnection = current.readyConnection.get();
       const viewCount = current.viewCount.get(REQUIRED_VIEW);
+      const triggerCount = current.triggerCount.get(REQUIRED_TRIGGER);
       const migrationSummary = current.migrationSummary.get();
       return Object.freeze({
         contractsReady: tableCount === REQUIRED_TABLES.length
           && viewCount === 1
+          && triggerCount === 1
           && migrationSummary.count === EXPECTED_MIGRATION_VERSION
           && migrationSummary.min_version === EXPECTED_FIRST_MIGRATION_VERSION
           && migrationSummary.max_version === EXPECTED_MIGRATION_VERSION,

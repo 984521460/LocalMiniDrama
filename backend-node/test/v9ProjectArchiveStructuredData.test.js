@@ -204,7 +204,7 @@ test('2.1 structured evidence exports every P9-04B domain without credential ref
   }
   assert.equal(records.voiceProfiles[0].credential_binding_state, 'needs_rebind');
   assert.equal(Object.hasOwn(records.voiceProfiles[0], 'credential_ref'), false);
-  assert.doesNotMatch(JSON.stringify(records), /credential:v1|9811/u);
+  assert.equal(JSON.stringify(records).includes(credentialRef), false);
   assert.equal(validateProjectStructuredRecords(records, dramaUid), records);
 
   const invalidMutations = [

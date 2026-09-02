@@ -373,6 +373,17 @@ test('readiness fails closed when the version-twenty-two source closure view is 
   });
 });
 
+test('readiness fails closed when the version-twenty-seven session source seal is missing', (t) => {
+  const database = createMigratedV2Database(t);
+  const repository = createMvpBenchmarkReadinessRepository(database);
+  assert.equal(repository.inspect().contractsReady, true);
+  database.exec('DROP TRIGGER v2_mvp_benchmark_sessions_current_sources_insert');
+  assert.deepEqual(repository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness fails closed when any version-twenty-three accounting table is missing', (t) => {
   const tables = [
     'mvp_benchmark_execution_settlements',

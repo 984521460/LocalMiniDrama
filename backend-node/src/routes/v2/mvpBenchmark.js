@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { randomUUID } = require('node:crypto');
 const { types: { isProxy } } = require('node:util');
 
 const {
@@ -28,6 +29,23 @@ const {
   isMvpBenchmarkProductionExecutionError,
 } = require('../../benchmark/mvpBenchmarkProductionExecutionService');
 const response = require('../../response');
+
+const DATE_NOW = Date.now;
+const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
+const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const REFLECT_OWN_KEYS = Reflect.ownKeys;
+
+function exactEmptyBody(value) {
+  if (!value || typeof value !== 'object' || isProxy(value) || Array.isArray(value)) return false;
+  try {
+    const prototype = Reflect.apply(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = Reflect.apply(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    return (prototype === Object.prototype || prototype === null)
+      && Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]).length === 0;
+  } catch {
+    return false;
+  }
+}
 
 function mvpBenchmarkRoutes(log, runtime, database) {
   const router = express.Router();
@@ -217,6 +235,30 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       return sessionError(res, error);
     }
   });
+
+  router.post(
+    '/dramas/:dramaUid/mvp-benchmark/workflow-runs/:workflowRunUid/session',
+    (req, res) => {
+      if (!exactEmptyBody(req.body)) {
+        return response.error(
+          res,
+          400,
+          'MVP_BENCHMARK_SESSION_INPUT_INVALID',
+          'MVP benchmark session request is invalid',
+        );
+      }
+      try {
+        return response.created(res, sessionRepository.prepareFromWorkflow({
+          uid: randomUUID(),
+          dramaUid: req.params.dramaUid,
+          workflowRunUid: req.params.workflowRunUid,
+          createdAtEpochMs: Reflect.apply(DATE_NOW, Date, []),
+        }));
+      } catch (error) {
+        return sessionError(res, error);
+      }
+    },
+  );
 
   router.get('/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid', (req, res) => {
     try {
