@@ -28,6 +28,7 @@ const {
 const {
   isMvpBenchmarkProductionExecutionError,
 } = require('../../benchmark/mvpBenchmarkProductionExecutionService');
+const { MvpBenchmarkResumeError } = require('../../benchmark/mvpBenchmarkResumeService');
 const response = require('../../response');
 
 const DATE_NOW = Date.now;
@@ -145,6 +146,22 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     }
   }
 
+  function resumeService() {
+    try {
+      if (!runtime || typeof runtime !== 'object' || isProxy(runtime)) return null;
+      const benchmarkRuntime = Object.getOwnPropertyDescriptor(runtime, 'mvpBenchmark')?.value;
+      if (!benchmarkRuntime || typeof benchmarkRuntime !== 'object'
+        || isProxy(benchmarkRuntime)) return null;
+      const service = Object.getOwnPropertyDescriptor(benchmarkRuntime, 'resume')?.value;
+      if (!service || typeof service !== 'object' || isProxy(service)) return null;
+      const read = Object.getOwnPropertyDescriptor(service, 'read')?.value;
+      if (typeof read !== 'function' || isProxy(read)) return null;
+      return Object.freeze({ read, service });
+    } catch {
+      return null;
+    }
+  }
+
   function sessionError(res, error) {
     if (error instanceof V2RepositoryNotFoundError) {
       return response.error(res, 404, 'MVP_BENCHMARK_SESSION_NOT_FOUND', 'MVP benchmark session was not found');
@@ -248,6 +265,20 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     );
   }
 
+  function resumeError(res, error) {
+    if (error instanceof MvpBenchmarkResumeError) {
+      const status = error.code === 'MVP_BENCHMARK_RESUME_INPUT_INVALID' ? 400 : 409;
+      return response.error(res, status, error.code, error.message);
+    }
+    log?.error?.('mvp-benchmark-resume-unexpected', {
+      code: 'MVP_BENCHMARK_RESUME_UNEXPECTED',
+    });
+    return response.error(
+      res, 500, 'MVP_BENCHMARK_RESUME_UNEXPECTED',
+      'MVP benchmark resume operation failed',
+    );
+  }
+
   function pathAuthorization(parameters) {
     const dramaUid = parseMvpBenchmarkExternalAuthorizationUid(parameters.dramaUid);
     const sessionUid = parseMvpBenchmarkExternalAuthorizationUid(parameters.sessionUid);
@@ -280,6 +311,28 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       );
     }
   });
+
+  router.get(
+    '/dramas/:dramaUid/mvp-benchmark/workflow-runs/:workflowRunUid/resume',
+    async (req, res) => {
+      try {
+        const configured = resumeService();
+        if (!configured) {
+          return response.error(
+            res, 503, 'MVP_BENCHMARK_RESUME_UNAVAILABLE',
+            'MVP benchmark resume state is unavailable',
+          );
+        }
+        return response.success(res, await REFLECT_APPLY(
+          configured.read,
+          configured.service,
+          [{ dramaUid: req.params.dramaUid, workflowRunUid: req.params.workflowRunUid }],
+        ));
+      } catch (error) {
+        return resumeError(res, error);
+      }
+    },
+  );
 
   router.post('/dramas/:dramaUid/mvp-benchmark/sessions', (req, res) => {
     if (req.body?.dramaUid !== req.params.dramaUid) {

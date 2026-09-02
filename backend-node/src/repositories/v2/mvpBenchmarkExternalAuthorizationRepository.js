@@ -287,6 +287,10 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
     getStored(uid) {
       return mapStoredRow(statements.get.get(uid)).authorization;
     },
+    getStoredBySession(sessionUid) {
+      const row = statements.getBySession.get(sessionUid);
+      return row ? mapStoredRow(row).authorization : null;
+    },
     prepare(value, { nowEpochMs = Date.now() } = {}) {
       let request;
       try { request = parseMvpBenchmarkExternalAuthorizationRequest(value); } catch (error) {

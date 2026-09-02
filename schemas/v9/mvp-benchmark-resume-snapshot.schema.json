@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-resume-snapshot.schema.json",
+  "title": "MVP Benchmark Resume Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "dramaUid",
+    "workflowRunUid",
+    "state",
+    "sessionJson",
+    "authorizationJson",
+    "batchJson",
+    "progressJson"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-resume-snapshot.v1" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "workflowRunUid": { "$ref": "#/$defs/uuid" },
+    "state": { "enum": ["empty", "session", "authorization", "execution"] },
+    "sessionJson": { "type": ["string", "null"], "maxLength": 1048576 },
+    "authorizationJson": { "type": ["string", "null"], "maxLength": 1048576 },
+    "batchJson": { "type": ["string", "null"], "maxLength": 1048576 },
+    "progressJson": { "type": ["string", "null"], "maxLength": 1048576 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "empty" } } },
+      "then": { "properties": {
+        "sessionJson": { "const": null },
+        "authorizationJson": { "const": null },
+        "batchJson": { "const": null },
+        "progressJson": { "const": null }
+      } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "session" } } },
+      "then": { "properties": {
+        "sessionJson": { "type": "string", "minLength": 2 },
+        "authorizationJson": { "const": null },
+        "batchJson": { "const": null },
+        "progressJson": { "const": null }
+      } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "authorization" } } },
+      "then": { "properties": {
+        "sessionJson": { "type": "string", "minLength": 2 },
+        "authorizationJson": { "type": "string", "minLength": 2 },
+        "batchJson": { "const": null },
+        "progressJson": { "const": null }
+      } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "execution" } } },
+      "then": { "properties": {
+        "sessionJson": { "type": "string", "minLength": 2 },
+        "authorizationJson": { "type": "string", "minLength": 2 },
+        "batchJson": { "type": "string", "minLength": 2 },
+        "progressJson": { "type": "string", "minLength": 2 }
+      } }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

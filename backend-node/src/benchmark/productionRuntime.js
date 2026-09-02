@@ -12,6 +12,7 @@ const {
 const {
   createMvpBenchmarkProductionExecutionService,
 } = require('./mvpBenchmarkProductionExecutionService');
+const { createMvpBenchmarkResumeService } = require('./mvpBenchmarkResumeService');
 const {
   createMvpBenchmarkSshLiveEnvironmentVerifier,
 } = require('./mvpBenchmarkSshLiveEnvironmentVerifier');
@@ -87,7 +88,12 @@ function createProductionMvpBenchmarkRuntime({
     ...(configured.createUid !== undefined ? { createUid: configured.createUid } : {}),
     ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
   });
-  return Object.freeze({ execution, preflight });
+  const resume = createMvpBenchmarkResumeService({
+    repositories,
+    execution,
+    ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
+  });
+  return Object.freeze({ execution, preflight, resume });
 }
 
 module.exports = Object.freeze({ createProductionMvpBenchmarkRuntime });

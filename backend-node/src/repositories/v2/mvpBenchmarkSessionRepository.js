@@ -400,7 +400,7 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
     return plan;
   }
 
-  function mapRow(row) {
+  function mapStoredRow(row) {
     if (!row) throw new V2RepositoryNotFoundError(ENTITY);
     try {
       const requestValue = Reflect.apply(JSON_PARSE, JSON, [row.request_json]);
@@ -428,11 +428,15 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
         || row.created_at_epoch_ms !== request.createdAtEpochMs
         || !sameStrings(planTaskUids, request.h3TaskUids)
         || !sameStrings(planIntentUids, request.audioIntentUids)) invalidData();
-      return assertPersistedSources(plan);
+      return plan;
     } catch (error) {
       if (error instanceof V2RepositoryDataError) throw error;
       return invalidData();
     }
+  }
+
+  function mapRow(row) {
+    return assertPersistedSources(mapStoredRow(row));
   }
 
   function get(uid) {
@@ -511,7 +515,15 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
     return prepareFromWorkflowTransaction.immediate(seed);
   }
 
-  return Object.freeze({ get, prepare, prepareFromWorkflow });
+  return Object.freeze({
+    get,
+    getStoredByWorkflowRun(workflowRunUid) {
+      const row = statements.getByWorkflow.get(workflowRunUid);
+      return row ? mapStoredRow(row) : null;
+    },
+    prepare,
+    prepareFromWorkflow,
+  });
 }
 
 module.exports = Object.freeze({ createMvpBenchmarkSessionRepository });

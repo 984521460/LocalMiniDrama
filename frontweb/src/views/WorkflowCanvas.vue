@@ -114,6 +114,13 @@
             />
           </el-tab-pane>
           <el-tab-pane label="MVP" name="mvp">
+            <MvpBenchmarkResumePanel
+              :run="canvas.activeRun.value?.run || null"
+              :snapshot="mvpResume.snapshot.value"
+              :busy="mvpResume.busy.value"
+              :error="mvpResume.error.value || ''"
+              @resume="resumeMvpState"
+            />
             <MvpBenchmarkSessionPanel
               :run="canvas.activeRun.value?.run || null"
               :session="mvpSession.session.value"
@@ -196,12 +203,14 @@ import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadi
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
 import MvpBenchmarkExecutionPanel from '@/components/benchmark/MvpBenchmarkExecutionPanel.vue'
 import MvpBenchmarkPreflightPanel from '@/components/benchmark/MvpBenchmarkPreflightPanel.vue'
+import MvpBenchmarkResumePanel from '@/components/benchmark/MvpBenchmarkResumePanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
 import { useMvpBenchmarkExecution } from '@/composables/useMvpBenchmarkExecution'
 import { useMvpBenchmarkPreflight } from '@/composables/useMvpBenchmarkPreflight'
+import { useMvpBenchmarkResume } from '@/composables/useMvpBenchmarkResume'
 import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
 import { useTheme } from '@/composables/useTheme'
 import { useWorkflowCanvas } from '@/composables/useWorkflowCanvas'
@@ -216,6 +225,7 @@ const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
 const mvpExecution = useMvpBenchmarkExecution()
 const mvpPreflight = useMvpBenchmarkPreflight()
+const mvpResume = useMvpBenchmarkResume()
 const mvpSession = useMvpBenchmarkSession()
 
 const drama = ref(null)
@@ -372,6 +382,32 @@ async function refreshMvpReadiness() {
   if (!(await mvpReadiness.load())) ElMessage.error('MVP 就绪度加载失败')
 }
 
+async function resumeMvpState() {
+  const dramaUid = canvas.activeWorkflow.value?.dramaUid
+  const workflowRunUid = canvas.activeRun.value?.run?.uid
+  if (!dramaUid || !workflowRunUid
+    || !(await mvpResume.load(dramaUid, workflowRunUid))) {
+    ElMessage.error('本地执行状态恢复失败；不会采用部分状态')
+    return
+  }
+  const snapshot = mvpResume.snapshot.value
+  mvpSession.invalidate()
+  mvpAuthorization.invalidate()
+  mvpPreflight.invalidate()
+  mvpExecution.invalidate()
+  mvpSession.session.value = snapshot.session
+  mvpAuthorization.authorization.value = snapshot.authorization
+  mvpPreflight.batch.value = snapshot.batch
+  mvpExecution.progress.value = snapshot.progress
+  const messages = {
+    empty: '当前运行没有可恢复的本地基准会话',
+    session: '已恢复本地基准会话；尚未创建外部授权',
+    authorization: '已恢复本地会话与有效授权；尚未运行 live preflight',
+    execution: '已恢复本地会话、授权、预检与可信执行进度；不会自动执行下一项',
+  }
+  ElMessage.success(messages[snapshot.state])
+}
+
 async function prepareMvpSession() {
   const dramaUid = canvas.activeWorkflow.value?.dramaUid
   const workflowRunUid = canvas.activeRun.value?.run?.uid
@@ -379,6 +415,7 @@ async function prepareMvpSession() {
     ElMessage.error('本地基准会话准备失败')
     return
   }
+  mvpResume.invalidate()
   await mvpAuthorization.refreshConnections()
   ElMessage.success('本地基准会话已冻结；尚未创建外部授权')
 }
@@ -403,6 +440,7 @@ async function authorizeMvpSession(seed) {
     return
   }
   if (await mvpAuthorization.authorize(session, seed.connectionUid, seed)) {
+    mvpResume.invalidate()
     mvpExecution.invalidate()
     mvpPreflight.invalidate()
     ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
@@ -429,6 +467,7 @@ async function preflightMvpSession() {
   }
   mvpExecution.invalidate()
   if (await mvpPreflight.preflight(session, authorization)) {
+    mvpResume.invalidate()
     ElMessage.success('live preflight 已完成；尚未执行任何生成任务')
   } else {
     ElMessage.error('live preflight 失败')
@@ -466,6 +505,7 @@ async function executeNextMvpItem() {
     return
   }
   if (await mvpExecution.executeNext(session, authorization, batch)) {
+    mvpResume.invalidate()
     if (mvpExecution.step.value?.batchComplete) {
       ElMessage.success('预检批次项目均已完成；费用结算与实例归还仍待后续验证')
     } else {
@@ -485,6 +525,7 @@ async function refreshMvpExecution() {
     return
   }
   if (await mvpExecution.refresh(session, authorization, batch)) {
+    mvpResume.invalidate()
     ElMessage.success('已从本地持久成功证据重建进度；未提交任务、结算费用或归还实例')
   } else {
     ElMessage.error('可信进度刷新失败；不会自动重试')
@@ -518,6 +559,7 @@ watch(
     mvpAuthorization.invalidate()
     mvpPreflight.invalidate()
     mvpExecution.invalidate()
+    mvpResume.invalidate()
   },
 )
 
@@ -539,6 +581,7 @@ onBeforeUnmount(() => {
   mvpAuthorization.invalidate()
   mvpPreflight.invalidate()
   mvpExecution.invalidate()
+  mvpResume.invalidate()
   mvpSession.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })

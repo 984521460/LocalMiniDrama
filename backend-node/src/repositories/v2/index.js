@@ -167,6 +167,9 @@ function createLazyMvpBenchmarkSessionRepository(database, dependencies) {
     get(...args) {
       return getTarget().get(...args);
     },
+    getStoredByWorkflowRun(...args) {
+      return getTarget().getStoredByWorkflowRun(...args);
+    },
     prepare(...args) {
       return getTarget().prepare(...args);
     },
@@ -191,6 +194,9 @@ function createLazyMvpBenchmarkExternalAuthorizationRepository(database, depende
     },
     get(...args) {
       return getTarget().get(...args);
+    },
+    getStoredBySession(...args) {
+      return getTarget().getStoredBySession(...args);
     },
     prepare(...args) {
       return getTarget().prepare(...args);
@@ -225,6 +231,9 @@ function createLazyMvpBenchmarkExecutionPreflightRepository(database, dependenci
     },
     getBatchByAuthorization(...args) {
       return getTarget().getBatchByAuthorization(...args);
+    },
+    getStoredBatchByAuthorization(...args) {
+      return getTarget().getStoredBatchByAuthorization(...args);
     },
     getBatchPreparation(...args) {
       return getTarget().getBatchPreparation(...args);

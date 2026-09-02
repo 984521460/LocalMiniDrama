@@ -96,6 +96,12 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
         ON seal.attestation_uid=attestation.uid
       WHERE attestation.uid=?
     `),
+    attestationByAuthorization: database.prepare(`
+      SELECT 1
+      FROM mvp_benchmark_live_environment_attestations
+      WHERE authorization_uid=?
+      LIMIT 1
+    `),
     reservation: database.prepare(`
       SELECT reservation.*,seal.reservation_sha256 AS sealed_reservation_sha256
       FROM mvp_benchmark_execution_reservations AS reservation
@@ -325,7 +331,10 @@ function createMvpBenchmarkExecutionPreflightRepository(database, dependencies) 
 
   function getStoredBatchByAuthorization(authorizationUid) {
     const rows = statements.reservationsByAuthorization.all(authorizationUid);
-    if (rows.length === 0) return null;
+    if (rows.length === 0) {
+      if (statements.attestationByAuthorization.get(authorizationUid)) invalidData();
+      return null;
+    }
     try {
       const authorization = authorizations.getStored(authorizationUid);
       const sessionRow = statements.sessionRecord.get(authorization.sessionUid);

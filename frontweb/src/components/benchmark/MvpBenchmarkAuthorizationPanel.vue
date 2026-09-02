@@ -13,7 +13,7 @@
     <p class="safety-note">仅写入本地不可变授权记录；不会执行预检，不会访问 SSH、Vault、Provider 或 GPU，不会创建实例或产生费用。</p>
     <p v-if="error" class="error-message">授权创建失败；连接、会话或当前来源发生漂移时不会留下部分记录。</p>
     <p v-else-if="!session" class="empty-message">请先准备本地基准会话。</p>
-    <p v-else-if="connections.length === 0" class="empty-message">没有已确认凭据且状态为 ready 的远程连接。</p>
+    <p v-else-if="!authorization && connections.length === 0" class="empty-message">没有已确认凭据且状态为 ready 的远程连接。</p>
 
     <el-form v-if="session && !authorization" label-position="top" size="small">
       <el-form-item label="远程连接">
