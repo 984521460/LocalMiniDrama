@@ -4,6 +4,7 @@ import { mvpBenchmarkFinalizationAPI } from '../api/v2/mvpBenchmarkFinalization.
 import { mvpBenchmarkAuthorizationView } from '../benchmark/mvpAuthorization.js'
 import { mvpBenchmarkPreflightBatchView } from '../benchmark/mvpPreflight.js'
 import { mvpBenchmarkSessionView } from '../benchmark/mvpSession.js'
+import { mvpBenchmarkShotTaskOrder } from '../benchmark/mvpShotOrder.js'
 import { createLatestRequestGuard } from '../components/narrative/narrativeReview.js'
 import { mediaExportRunView } from '../media/mediaExportRun.js'
 
@@ -22,7 +23,9 @@ export function createMvpBenchmarkFinalizationState({ finalize }) {
   const error = ref(null)
   const guard = createLatestRequestGuard()
 
-  async function submit(sessionValue, authorizationValue, batchValue, bgmTrackUid) {
+  async function submit(
+    sessionValue, authorizationValue, batchValue, bgmTrackUid, shotTaskOrderValue,
+  ) {
     const token = guard.begin()
     busy.value = true
     error.value = null
@@ -38,8 +41,9 @@ export function createMvpBenchmarkFinalizationState({ finalize }) {
         || !REFLECT_APPLY(REGEXP_TEST, UID, [bgmTrackUid])) {
         throw new TypeError(ERROR_CODE)
       }
+      const shotTaskOrder = mvpBenchmarkShotTaskOrder(shotTaskOrderValue, session)
       const result = mediaExportRunView(
-        await finalize(session, authorization, batch, bgmTrackUid),
+        await finalize(session, authorization, batch, bgmTrackUid, shotTaskOrder),
       )
       if (!guard.isCurrent(token)) return false
       run.value = result
@@ -66,8 +70,8 @@ export function createMvpBenchmarkFinalizationState({ finalize }) {
 
 export function useMvpBenchmarkFinalization({ api = mvpBenchmarkFinalizationAPI } = {}) {
   return createMvpBenchmarkFinalizationState({
-    finalize: (session, authorization, batch, bgmTrackUid) => (
-      api.finalize(session, authorization, batch, bgmTrackUid)
+    finalize: (session, authorization, batch, bgmTrackUid, shotTaskOrder) => (
+      api.finalize(session, authorization, batch, bgmTrackUid, shotTaskOrder)
     ),
   })
 }

@@ -1,6 +1,7 @@
 import { mvpBenchmarkAuthorizationView } from '../../benchmark/mvpAuthorization.js'
 import { mvpBenchmarkPreflightBatchView } from '../../benchmark/mvpPreflight.js'
 import { mvpBenchmarkSessionView } from '../../benchmark/mvpSession.js'
+import { mvpBenchmarkShotTaskOrder } from '../../benchmark/mvpShotOrder.js'
 import { mediaExportRunView } from '../../media/mediaExportRun.js'
 import { parseStrictJson } from '../../security/strictJson.js'
 import { workflowJsonTextRequest } from './workflowRequest.js'
@@ -12,7 +13,9 @@ const REFLECT_APPLY = Reflect.apply
 const REGEXP_TEST = RegExp.prototype.test
 
 export const mvpBenchmarkFinalizationAPI = FREEZE({
-  async finalize(sessionValue, authorizationValue, batchValue, bgmTrackUidValue) {
+  async finalize(
+    sessionValue, authorizationValue, batchValue, bgmTrackUidValue, shotTaskOrderValue,
+  ) {
     const session = mvpBenchmarkSessionView(sessionValue)
     const authorization = mvpBenchmarkAuthorizationView(authorizationValue, {
       sessionUid: session.uid,
@@ -25,12 +28,14 @@ export const mvpBenchmarkFinalizationAPI = FREEZE({
       || !REFLECT_APPLY(REGEXP_TEST, UID, [bgmTrackUid])) {
       throw new TypeError('MVP benchmark finalization request is invalid')
     }
+    const shotTaskOrder = mvpBenchmarkShotTaskOrder(shotTaskOrderValue, session)
     const text = await workflowJsonTextRequest.post(
       `/v2/dramas/${ENCODE_URI_COMPONENT(session.dramaUid)}/mvp-benchmark/sessions/${ENCODE_URI_COMPONENT(session.uid)}/authorizations/${ENCODE_URI_COMPONENT(authorization.uid)}/finalize`,
       FREEZE({
-        schemaVersion: 'mvp-benchmark-finalization-request.v1',
+        schemaVersion: 'mvp-benchmark-finalization-request.v2',
         expectedBatchSha256: batch.batchSha256,
         bgmTrackUid,
+        shotTaskOrder,
       }),
     )
     return mediaExportRunView(parseStrictJson(text))

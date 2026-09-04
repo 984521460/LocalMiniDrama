@@ -46,6 +46,7 @@ const response = require('../../response');
 
 const DATE_NOW = Date.now;
 const ARRAY_IS_ARRAY = Array.isArray;
+const ARRAY_PUSH = Array.prototype.push;
 const OBJECT_GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
 const OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
 const OBJECT_HAS_OWN = Object.hasOwn;
@@ -116,13 +117,22 @@ function exactExecutionSeed(value) {
 }
 
 function exactFinalizationSeed(value) {
-  const keys = ['schemaVersion', 'expectedBatchSha256', 'bgmTrackUid'];
   if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) {
     return null;
   }
   try {
     const prototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
     const descriptors = REFLECT_APPLY(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    if (!REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptors, 'schemaVersion'])) return null;
+    const schemaDescriptor = descriptors.schemaVersion;
+    if (!schemaDescriptor?.enumerable
+      || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [schemaDescriptor, 'value'])) return null;
+    if (schemaDescriptor.value !== 'mvp-benchmark-finalization-request.v1'
+      && schemaDescriptor.value !== 'mvp-benchmark-finalization-request.v2') return null;
+    const reordered = schemaDescriptor.value === 'mvp-benchmark-finalization-request.v2';
+    const keys = reordered
+      ? ['schemaVersion', 'expectedBatchSha256', 'bgmTrackUid', 'shotTaskOrder']
+      : ['schemaVersion', 'expectedBatchSha256', 'bgmTrackUid'];
     if ((prototype !== Object.prototype && prototype !== null)
       || REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== keys.length) {
       return null;
@@ -135,6 +145,33 @@ function exactFinalizationSeed(value) {
       if (!descriptor.enumerable
         || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
       output[key] = descriptor.value;
+    }
+    if (reordered) {
+      const source = output.shotTaskOrder;
+      if (isProxy(source) || !ARRAY_IS_ARRAY(source)) return null;
+      const arrayPrototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [source]);
+      const arrayDescriptors = REFLECT_APPLY(
+        OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [source],
+      );
+      if (!REFLECT_APPLY(OBJECT_HAS_OWN, Object, [arrayDescriptors, 'length'])) return null;
+      const lengthDescriptor = arrayDescriptors.length;
+      if (arrayPrototype !== Array.prototype
+        || !lengthDescriptor
+        || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [lengthDescriptor, 'value'])
+        || !Number.isSafeInteger(lengthDescriptor.value)
+        || lengthDescriptor.value < 4 || lengthDescriptor.value > 6
+        || REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [arrayDescriptors]).length
+          !== lengthDescriptor.value + 1) return null;
+      const order = [];
+      for (let index = 0; index < lengthDescriptor.value; index += 1) {
+        const key = String(index);
+        if (!REFLECT_APPLY(OBJECT_HAS_OWN, Object, [arrayDescriptors, key])) return null;
+        const descriptor = arrayDescriptors[key];
+        if (!descriptor?.enumerable
+          || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
+        REFLECT_APPLY(ARRAY_PUSH, order, [descriptor.value]);
+      }
+      output.shotTaskOrder = Object.freeze(order);
     }
     return output;
   } catch {
@@ -920,6 +957,16 @@ function mvpBenchmarkRoutes(log, runtime, database) {
             'MVP benchmark finalization is unavailable',
           );
         }
+        let shotTaskOrder = null;
+        if (seed.schemaVersion === 'mvp-benchmark-finalization-request.v2') {
+          const order = [];
+          for (let index = 0; index < seed.shotTaskOrder.length; index += 1) {
+            REFLECT_APPLY(ARRAY_PUSH, order, [
+              parseMvpBenchmarkExternalAuthorizationUid(seed.shotTaskOrder[index]),
+            ]);
+          }
+          shotTaskOrder = Object.freeze(order);
+        }
         const result = await REFLECT_APPLY(configured.finalize, configured.service, [{
           schemaVersion: seed.schemaVersion,
           authorizationUid: parseMvpBenchmarkExternalAuthorizationUid(
@@ -929,6 +976,7 @@ function mvpBenchmarkRoutes(log, runtime, database) {
           sessionUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.sessionUid),
           expectedBatchSha256: seed.expectedBatchSha256,
           bgmTrackUid: parseMvpBenchmarkExternalAuthorizationUid(seed.bgmTrackUid),
+          ...(shotTaskOrder === null ? {} : { shotTaskOrder }),
         }]);
         return response.success(res, result);
       } catch (error) {

@@ -166,10 +166,14 @@
             <MvpBenchmarkFinalizationPanel
               :batch-complete="mvpExecutionBatchComplete"
               :selected-track-uid="bgmLibrary.selectedTrackUid.value"
+              :shot-task-order="mvpShotOrder.order.value"
+              :planned-shot-task-order="mvpPlannedShotTaskOrder"
               :run="mvpFinalization.run.value"
               :busy="mvpFinalization.busy.value"
               :error="mvpFinalization.error.value || ''"
               @finalize="finalizeMvpProduction"
+              @move-shot="mvpShotOrder.move"
+              @reset-order="mvpShotOrder.reset"
             />
             <MvpBenchmarkHumanAvReviewPanel
               :run="mvpFinalization.run.value"
@@ -262,6 +266,7 @@ import { useMvpBenchmarkHumanAvReview } from '@/composables/useMvpBenchmarkHuman
 import { useMvpBenchmarkPreflight } from '@/composables/useMvpBenchmarkPreflight'
 import { useMvpBenchmarkResume } from '@/composables/useMvpBenchmarkResume'
 import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
+import { useMvpBenchmarkShotOrder } from '@/composables/useMvpBenchmarkShotOrder'
 import { useTheme } from '@/composables/useTheme'
 import { useWorkflowCanvas } from '@/composables/useWorkflowCanvas'
 
@@ -282,6 +287,7 @@ const mvpHumanAvReview = useMvpBenchmarkHumanAvReview()
 const mvpPreflight = useMvpBenchmarkPreflight()
 const mvpResume = useMvpBenchmarkResume()
 const mvpSession = useMvpBenchmarkSession()
+const mvpShotOrder = useMvpBenchmarkShotOrder()
 
 const drama = ref(null)
 const createVisible = ref(false)
@@ -313,6 +319,9 @@ const mvpExecutionBatchComplete = computed(() => (
   mvpExecution.step.value?.batchComplete
   ?? mvpExecution.progress.value?.batchComplete
   ?? false
+))
+const mvpPlannedShotTaskOrder = computed(() => (
+  mvpSession.session.value?.h3Tasks?.map((item) => item.taskUid) || []
 ))
 
 function onConnect(connection) {
@@ -461,6 +470,7 @@ async function resumeMvpState() {
   mvpAccountingStatus.invalidate()
   mvpCloseoutStatus.invalidate()
   mvpSession.session.value = snapshot.session
+  mvpShotOrder.sync(snapshot.session)
   mvpAuthorization.authorization.value = snapshot.authorization
   mvpPreflight.batch.value = snapshot.batch
   mvpExecution.progress.value = snapshot.progress
@@ -481,6 +491,7 @@ async function prepareMvpSession() {
     return
   }
   mvpResume.invalidate()
+  mvpShotOrder.sync(mvpSession.session.value)
   mvpFinalization.invalidate()
   mvpHumanAvReview.invalidate()
   mvpAccountingStatus.invalidate()
@@ -625,9 +636,16 @@ async function finalizeMvpProduction() {
     ElMessage.error('请先完成全部批次项目并显式选择可导出的本地 BGM')
     return
   }
+  let shotTaskOrder
+  try {
+    shotTaskOrder = mvpShotOrder.snapshot(session)
+  } catch {
+    ElMessage.error('成片镜头顺序无效；请恢复原顺序后重试')
+    return
+  }
   try {
     await ElMessageBox.confirm(
-      '确认编译并导出当前生产成片？系统会从本地持久成功证据重建镜头和对白时间线，重新校验 BGM 权利与全部本地媒体，执行完整解码和 FFmpeg 1080p 导出，并写入最终成片资产。不会再次访问 SSH、Vault、Provider 或 GPU，不会创建生成任务，也不会自动重试失败导出。',
+      '确认按当前从上到下的镜头顺序编译并导出生产成片？系统会从本地持久成功证据重建镜头、对白和字幕时间线，重新校验 BGM 权利与全部本地媒体，执行完整解码和 FFmpeg 1080p 导出，并写入最终成片资产。不会再次访问 SSH、Vault、Provider 或 GPU，不会创建生成任务，也不会自动重试失败导出。',
       '确认本地成片编译',
       { type: 'warning', confirmButtonText: '确认编译并导出', cancelButtonText: '取消' },
     )
@@ -636,7 +654,9 @@ async function finalizeMvpProduction() {
   }
   mvpHumanAvReview.invalidate()
   mvpCloseoutStatus.invalidate()
-  if (await mvpFinalization.finalize(session, authorization, batch, bgmTrackUid)) {
+  if (await mvpFinalization.finalize(
+    session, authorization, batch, bgmTrackUid, shotTaskOrder,
+  )) {
     await Promise.allSettled([
       mediaExports.load(),
       canvas.loadRun(session.workflowRunUid),
@@ -793,6 +813,7 @@ watch(
   () => `${canvas.activeRun.value?.run?.uid || ''}:${canvas.activeRun.value?.run?.status || ''}`,
   () => {
     mvpSession.invalidate()
+    mvpShotOrder.invalidate()
     mvpAuthorization.invalidate()
     mvpPreflight.invalidate()
     mvpExecution.invalidate()
@@ -829,6 +850,7 @@ onBeforeUnmount(() => {
   mvpAccountingStatus.invalidate()
   mvpCloseoutStatus.invalidate()
   mvpSession.invalidate()
+  mvpShotOrder.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })
 </script>

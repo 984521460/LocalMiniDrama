@@ -13,7 +13,7 @@
   "properties": {
     "schemaVersion": { "const": "8.0" },
     "timingAlgorithmVersion": {
-      "enum": ["audio-timeline-ms.v1", "audio-timeline-ms.v2"]
+      "enum": ["audio-timeline-ms.v1", "audio-timeline-ms.v2", "audio-timeline-ms.v3"]
     },
     "uid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
     "dramaUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
@@ -42,7 +42,7 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "timingAlgorithmVersion": { "const": "audio-timeline-ms.v2" } }, "required": ["timingAlgorithmVersion"] },
+      "if": { "properties": { "timingAlgorithmVersion": { "enum": ["audio-timeline-ms.v2", "audio-timeline-ms.v3"] } }, "required": ["timingAlgorithmVersion"] },
       "then": { "properties": { "mode": { "const": "independent_tts" } } }
     },
     {

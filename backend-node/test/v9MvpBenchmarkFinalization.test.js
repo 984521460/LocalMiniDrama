@@ -47,6 +47,20 @@ function fileSha256(filename) {
   return createHash('sha256').update(fs.readFileSync(filename)).digest('hex');
 }
 
+function dominantColorAt(ffmpegPath, filename, seconds) {
+  const pixel = execFileSync(ffmpegPath, [
+    '-hide_banner', '-loglevel', 'error', '-ss', String(seconds), '-i', filename,
+    '-frames:v', '1', '-vf', 'scale=1:1,format=rgb24', '-f', 'rawvideo', 'pipe:1',
+  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.equal(pixel.length, 3);
+  const [red, green, blue] = pixel;
+  if (red > green * 1.5 && red > blue * 1.5) return 'red';
+  if (blue > red * 1.5 && blue > green * 1.5) return 'blue';
+  if (green > red * 1.5 && green > blue * 1.5) return 'green';
+  if (red > 100 && green > 100 && blue < 80) return 'yellow';
+  return 'unknown';
+}
+
 function generateVideo(ffmpegPath, filename, color, frequency) {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   execFileSync(ffmpegPath, [
@@ -107,6 +121,7 @@ async function createRealFinalizationMedia(t, current) {
   }).mediaExports.service;
   return Object.freeze({
     root,
+    ffmpegPath,
     videos: Object.freeze(videos),
     dialogue: Object.freeze({
       relativePath: dialogueRelativePath,
@@ -430,7 +445,7 @@ async function finalizationFixture(t, options = {}) {
       get(taskUid) { return h3.results.get(taskUid) ?? null; },
     }),
     audioTtsExecution: Object.freeze({
-      get() { return Promise.resolve(audio); },
+      get() { return options.loadAudio ? options.loadAudio(audio) : Promise.resolve(audio); },
       getPersisted() { return audio; },
     }),
     mediaProbe: media?.mediaProbe ?? Object.freeze({
@@ -521,9 +536,74 @@ test('a complete benchmark session compiles its frozen graph and starts one fina
   }
 });
 
-test('the finalizer plan produces one real verified local 1080p MP4', async (t) => {
+test('reordered finalization rejects incomplete and foreign task permutations before media work', async (t) => {
+  const fixture = await finalizationFixture(t);
+  const planned = fixture.prepared.session.h3Tasks.map((entry) => entry.taskUid);
+  const before = fixture.repositories.runs.getWorkflowWithNodes(fixture.current.run.run.uid);
+  const beforeExportNode = before.nodes.find(
+    (node) => node.uid === fixture.current.exportNodeRun.uid,
+  );
+  const invalidOrders = [
+    { order: planned.slice(1), code: 'MVP_BENCHMARK_FINALIZATION_INPUT_INVALID' },
+    { order: [uid(129999), ...planned.slice(1)], code: 'MVP_BENCHMARK_FINALIZATION_UNAVAILABLE' },
+  ];
+  for (const invalid of invalidOrders) {
+    await assert.rejects(async () => fixture.service.finalize({
+      ...fixture.request,
+      schemaVersion: 'mvp-benchmark-finalization-request.v2',
+      shotTaskOrder: invalid.order,
+    }), { code: invalid.code });
+    assert.equal(fixture.probeRequests.length, 0);
+    assert.equal(fixture.starts.length, 0);
+    const aggregate = fixture.repositories.runs.getWorkflowWithNodes(fixture.current.run.run.uid);
+    assert.equal(aggregate.run.status, 'running');
+    const exportNode = aggregate.nodes.find(
+      (node) => node.uid === fixture.current.exportNodeRun.uid,
+    );
+    assert.equal(exportNode.status, 'queued');
+    assert.deepEqual(exportNode.inputSnapshot, beforeExportNode.inputSnapshot);
+    assert.deepEqual(exportNode.output, beforeExportNode.output);
+  }
+});
+
+test('only an identical reordered request coalesces while finalization is active', async (t) => {
+  let releaseAudio;
+  const fixture = await finalizationFixture(t, {
+    loadAudio(audio) {
+      return new Promise((resolve) => { releaseAudio = () => resolve(audio); });
+    },
+  });
+  const planned = fixture.prepared.session.h3Tasks.map((entry) => entry.taskUid);
+  const request = Object.freeze({
+    ...fixture.request,
+    schemaVersion: 'mvp-benchmark-finalization-request.v2',
+    shotTaskOrder: Object.freeze([...planned].reverse()),
+  });
+  const first = fixture.service.finalize(request);
+  const identical = fixture.service.finalize({
+    ...request, shotTaskOrder: [...request.shotTaskOrder],
+  });
+  assert.equal(identical, first);
+  await assert.rejects(fixture.service.finalize({
+    ...request, shotTaskOrder: planned,
+  }), { code: 'MVP_BENCHMARK_FINALIZATION_IN_PROGRESS' });
+  assert.equal(fixture.probeRequests.length, 0);
+  assert.equal(fixture.starts.length, 0);
+  releaseAudio();
+  assert.equal((await first).status, 'succeeded');
+});
+
+test('a reordered finalizer plan produces one real verified local 1080p MP4 in requested order', async (t) => {
   const fixture = await finalizationFixture(t, { realMedia: true });
-  const result = await fixture.service.finalize(fixture.request);
+  const shotTaskOrder = fixture.prepared.session.h3Tasks
+    .map((entry) => entry.taskUid)
+    .reverse();
+  const request = Object.freeze({
+    ...fixture.request,
+    schemaVersion: 'mvp-benchmark-finalization-request.v2',
+    shotTaskOrder: Object.freeze(shotTaskOrder),
+  });
+  const result = await fixture.service.finalize(request);
   assert.equal(result.status, 'succeeded');
   assert.equal(result.dramaUid, fixture.current.dramaUid);
   assert.equal(result.sourceNodeRunUid, fixture.current.exportNodeRun.uid);
@@ -537,6 +617,25 @@ test('the finalizer plan produces one real verified local 1080p MP4', async (t) 
   assert.equal(fileSha256(outputPath), result.output.sha256);
   assert.equal(version.sha256, result.output.sha256);
   assert.equal(version.mimeType, 'video/mp4');
+  const aggregate = fixture.repositories.runs.getWorkflowWithNodes(fixture.current.run.run.uid);
+  const exportNode = aggregate.nodes.find((node) => node.uid === fixture.current.exportNodeRun.uid);
+  assert.equal(exportNode.inputSnapshot.schemaVersion, 'mvp-benchmark-finalization-input.v2');
+  assert.deepEqual(exportNode.inputSnapshot.shotTaskOrder, shotTaskOrder);
+  assert.deepEqual(
+    exportNode.output.executionPlan.videoSources.map((source) => source.assetVersionUid),
+    shotTaskOrder.map((taskUid) => fixture.h3.results.get(taskUid).assetVersionUid),
+  );
+  assert.equal(
+    exportNode.output.executionPlan.audioSources
+      .find((source) => source.role === 'dialogue').placements[0].startMs,
+    3_250,
+  );
+  assert.deepEqual(
+    [0.8, 2.4, 4.0, 5.6].map((seconds) => (
+      dominantColorAt(fixture.media.ffmpegPath, outputPath, seconds)
+    )),
+    ['yellow', 'green', 'blue', 'red'],
+  );
 
   const humanAvReview = createMvpBenchmarkHumanAvReviewService({
     repositories: fixture.repositories,
@@ -774,6 +873,32 @@ test('the localhost finalization route binds path identity and rejects extra req
     expectedBatchSha256: body.expectedBatchSha256,
     bgmTrackUid: body.bgmTrackUid,
   }]);
+
+  const reorderedBody = {
+    ...body,
+    schemaVersion: 'mvp-benchmark-finalization-request.v2',
+    shotTaskOrder: [uid(120410), uid(120409), uid(120408), uid(120407)],
+  };
+  assert.equal(validateRequest(reorderedBody), true);
+  assert.equal(validateRequest({
+    ...reorderedBody,
+    shotTaskOrder: [reorderedBody.shotTaskOrder[0], reorderedBody.shotTaskOrder[0]],
+  }), false);
+  const reordered = await fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(reorderedBody),
+  });
+  assert.equal(reordered.status, 200);
+  assert.deepEqual(calls[1], {
+    schemaVersion: reorderedBody.schemaVersion,
+    authorizationUid: uid(120402),
+    sessionUid: uid(120401),
+    dramaUid: uid(120400),
+    expectedBatchSha256: reorderedBody.expectedBatchSha256,
+    bgmTrackUid: reorderedBody.bgmTrackUid,
+    shotTaskOrder: reorderedBody.shotTaskOrder,
+  });
 });
 
 test('the localhost human audiovisual review route binds path identity and exact request fields', async (t) => {

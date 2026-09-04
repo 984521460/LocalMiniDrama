@@ -10,6 +10,10 @@ import { renderToString } from '@vue/server-renderer'
 
 import { parseMvpBenchmarkPreflightBatchJson } from '../src/benchmark/mvpPreflight.js'
 import {
+  createMvpBenchmarkShotTaskOrder,
+  mvpBenchmarkShotTaskOrder,
+} from '../src/benchmark/mvpShotOrder.js'
+import {
   mvpBenchmarkHumanAvReviewSeed,
   parseMvpBenchmarkHumanAvReviewJson,
 } from '../src/benchmark/mvpHumanAvReview.js'
@@ -19,6 +23,7 @@ import {
 import {
   createMvpBenchmarkHumanAvReviewState,
 } from '../src/composables/useMvpBenchmarkHumanAvReview.js'
+import { useMvpBenchmarkShotOrder } from '../src/composables/useMvpBenchmarkShotOrder.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const uid = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
@@ -257,8 +262,9 @@ test('finalization state accepts one exact local export result and ignores a sta
       return new Promise((resolve) => pending.push(resolve))
     },
   })
-  const first = state.finalize(session(), authorization(), batch(), uid(300))
-  const second = state.finalize(session(), authorization(), batch(), uid(301))
+  const order = createMvpBenchmarkShotTaskOrder(session())
+  const first = state.finalize(session(), authorization(), batch(), uid(300), order)
+  const second = state.finalize(session(), authorization(), batch(), uid(301), order)
   pending[1](mediaExportRun())
   assert.equal(await second, true)
   pending[0](mediaExportRun())
@@ -267,19 +273,51 @@ test('finalization state accepts one exact local export result and ignores a sta
   assert.equal(state.run.value.statusLabel, '已完成')
   assert.equal(calls.length, 2)
   assert.equal(calls[1][3], uid(301))
+  assert.deepEqual(calls[1][4], order)
 })
 
 test('finalization failure is fixed and never retains a prior export result', async () => {
   const state = createMvpBenchmarkFinalizationState({
     finalize() { return Promise.resolve(mediaExportRun()) },
   })
-  assert.equal(await state.finalize(session(), authorization(), batch(), uid(300)), true)
+  const order = createMvpBenchmarkShotTaskOrder(session())
+  assert.equal(await state.finalize(session(), authorization(), batch(), uid(300), order), true)
   assert.ok(state.run.value)
-  assert.equal(await state.finalize(session(), authorization(), batch(), 'invalid'), false)
+  assert.equal(await state.finalize(session(), authorization(), batch(), 'invalid', order), false)
   assert.equal(state.error.value, 'MVP_BENCHMARK_FINALIZATION_REQUEST_FAILED')
   assert.equal(state.run.value, null)
   state.invalidate()
   assert.equal(state.run.value, null)
+})
+
+test('shot order state moves one trusted complete permutation and resets without changing the session', () => {
+  const source = session()
+  const state = useMvpBenchmarkShotOrder()
+  assert.equal(state.sync(source), true)
+  const original = source.h3Tasks.map((entry) => entry.taskUid)
+  assert.deepEqual(state.order.value, original)
+  assert.equal(state.move(original[3], -1), true)
+  assert.deepEqual(state.order.value, [original[0], original[1], original[3], original[2]])
+  assert.deepEqual(mvpBenchmarkShotTaskOrder(state.snapshot(source), source), state.order.value)
+  assert.equal(state.move(original[0], -1), false)
+  assert.equal(state.reset(), true)
+  assert.deepEqual(state.order.value, original)
+  assert.deepEqual(source.h3Tasks.map((entry) => entry.taskUid), original)
+  assert.throws(() => mvpBenchmarkShotTaskOrder([...state.order.value], source), TypeError)
+  const globalSet = globalThis.Set
+  let pollutedConstructorCalls = 0
+  try {
+    globalThis.Set = function PollutedSet() {
+      pollutedConstructorCalls += 1
+      throw new Error('synthetic-set-constructor')
+    }
+    mvpBenchmarkShotTaskOrder(state.snapshot(source), source)
+  } finally {
+    globalThis.Set = globalSet
+  }
+  assert.equal(pollutedConstructorCalls, 0)
+  state.invalidate()
+  assert.deepEqual(state.order.value, [])
 })
 
 test('the finalization panel is explicit, local-only and wired after BGM selection', () => {
@@ -290,12 +328,18 @@ test('the finalization panel is explicit, local-only and wired after BGM selecti
     __dirname, '../src/views/WorkflowCanvas.vue',
   ), 'utf8')
   assert.match(panel, /编译并导出成片/)
+  assert.match(panel, /成片镜头顺序（从上到下）/)
+  assert.match(panel, /恢复原顺序/)
+  assert.match(panel, /move-shot/)
   assert.match(panel, /不会再次访问 SSH、Vault、Provider 或 GPU/)
-  assert.match(panel, /batchComplete && props\.selectedTrackUid/)
+  assert.match(panel, /batchComplete && props\.selectedTrackUid && props\.shotTaskOrder\.length > 0/)
+  assert.match(panel, /!props\.busy && !props\.run/)
   assert.match(canvas, /MvpBenchmarkFinalizationPanel/)
   assert.match(canvas, /finalizeMvpProduction/)
   assert.match(canvas, /mvpExecutionBatchComplete/)
   assert.match(canvas, /bgmLibrary\.selectedTrackUid/)
+  assert.match(canvas, /mvpShotOrder\.snapshot\(session\)/)
+  assert.match(canvas, /@move-shot="mvpShotOrder\.move"/)
   assert.match(canvas, /确认本地成片编译/)
   assert.doesNotMatch(panel, /credentialRef|apiKey|secret/i)
 })
@@ -304,6 +348,8 @@ test('the compiled finalization panel renders a disabled gate until batch and BG
   const unavailable = await renderFinalizationPanel({
     batchComplete: false,
     selectedTrackUid: '',
+    shotTaskOrder: [],
+    plannedShotTaskOrder: [],
     run: null,
     busy: false,
     error: '',
@@ -314,13 +360,28 @@ test('the compiled finalization panel renders a disabled gate until batch and BG
   const available = await renderFinalizationPanel({
     batchComplete: true,
     selectedTrackUid: uid(300),
-    run: { statusLabel: '已完成' },
+    shotTaskOrder: createMvpBenchmarkShotTaskOrder(session()),
+    plannedShotTaskOrder: session().h3Tasks.map((entry) => entry.taskUid),
+    run: null,
     busy: false,
     error: '',
   })
   assert.match(available, /<button [^>]*data-loading="false"[^>]*>编译并导出成片<\/button>/)
-  assert.doesNotMatch(available, /<button disabled/)
-  assert.match(available, /成片导出状态：已完成/)
+  assert.match(available, /原镜头 1/)
+  assert.match(available, /上移/)
+  assert.match(available, /下移/)
+
+  const completed = await renderFinalizationPanel({
+    batchComplete: true,
+    selectedTrackUid: uid(300),
+    shotTaskOrder: createMvpBenchmarkShotTaskOrder(session()),
+    plannedShotTaskOrder: session().h3Tasks.map((entry) => entry.taskUid),
+    run: { statusLabel: '已完成' },
+    busy: false,
+    error: '',
+  })
+  assert.match(completed, /<button disabled[^>]*>编译并导出成片<\/button>/)
+  assert.match(completed, /成片导出状态：已完成/)
 })
 
 test('human audiovisual review state keeps one exact reviewed export and rejects stale state', async () => {

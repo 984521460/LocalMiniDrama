@@ -18,6 +18,7 @@ const {
 const { createAudioExecutionEvidence } = require('../src/audio/audioExecutionEvidence');
 const {
   AUDIO_TIMELINE_ALGORITHM_VERSION,
+  CHRONOLOGICAL_PLACED_AUDIO_TIMELINE_ALGORITHM_VERSION,
   createAudioTimeline,
   createAudioTimelineVerifier,
   requireTrustedAudioTimeline,
@@ -339,6 +340,71 @@ test('independent TTS can be placed on the full video axis with deterministic si
   assert.throws(() => createAudioTimelineVerifier({
     loadTrustedEnvelope() { return envelope; },
   }).verify(downgraded, envelope.uid), expectCode('AUDIO_TIMELINE_DATA_INVALID'));
+});
+
+test('chronological placements can reorder trusted dialogue without mutating its source plan', () => {
+  const rawPlan = planInput('independent_tts');
+  const plan = verifiedPlan(rawPlan);
+  const execution = executionEvidence(plan, [700, 800]);
+  const originalBindingOrder = plan.dialogueBindings.map((entry) => entry.dialogueDeliveryUid);
+  const originalOutputOrder = execution.ttsOutputs.map((entry) => entry.dialogueDeliveryUid);
+  const envelope = {
+    schemaVersion: '8.0',
+    uid: uid(952),
+    plan,
+    executionEvidence: execution,
+    targetDurationMs: 6500,
+    placementOrder: 'chronological',
+    placements: [
+      { dialogueDeliveryUid: plan.dialogueBindings[1].dialogueDeliveryUid, startMs: 250 },
+      { dialogueDeliveryUid: plan.dialogueBindings[0].dialogueDeliveryUid, startMs: 4000 },
+    ],
+    createdAtEpochMs: 1_800_000_300_000,
+  };
+  const candidate = createAudioTimeline(envelope);
+  const timeline = createAudioTimelineVerifier({
+    loadTrustedEnvelope(expectedUid) {
+      if (expectedUid !== envelope.uid) throw new Error('synthetic-chronological-timeline-anchor');
+      return envelope;
+    },
+  }).verify(candidate, envelope.uid);
+
+  assert.equal(
+    timeline.timingAlgorithmVersion,
+    CHRONOLOGICAL_PLACED_AUDIO_TIMELINE_ALGORITHM_VERSION,
+  );
+  assert.deepEqual(
+    timeline.segments.map((entry) => entry.dialogueDeliveryUid),
+    [plan.dialogueBindings[1].dialogueDeliveryUid, plan.dialogueBindings[0].dialogueDeliveryUid],
+  );
+  assert.deepEqual(timeline.segments.map((entry) => [entry.startMs, entry.endMs]), [
+    [250, 1050], [4000, 4700],
+  ]);
+  assert.deepEqual(
+    timeline.subtitleTrack.cues.map((entry) => [entry.dialogueDeliveryUid, entry.text]),
+    [
+      [plan.dialogueBindings[1].dialogueDeliveryUid, plan.dialogueBindings[1].dialogueDelivery.text],
+      [plan.dialogueBindings[0].dialogueDeliveryUid, plan.dialogueBindings[0].dialogueDelivery.text],
+    ],
+  );
+  assert.deepEqual(
+    plan.dialogueBindings.map((entry) => entry.dialogueDeliveryUid),
+    originalBindingOrder,
+  );
+  assert.deepEqual(
+    execution.ttsOutputs.map((entry) => entry.dialogueDeliveryUid),
+    originalOutputOrder,
+  );
+  assert.equal(validateTimelineSchema(timeline), true, JSON.stringify(validateTimelineSchema.errors));
+
+  assert.throws(() => createAudioTimeline({
+    ...envelope,
+    placements: [envelope.placements[0], envelope.placements[0]],
+  }), expectCode('AUDIO_TIMELINE_INPUT_INVALID'));
+  assert.throws(() => createAudioTimeline({
+    ...envelope,
+    placements: envelope.placements.slice(0, 1),
+  }), expectCode('AUDIO_TIMELINE_INPUT_INVALID'));
 });
 
 test('H3-native proportional allocation is deterministic, contiguous and exact at every boundary', () => {

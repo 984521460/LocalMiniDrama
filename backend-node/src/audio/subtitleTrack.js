@@ -13,7 +13,7 @@ const {
 } = require('./audioContract');
 
 const ALGORITHM_VERSIONS = Object.freeze(new Set([
-  'audio-timeline-ms.v1', 'audio-timeline-ms.v2',
+  'audio-timeline-ms.v1', 'audio-timeline-ms.v2', 'audio-timeline-ms.v3',
 ]));
 const MAX_SEGMENTS = 1000;
 const TRACK_KEYS = Object.freeze([

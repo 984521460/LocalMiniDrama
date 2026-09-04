@@ -5,6 +5,7 @@ const { types: { isProxy } } = require('node:util');
 const {
   canonicalHash,
   canonicalUid,
+  denseArray,
   exactObject,
 } = require('../audio/audioContract');
 const {
@@ -69,16 +70,27 @@ const UNAVAILABLE_CODE = 'MVP_BENCHMARK_FINALIZATION_UNAVAILABLE';
 const IN_PROGRESS_CODE = 'MVP_BENCHMARK_FINALIZATION_IN_PROGRESS';
 const FAILED_CODE = 'MVP_BENCHMARK_FINALIZATION_FAILED';
 const REQUEST_SCHEMA_VERSION = 'mvp-benchmark-finalization-request.v1';
+const REORDERED_REQUEST_SCHEMA_VERSION = 'mvp-benchmark-finalization-request.v2';
 const INPUT_KEYS = Object.freeze([
   'schemaVersion', 'authorizationUid', 'sessionUid', 'dramaUid',
   'expectedBatchSha256', 'bgmTrackUid',
+]);
+const REORDERED_INPUT_KEYS = Object.freeze([
+  'schemaVersion', 'authorizationUid', 'sessionUid', 'dramaUid',
+  'expectedBatchSha256', 'bgmTrackUid', 'shotTaskOrder',
 ]);
 const FINALIZATION_INPUT_KEYS = Object.freeze([
   'schemaVersion', 'authorizationUid', 'sessionUid', 'expectedBatchSha256',
   'bgmTrackUid', 'executionPlanSha256',
 ]);
+const REORDERED_FINALIZATION_INPUT_KEYS = Object.freeze([
+  'schemaVersion', 'authorizationUid', 'sessionUid', 'expectedBatchSha256',
+  'bgmTrackUid', 'shotTaskOrder', 'executionPlanSha256',
+]);
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_MEDIA_INPUTS = 100;
+const MIN_SHOTS = 4;
+const MAX_SHOTS = 6;
 const REQUIRED_REPOSITORIES = Object.freeze([
   'assets', 'bgmTracks', 'generationHistory', 'h3GenerationIntents',
   'audioModeIntents', 'mvpBenchmarkExternalAuthorizations',
@@ -111,18 +123,39 @@ function isMvpBenchmarkFinalizationError(error) {
 
 function requestRecord(value) {
   try {
-    const input = exactObject(value, INPUT_KEYS, INPUT_CODE);
-    if (input.schemaVersion !== REQUEST_SCHEMA_VERSION
+    let input;
+    let reordered = false;
+    try {
+      input = exactObject(value, REORDERED_INPUT_KEYS, INPUT_CODE);
+      reordered = true;
+    } catch {
+      input = exactObject(value, INPUT_KEYS, INPUT_CODE);
+    }
+    if ((input.schemaVersion !== REQUEST_SCHEMA_VERSION
+      && input.schemaVersion !== REORDERED_REQUEST_SCHEMA_VERSION)
+      || reordered !== (input.schemaVersion === REORDERED_REQUEST_SCHEMA_VERSION)
       || typeof input.expectedBatchSha256 !== 'string'
       || !REFLECT_APPLY(REGEXP_TEST, SHA256, [input.expectedBatchSha256])) fail(INPUT_CODE);
-    return Object.freeze({
-      schemaVersion: REQUEST_SCHEMA_VERSION,
+    const base = {
+      schemaVersion: input.schemaVersion,
       authorizationUid: canonicalUid(input.authorizationUid, INPUT_CODE),
       sessionUid: canonicalUid(input.sessionUid, INPUT_CODE),
       dramaUid: canonicalUid(input.dramaUid, INPUT_CODE),
       expectedBatchSha256: input.expectedBatchSha256,
       bgmTrackUid: canonicalUid(input.bgmTrackUid, INPUT_CODE),
-    });
+    };
+    if (!reordered) return Object.freeze(base);
+    const sourceOrder = denseArray(input.shotTaskOrder, MAX_MEDIA_INPUTS, INPUT_CODE);
+    if (sourceOrder.length < MIN_SHOTS || sourceOrder.length > MAX_SHOTS) fail(INPUT_CODE);
+    const order = [];
+    const unique = new SET_CONSTRUCTOR();
+    for (let index = 0; index < sourceOrder.length; index += 1) {
+      const taskUid = canonicalUid(sourceOrder[index], INPUT_CODE);
+      if (REFLECT_APPLY(SET_HAS, unique, [taskUid])) fail(INPUT_CODE);
+      REFLECT_APPLY(SET_ADD, unique, [taskUid]);
+      append(order, taskUid);
+    }
+    return Object.freeze({ ...base, shotTaskOrder: Object.freeze(order) });
   } catch (error) {
     if (isMvpBenchmarkFinalizationError(error)) throw error;
     return fail(INPUT_CODE);
@@ -198,9 +231,17 @@ function configuration(value) {
 }
 
 function sameRequest(left, right) {
-  for (let index = 0; index < INPUT_KEYS.length; index += 1) {
-    const key = INPUT_KEYS[index];
+  const keys = INPUT_KEYS;
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
     if (left[key] !== right[key]) return false;
+  }
+  if (left.schemaVersion === REORDERED_REQUEST_SCHEMA_VERSION) {
+    if (right.schemaVersion !== REORDERED_REQUEST_SCHEMA_VERSION
+      || left.shotTaskOrder.length !== right.shotTaskOrder.length) return false;
+    for (let index = 0; index < left.shotTaskOrder.length; index += 1) {
+      if (left.shotTaskOrder[index] !== right.shotTaskOrder[index]) return false;
+    }
   }
   return true;
 }
@@ -248,8 +289,8 @@ function plannedOrdinal(intent) {
   return matching[0].ordinal;
 }
 
-function loadH3Sources(config, context) {
-  const shots = [];
+function loadH3Sources(config, context, request) {
+  const sources = [];
   for (let index = 0; index < context.session.h3Tasks.length; index += 1) {
     const item = context.session.h3Tasks[index];
     const result = config.h3LocalExecution.get(item.taskUid);
@@ -264,21 +305,41 @@ function loadH3Sources(config, context) {
     const assetVersion = config.repositories.assets.getVersion(result.assetVersionUid);
     if (intent.uid !== item.intentUid || intent.historyUid !== result.historyUid
       || asset.currentVersionUid !== assetVersion.uid) fail();
-    append(shots, Object.freeze({
-      shotId: intent.generationSpec.prompt.shotId,
-      plannedOrdinal: plannedOrdinal(intent),
-      h3ExecutionResult: result,
-      generationHistory: history,
-      asset,
-      assetVersion,
+    append(sources, Object.freeze({
+      taskUid: item.taskUid,
+      shot: Object.freeze({
+        shotId: intent.generationSpec.prompt.shotId,
+        plannedOrdinal: plannedOrdinal(intent),
+        h3ExecutionResult: result,
+        generationHistory: history,
+        asset,
+        assetVersion,
+      }),
     }));
   }
-  REFLECT_APPLY(ARRAY_SORT, shots, [(left, right) => (
-    left.plannedOrdinal - right.plannedOrdinal
+  REFLECT_APPLY(ARRAY_SORT, sources, [(left, right) => (
+    left.shot.plannedOrdinal - right.shot.plannedOrdinal
   )]);
-  for (let index = 0; index < shots.length; index += 1) {
-    if (shots[index].plannedOrdinal !== index + 1) fail();
+  for (let index = 0; index < sources.length; index += 1) {
+    if (sources[index].shot.plannedOrdinal !== index + 1) fail();
   }
+  const shots = [];
+  if (request.schemaVersion === REQUEST_SCHEMA_VERSION) {
+    for (let index = 0; index < sources.length; index += 1) append(shots, sources[index].shot);
+    return Object.freeze(shots);
+  }
+  if (request.shotTaskOrder.length !== sources.length) fail();
+  const byTaskUid = new MAP_CONSTRUCTOR();
+  for (let index = 0; index < sources.length; index += 1) {
+    mapSet(byTaskUid, sources[index].taskUid, sources[index].shot);
+  }
+  for (let index = 0; index < request.shotTaskOrder.length; index += 1) {
+    const shot = mapGet(byTaskUid, request.shotTaskOrder[index]);
+    if (!shot) fail();
+    append(shots, shot);
+    mapDelete(byTaskUid, request.shotTaskOrder[index]);
+  }
+  if (shots.length !== sources.length) fail();
   return Object.freeze(shots);
 }
 
@@ -367,7 +428,7 @@ function graphContext(repositories, session) {
   return Object.freeze({ aggregate, definition, node: nodeMatches[0] });
 }
 
-function placementsFor(plan, shots, executionEvidence) {
+function placementsFor(plan, shots, executionEvidence, chronological) {
   if (plan.dialogueBindings.length !== executionEvidence.ttsOutputs.length) fail();
   const shotWindows = new MAP_CONSTRUCTOR();
   let targetDurationMs = 0;
@@ -382,34 +443,61 @@ function placementsFor(plan, shots, executionEvidence) {
   }
   const cursors = new MAP_CONSTRUCTOR();
   const placements = [];
+  const sourcesByShot = chronological ? new MAP_CONSTRUCTOR() : null;
+  if (chronological) {
+    for (let index = 0; index < plan.dialogueBindings.length; index += 1) {
+      const binding = plan.dialogueBindings[index];
+      const output = executionEvidence.ttsOutputs[index];
+      if (output.dialogueDeliveryUid !== binding.dialogueDeliveryUid) fail();
+      const shotId = binding.dialogueDelivery.shotId;
+      const entries = mapGet(sourcesByShot, shotId) ?? [];
+      append(entries, Object.freeze({ binding, output }));
+      mapSet(sourcesByShot, shotId, entries);
+    }
+  }
   let previousEndMs = 0;
-  for (let index = 0; index < plan.dialogueBindings.length; index += 1) {
-    const binding = plan.dialogueBindings[index];
-    const output = executionEvidence.ttsOutputs[index];
-    const window = mapGet(shotWindows, binding.dialogueDelivery.shotId);
+  const appendPlacement = (binding, output) => {
+    const shotId = binding.dialogueDelivery.shotId;
+    const window = mapGet(shotWindows, shotId);
     if (!window || output.dialogueDeliveryUid !== binding.dialogueDeliveryUid) fail();
-    const cursor = mapGet(cursors, binding.dialogueDelivery.shotId) ?? window.startMs;
+    const cursor = mapGet(cursors, shotId) ?? window.startMs;
     const startMs = cursor + binding.dialogueDelivery.pauseBeforeMs;
     const endMs = startMs + output.audioVersionEvidence.durationMs;
     const nextCursor = endMs + binding.dialogueDelivery.pauseAfterMs;
     if (startMs < previousEndMs || endMs > window.endMs || nextCursor > window.endMs) fail();
-    append(placements, Object.freeze({
-      dialogueDeliveryUid: binding.dialogueDeliveryUid, startMs,
-    }));
-    mapSet(cursors, binding.dialogueDelivery.shotId, nextCursor);
+    append(placements, Object.freeze({ dialogueDeliveryUid: binding.dialogueDeliveryUid, startMs }));
+    mapSet(cursors, shotId, nextCursor);
     previousEndMs = endMs;
+  };
+  if (chronological) {
+    for (let shotIndex = 0; shotIndex < shots.length; shotIndex += 1) {
+      const entries = mapGet(sourcesByShot, shots[shotIndex].shotId) ?? [];
+      for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+        appendPlacement(entries[entryIndex].binding, entries[entryIndex].output);
+      }
+    }
+  } else {
+    for (let index = 0; index < plan.dialogueBindings.length; index += 1) {
+      appendPlacement(plan.dialogueBindings[index], executionEvidence.ttsOutputs[index]);
+    }
   }
+  if (placements.length !== plan.dialogueBindings.length) fail();
   return Object.freeze({ placements: Object.freeze(placements), targetDurationMs });
 }
 
-function trustedTimeline(config, context, shots, audio, bgmTrack, createdAtEpochMs) {
-  const placement = placementsFor(audio.intent.plan, shots, audio.record.evidence);
+function trustedTimeline(
+  config, context, shots, audio, bgmTrack, createdAtEpochMs, chronological,
+) {
+  const placement = placementsFor(
+    audio.intent.plan, shots, audio.record.evidence, chronological,
+  );
   const timelineInput = Object.freeze({
     schemaVersion: '8.0',
     uid: config.createUid(),
     plan: audio.intent.plan,
     executionEvidence: audio.record.evidence,
     targetDurationMs: placement.targetDurationMs,
+    ...(chronological ? { placementOrder: 'chronological' } : {}),
     placements: placement.placements,
     createdAtEpochMs,
   });
@@ -468,11 +556,11 @@ function trustedTimeline(config, context, shots, audio, bgmTrack, createdAtEpoch
   return Object.freeze({ snapshot, timeline });
 }
 
-async function trustedExecutionPlan(config, context, shots, audio, bgmTrack) {
+async function trustedExecutionPlan(config, context, shots, audio, bgmTrack, chronological) {
   const createdAtEpochMs = config.nowEpochMs();
   if (!Number.isSafeInteger(createdAtEpochMs) || createdAtEpochMs < 0) fail();
   const production = trustedTimeline(
-    config, context, shots, audio, bgmTrack, createdAtEpochMs,
+    config, context, shots, audio, bgmTrack, createdAtEpochMs, chronological,
   );
   const versions = [];
   for (let index = 0; index < production.snapshot.shots.length; index += 1) {
@@ -524,26 +612,46 @@ async function trustedExecutionPlan(config, context, shots, audio, bgmTrack) {
 }
 
 function finalizationInput(request, executionPlan) {
-  return Object.freeze({
-    schemaVersion: 'mvp-benchmark-finalization-input.v1',
+  const base = {
+    schemaVersion: request.schemaVersion === REORDERED_REQUEST_SCHEMA_VERSION
+      ? 'mvp-benchmark-finalization-input.v2'
+      : 'mvp-benchmark-finalization-input.v1',
     authorizationUid: request.authorizationUid,
     sessionUid: request.sessionUid,
     expectedBatchSha256: request.expectedBatchSha256,
     bgmTrackUid: request.bgmTrackUid,
     executionPlanSha256: executionPlan.executionPlanSha256,
-  });
+  };
+  if (request.schemaVersion === REORDERED_REQUEST_SCHEMA_VERSION) {
+    return Object.freeze({ ...base, shotTaskOrder: request.shotTaskOrder });
+  }
+  return Object.freeze(base);
 }
 
 function parseExistingNode(node, request) {
   try {
-    const input = exactObject(node.inputSnapshot, FINALIZATION_INPUT_KEYS, UNAVAILABLE_CODE);
+    const reordered = request.schemaVersion === REORDERED_REQUEST_SCHEMA_VERSION;
+    const input = exactObject(
+      node.inputSnapshot,
+      reordered ? REORDERED_FINALIZATION_INPUT_KEYS : FINALIZATION_INPUT_KEYS,
+      UNAVAILABLE_CODE,
+    );
     const output = exactObject(node.output, ['schemaVersion', 'executionPlan'], UNAVAILABLE_CODE);
-    if (input.schemaVersion !== 'mvp-benchmark-finalization-input.v1'
+    if (input.schemaVersion !== (reordered
+      ? 'mvp-benchmark-finalization-input.v2'
+      : 'mvp-benchmark-finalization-input.v1')
       || input.authorizationUid !== request.authorizationUid
       || input.sessionUid !== request.sessionUid
       || input.expectedBatchSha256 !== request.expectedBatchSha256
       || input.bgmTrackUid !== request.bgmTrackUid
       || output.schemaVersion !== 'media-export-node-output.v1') fail();
+    if (reordered) {
+      const order = denseArray(input.shotTaskOrder, MAX_MEDIA_INPUTS, UNAVAILABLE_CODE);
+      if (order.length !== request.shotTaskOrder.length) fail();
+      for (let index = 0; index < order.length; index += 1) {
+        if (order[index] !== request.shotTaskOrder[index]) fail();
+      }
+    }
     const plan = parseMediaExportExecutionPlanRecord(output.executionPlan);
     if (input.executionPlanSha256 !== plan.executionPlanSha256
       || plan.workflowRunUid !== request.workflowRunUid
@@ -562,7 +670,7 @@ function commitPlan(config, request, expectedContext, expectedSources, execution
     const context = loadFrozenContext(repositories, request);
     if (canonicalHash(context) !== canonicalHash(expectedContext)) fail();
     const graph = graphContext(repositories, context.session);
-    const currentH3 = loadH3Sources(config, context);
+    const currentH3 = loadH3Sources(config, context, request);
     const currentIntent = repositories.audioModeIntents.getCompletedSource(
       context.session.audioIntents[0].intentUid,
     );
@@ -627,11 +735,12 @@ function createMvpBenchmarkFinalizationService(value) {
       }));
       return startExport(config, graph.node.uid, request.dramaUid);
     }
-    const shots = loadH3Sources(config, context);
+    const shots = loadH3Sources(config, context, request);
     const audio = await loadAudioSource(config, context);
     const bgmTrack = loadBgmSource(config.repositories, request);
     const executionPlan = await trustedExecutionPlan(
       config, context, shots, audio, bgmTrack,
+      request.schemaVersion === REORDERED_REQUEST_SCHEMA_VERSION,
     );
     const nodeRunUid = commitPlan(
       config,
