@@ -197,5 +197,6 @@ module.exports = {
   MAX_RAW_RESPONSE_BYTES,
   SCHEMA_VERSION,
   TASK_TYPE,
+  assertFactReferences,
   createNovelExtractionTask,
 };

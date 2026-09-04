@@ -109,7 +109,8 @@ function assertSourceEvidenceAggregate({ document, blocks, selections }) {
     textParts.push(block.text);
   }
   if (expectedStart !== codePointLength(document.fullText)
-    || textParts.join('') !== document.fullText) invalid();
+    || textParts.join('') !== document.fullText
+    || document.contentSha256 !== sha256(document.fullText)) invalid();
 
   for (const selection of selections) {
     if (!selection

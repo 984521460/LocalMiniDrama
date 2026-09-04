@@ -329,6 +329,8 @@ npm run benchmark:source:check
 
 源文本、选择范围、编码选择探针和许可声明位于 [`benchmarks/mvp-source`](benchmarks/mvp-source)。该内容包不含模型、声音、图片、音乐、凭据或生成媒体。
 
+叙事审核页中的事实提取结果支持按事实显式“定位原文”；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/evidence/:factId` 会重新校验结果、原文全文摘要、选区、原文块哈希、Unicode 码点偏移与引文，再返回不含凭据的高亮上下文。
+
 ## 📄 License
 
 [MIT](LICENSE)

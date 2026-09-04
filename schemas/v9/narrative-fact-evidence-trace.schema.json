@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/narrative-fact-evidence-trace.schema.json",
+  "title": "Narrative fact evidence trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "dramaUid", "resultUid", "resultHash", "envelopeHash",
+    "resultStatus", "sourceDocumentUid", "sourceDocumentSha256",
+    "sourceSelectionUid", "selectedTextSha256", "factType", "factId",
+    "factLabel", "factSummary", "factSha256", "evidenceCount", "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "narrative-fact-evidence-trace.v1" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "resultUid": { "$ref": "#/$defs/uuid" },
+    "resultHash": { "$ref": "#/$defs/sha256" },
+    "envelopeHash": { "$ref": "#/$defs/sha256" },
+    "resultStatus": { "enum": ["pending_review", "approved", "rejected", "stale"] },
+    "sourceDocumentUid": { "$ref": "#/$defs/uuid" },
+    "sourceDocumentSha256": { "$ref": "#/$defs/sha256" },
+    "sourceSelectionUid": { "$ref": "#/$defs/uuid" },
+    "selectedTextSha256": { "$ref": "#/$defs/sha256" },
+    "factType": { "enum": ["character", "scene", "prop", "relationship", "event", "dialogue"] },
+    "factId": { "$ref": "#/$defs/factId" },
+    "factLabel": { "type": "string", "minLength": 1, "maxLength": 1100 },
+    "factSummary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "factSha256": { "$ref": "#/$defs/sha256" },
+    "evidenceCount": { "type": "integer", "minimum": 1, "maximum": 16 },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/evidence" }
+    }
+  },
+  "$comment": "Runtime recomputes document, block, selection, result, fact and quote bindings on every read. The response is read-only and contains only the selected source context needed for human review.",
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "factId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blockUid", "blockOrdinal", "headingPath", "blockTextSha256", "blockText",
+        "selectedBlockStartOffset", "selectedBlockEndOffset", "startOffset", "endOffset",
+        "beforeText", "quote", "afterText", "selectedBlockText"
+      ],
+      "properties": {
+        "blockUid": { "$ref": "#/$defs/uuid" },
+        "blockOrdinal": { "type": "integer", "minimum": 0, "maximum": 2047 },
+        "headingPath": {
+          "type": "array", "maxItems": 6,
+          "items": { "type": "string", "maxLength": 256 }
+        },
+        "blockTextSha256": { "$ref": "#/$defs/sha256" },
+        "blockText": { "type": "string", "minLength": 1, "maxLength": 6000 },
+        "selectedBlockStartOffset": { "type": "integer", "minimum": 0, "maximum": 3000 },
+        "selectedBlockEndOffset": { "type": "integer", "minimum": 1, "maximum": 3000 },
+        "startOffset": { "type": "integer", "minimum": 0, "maximum": 2999 },
+        "endOffset": { "type": "integer", "minimum": 1, "maximum": 3000 },
+        "beforeText": { "type": "string", "maxLength": 6000 },
+        "quote": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "afterText": { "type": "string", "maxLength": 6000 },
+        "selectedBlockText": { "type": "string", "minLength": 1, "maxLength": 6000 }
+      }
+    }
+  }
+}

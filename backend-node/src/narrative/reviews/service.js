@@ -10,11 +10,16 @@ const {
   resultContract,
   resultHashes,
 } = require('./contracts');
+const {
+  NarrativeFactEvidenceTraceError,
+  createNarrativeFactEvidenceTrace,
+} = require('./evidenceTrace');
 const { narrativeReviewError } = require('./errors');
 
 const CANONICAL_UID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const REVIEW_REF = /^review:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const FACT_ID = /^[a-z][a-z0-9-]{0,63}$/u;
 const TYPE_PREDECESSOR = Object.freeze({
   adaptation: 'extraction',
   script: 'adaptation',
@@ -312,6 +317,33 @@ function createNarrativeReviewService({ repositories, createUid = randomUUID } =
 
     getResult(uid) {
       return detailFor(getRecord(uid));
+    },
+
+    getFactEvidence(uid, factId) {
+      assertUid(uid);
+      if (typeof factId !== 'string' || !FACT_ID.test(factId)) invalidInput();
+      const record = getRecord(uid);
+      if (record.resultType !== 'extraction') {
+        throw narrativeReviewError('NARRATIVE_REVIEW_NOT_FOUND');
+      }
+      try {
+        const selection = sources.getSelection(record.sourceSelectionUid);
+        const document = sources.getDocument(selection.documentUid);
+        const blocks = sources.listBlocks(document.uid);
+        const trace = createNarrativeFactEvidenceTrace({
+          record, document, selection, blocks, factId,
+        });
+        if (!trace) throw narrativeReviewError('NARRATIVE_REVIEW_NOT_FOUND');
+        return trace;
+      } catch (error) {
+        if (error?.code === 'NARRATIVE_REVIEW_NOT_FOUND') throw error;
+        if (error instanceof NarrativeFactEvidenceTraceError
+          || error instanceof V2RepositoryNotFoundError
+          || error instanceof V2RepositoryDataError) {
+          throw narrativeReviewError('NARRATIVE_REVIEW_DATA_INVALID');
+        }
+        throw error;
+      }
     },
 
     listForDrama(dramaId) {

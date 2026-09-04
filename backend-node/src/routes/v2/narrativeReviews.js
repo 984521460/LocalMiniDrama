@@ -51,6 +51,17 @@ function narrativeReviewRoutes(database, log, options = {}) {
     }
   });
 
+  router.get('/narrative-results/:resultUid/evidence/:factId', (req, res) => {
+    try {
+      return response.success(
+        res,
+        service.getFactEvidence(req.params.resultUid, req.params.factId),
+      );
+    } catch (error) {
+      return handleError(res, error, 'narrative-review-evidence');
+    }
+  });
+
   router.post('/narrative-results/:resultUid/reviews', (req, res) => {
     try {
       const body = req.body || {};
