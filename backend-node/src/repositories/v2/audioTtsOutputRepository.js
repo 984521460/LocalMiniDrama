@@ -385,10 +385,13 @@ function createAudioTtsOutputRepository(value) {
       if (node !== null) fail(DATA_CODE);
       node = run.nodes[index];
     }
-    if (run.run.status !== 'queued' || node?.status !== 'queued') fail(DATA_CODE);
-    repositories.runs.transitionWorkflowStatus({
-      uid: run.run.uid, expectedStatus: 'queued', nextStatus: 'running',
-    });
+    if ((run.run.status !== 'queued' && run.run.status !== 'running')
+      || node?.status !== 'queued') fail(DATA_CODE);
+    if (run.run.status === 'queued') {
+      repositories.runs.transitionWorkflowStatus({
+        uid: run.run.uid, expectedStatus: 'queued', nextStatus: 'running',
+      });
+    }
     repositories.runs.transitionNodeStatus({
       uid: node.uid,
       expectedStatus: 'queued',

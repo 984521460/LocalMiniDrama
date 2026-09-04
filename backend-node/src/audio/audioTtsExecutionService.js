@@ -100,7 +100,7 @@ function configuration(value) {
       || isProxy(input.nowEpochMs)) fail(INPUT_CODE);
     return Object.freeze({
       ...input,
-      loadIntent: exactMethod(audioModeIntents, 'get'),
+      loadIntent: exactMethod(audioModeIntents, 'getExecutionSource'),
       loadProfile: exactMethod(voiceProfiles, 'get'),
       reserve: exactMethod(input.submissions, 'reserve'),
       getSubmission: exactMethod(input.submissions, 'get'),

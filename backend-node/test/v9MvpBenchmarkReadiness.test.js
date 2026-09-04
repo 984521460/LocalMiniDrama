@@ -323,6 +323,19 @@ test('readiness fails closed when a version-nineteen TTS output contract table i
   });
 });
 
+test('readiness fails closed when the version-twenty-nine TTS workflow trigger is missing', (t) => {
+  const database = createMigratedV2Database(t);
+  const repository = createMvpBenchmarkReadinessRepository(database);
+  assert.equal(repository.inspect().contractsReady, true);
+
+  database.exec('DROP TRIGGER v2_audio_tts_execution_evidence_validate_insert');
+
+  assert.deepEqual(repository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness fails closed when the version-twenty benchmark session table is missing', (t) => {
   const database = createMigratedV2Database(t);
   const repository = createMvpBenchmarkReadinessRepository(database);

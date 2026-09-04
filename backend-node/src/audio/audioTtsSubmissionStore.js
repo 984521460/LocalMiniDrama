@@ -133,7 +133,7 @@ function createAudioTtsSubmissionStore(database, options) {
   if (!database || typeof database.prepare !== 'function' || isProxy(database)) {
     throw new TypeError('Audio TTS submission store dependencies are invalid');
   }
-  const loadIntent = captureMethod(audioModeIntents, 'get');
+  const loadIntent = captureMethod(audioModeIntents, 'getExecutionSource');
   let statements;
   function prepared() {
     if (statements) return statements;

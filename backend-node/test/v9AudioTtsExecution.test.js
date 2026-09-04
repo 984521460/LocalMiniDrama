@@ -18,7 +18,10 @@ const {
 const { createLocalMediaProbe } = require('../src/media/localMediaProbe');
 const audioTtsExecutionRoutes = require('../src/routes/v2/audioTtsExecution');
 const { getFfmpegPath, getFfprobePath } = require('../src/utils/ffmpegPath');
+const { createWorkflowRunService } = require('../src/workflows');
 const { createAudioModeIntentFixture } = require('./helpers/v9AudioModeIntentFixture');
+const { createMvpBenchmarkSessionFixture } = require('./helpers/v9MvpBenchmarkSessionFixture');
+const { uid } = require('./helpers/v2RepositoryDatabase');
 const audioExecutionEvidenceSchema = require('../../schemas/v8/audio-execution-evidence.schema.json');
 const h3GenerationSpecSchema = require('../../schemas/v7/h3-generation-spec.schema.json');
 const h3VideoEvidenceSchema = require('../../schemas/v7/h3-video-evidence.schema.json');
@@ -46,15 +49,18 @@ function writeOversizeSparseFile(storageProvider, locator) {
 }
 
 function createExecutionFixture(t, options = {}) {
-  const current = createAudioModeIntentFixture(t);
-  const intent = current.repositories.audioModeIntents.prepare(current.request);
+  const current = options.sourceFixture ?? createAudioModeIntentFixture(t);
+  const intent = options.sourceFixture
+    ? current.audioIntent
+    : current.repositories.audioModeIntents.prepare(current.request);
+  const database = current.fixture?.database ?? current.database;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'localminidrama-audio-tts-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const audio = syntheticWav(root);
   const calls = { vault: 0, provider: 0 };
   const storageProvider = new LocalStorageProvider({ projectRoot: root });
   const outputs = createAudioTtsOutputRepository({
-    database: current.fixture.database,
+    database,
     repositories: current.repositories,
   });
   const service = createAudioTtsExecutionService({
@@ -139,6 +145,92 @@ test('local TTS execution seals decoded audio and is idempotent without a second
   assert.equal(
     current.fixture.database.serialize().includes(Buffer.from('synthetic-credential-value')),
     false,
+  );
+});
+
+test('local TTS execution completes its queued node after earlier workflow work has started', async (t) => {
+  const current = createExecutionFixture(t);
+  current.repositories.runs.transitionWorkflowStatus({
+    uid: current.intent.workflowRunUid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+  });
+
+  const completed = await current.service.execute(
+    current.intent.uid,
+    current.intent.dramaUid,
+  );
+
+  assert.equal(completed.intentUid, current.intent.uid);
+  assert.deepEqual(current.calls, { vault: 1, provider: 1 });
+  const aggregate = current.repositories.runs.getWorkflowWithNodes(
+    current.intent.workflowRunUid,
+  );
+  assert.equal(aggregate.run.status, 'succeeded');
+  assert.equal(
+    aggregate.nodes.find((node) => node.uid === current.intent.nodeRunUid).status,
+    'succeeded',
+  );
+});
+
+test('the real TTS sink closes a benchmark workflow after its four H3 nodes succeed', async (t) => {
+  const source = createMvpBenchmarkSessionFixture(t);
+  const current = createExecutionFixture(t, { sourceFixture: source });
+  current.repositories.runs.transitionWorkflowStatus({
+    uid: current.intent.workflowRunUid,
+    expectedStatus: 'queued',
+    nextStatus: 'running',
+  });
+  for (let index = 0; index < current.h3Intents.length; index += 1) {
+    const intent = current.h3Intents[index];
+    const task = current.repositories.remote.getFormalTask(intent.taskUid);
+    const nodeRunUid = task.idempotencyKey.slice('remote-task:v1:'.length);
+    current.repositories.runs.transitionNodeStatus({
+      uid: nodeRunUid,
+      expectedStatus: 'queued',
+      nextStatus: 'running',
+      inputSnapshot: { remoteTaskUid: task.uid },
+    });
+    current.repositories.runs.transitionNodeStatus({
+      uid: nodeRunUid,
+      expectedStatus: 'running',
+      nextStatus: 'succeeded',
+      output: { assetVersionUid: intent.parentVersionUid, remoteTaskUid: task.uid },
+    });
+  }
+
+  const completed = await current.service.execute(
+    current.intent.uid,
+    current.intent.dramaUid,
+  );
+  const aggregate = current.repositories.runs.getWorkflowWithNodes(
+    current.intent.workflowRunUid,
+  );
+
+  assert.equal(completed.intentUid, current.intent.uid);
+  assert.deepEqual(current.calls, { vault: 1, provider: 1 });
+  assert.equal(aggregate.run.status, 'succeeded');
+  assert.equal(aggregate.nodes.length, 5);
+  assert.ok(aggregate.nodes.every((node) => node.status === 'succeeded'));
+});
+
+test('a terminal workflow rejects TTS before credential or provider access', async (t) => {
+  const current = createExecutionFixture(t);
+  createWorkflowRunService({
+    repositories: current.repositories,
+    createUid: () => uid(97500),
+  }).cancelRun({ runUid: current.intent.workflowRunUid });
+
+  await assert.rejects(
+    () => current.service.execute(current.intent.uid, current.intent.dramaUid),
+    { code: 'V2_REPOSITORY_DATA_INVALID' },
+  );
+
+  assert.deepEqual(current.calls, { vault: 0, provider: 0 });
+  assert.equal(current.outputs.get(current.intent.uid), null);
+  assert.equal(
+    current.fixture.database.prepare('SELECT count(*) FROM audio_tts_submissions').pluck().get(),
+    0,
   );
 });
 
@@ -534,7 +626,10 @@ test('TTS execution contracts do not invoke polluted inherited collection hooks'
       });
     }
     const storageProvider = new LocalStorageProvider({ projectRoot: payload.root });
-    const repository = Object.freeze({ get() { return null; } });
+    const repository = Object.freeze({
+      get() { return null; },
+      getExecutionSource() { return null; },
+    });
     const repositories = Object.freeze({
       audioModeIntents: repository,
       voiceProfiles: repository,
