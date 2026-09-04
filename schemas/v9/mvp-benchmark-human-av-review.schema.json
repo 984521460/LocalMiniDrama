@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-human-av-review.schema.json",
+  "title": "MVP benchmark human audiovisual review v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "uid", "sessionUid", "authorizationUid", "batchSha256",
+    "dramaUid", "workflowRunUid", "exportRunUid", "exportExecutionPlanSha256",
+    "outputAssetUid", "outputAssetVersionUid", "outputSha256", "outputBytes",
+    "outputDurationMs", "outputWidth", "outputHeight", "exportCompletedAtEpochMs",
+    "videoPlaybackAccepted", "subtitleSyncAccepted", "bgmBalanceAccepted",
+    "reviewNote", "reviewedAtEpochMs", "reviewSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-human-av-review.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "sessionUid": { "$ref": "#/$defs/uid" },
+    "authorizationUid": { "$ref": "#/$defs/uid" },
+    "batchSha256": { "$ref": "#/$defs/sha256" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "workflowRunUid": { "$ref": "#/$defs/uid" },
+    "exportRunUid": { "$ref": "#/$defs/uid" },
+    "exportExecutionPlanSha256": { "$ref": "#/$defs/sha256" },
+    "outputAssetUid": { "$ref": "#/$defs/uid" },
+    "outputAssetVersionUid": { "$ref": "#/$defs/uid" },
+    "outputSha256": { "$ref": "#/$defs/sha256" },
+    "outputBytes": { "type": "integer", "minimum": 1, "maximum": 68719476736 },
+    "outputDurationMs": { "type": "integer", "minimum": 1, "maximum": 3600100 },
+    "outputWidth": { "const": 1920 },
+    "outputHeight": { "const": 1080 },
+    "exportCompletedAtEpochMs": { "$ref": "#/$defs/epoch" },
+    "videoPlaybackAccepted": { "const": true },
+    "subtitleSyncAccepted": { "const": true },
+    "bgmBalanceAccepted": { "const": true },
+    "reviewNote": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "reviewedAtEpochMs": { "$ref": "#/$defs/epoch" },
+    "reviewSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "epoch": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }
+  },
+  "$comment": "Runtime additionally recomputes reviewSha256, requires reviewedAtEpochMs not before the sealed export completion, and revalidates the immutable stored session, authorization, preflight batch, successful MediaExportRun and current final-video AssetVersion on every read. This record is human audiovisual evidence, not an MVP completion receipt."
+}

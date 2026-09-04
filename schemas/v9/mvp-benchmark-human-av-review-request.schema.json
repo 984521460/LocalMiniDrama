@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-human-av-review-request.schema.json",
+  "title": "MVP benchmark human audiovisual review request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "expectedBatchSha256", "exportRunUid",
+    "videoPlaybackAccepted", "subtitleSyncAccepted", "bgmBalanceAccepted", "reviewNote"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-human-av-review-request.v1" },
+    "expectedBatchSha256": { "$ref": "#/$defs/sha256" },
+    "exportRunUid": { "$ref": "#/$defs/uid" },
+    "videoPlaybackAccepted": { "const": true },
+    "subtitleSyncAccepted": { "const": true },
+    "bgmBalanceAccepted": { "const": true },
+    "reviewNote": { "type": "string", "minLength": 1, "maxLength": 2048 }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$comment": "Path parameters add the exact drama, session and authorization identities. Runtime also enforces trimmed, well-formed UTF-8 review text of at most 2048 bytes and rejects control characters."
+}

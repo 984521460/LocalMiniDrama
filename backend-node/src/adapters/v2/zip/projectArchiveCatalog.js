@@ -107,6 +107,8 @@ const EXCLUDED_TABLES = Object.freeze([
   'mvp_benchmark_execution_reservation_seals',
   'mvp_benchmark_execution_settlements',
   'mvp_benchmark_execution_settlement_seals',
+  'mvp_benchmark_human_av_reviews',
+  'mvp_benchmark_human_av_review_seals',
   'mvp_benchmark_resource_release_obligations',
   'mvp_benchmark_resource_release_obligation_seals',
   'mvp_benchmark_resource_release_receipts',

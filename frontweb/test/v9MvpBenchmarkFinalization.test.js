@@ -10,8 +10,15 @@ import { renderToString } from '@vue/server-renderer'
 
 import { parseMvpBenchmarkPreflightBatchJson } from '../src/benchmark/mvpPreflight.js'
 import {
+  mvpBenchmarkHumanAvReviewSeed,
+  parseMvpBenchmarkHumanAvReviewJson,
+} from '../src/benchmark/mvpHumanAvReview.js'
+import {
   createMvpBenchmarkFinalizationState,
 } from '../src/composables/useMvpBenchmarkFinalization.js'
+import {
+  createMvpBenchmarkHumanAvReviewState,
+} from '../src/composables/useMvpBenchmarkHumanAvReview.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const uid = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
@@ -40,6 +47,40 @@ async function renderFinalizationPanel(props) {
         'data-loading': String(buttonProps.loading),
       }, slots.default?.())
     },
+  })
+  return renderToString(app)
+}
+
+async function renderHumanAvReviewPanel(props) {
+  const filename = path.resolve(
+    __dirname, '../src/components/benchmark/MvpBenchmarkHumanAvReviewPanel.vue',
+  )
+  const source = fs.readFileSync(filename, 'utf8')
+  const descriptor = parse(source, { filename }).descriptor
+  const vueUrl = import.meta.resolve('vue')
+  const compiled = compileScript(descriptor, {
+    id: 'mvp-benchmark-human-av-review-panel',
+    inlineTemplate: true,
+  }).content
+    .replaceAll('from "vue"', `from '${vueUrl}'`)
+    .replaceAll("from 'vue'", `from '${vueUrl}'`)
+  const componentUrl = `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`
+  const component = (await import(componentUrl)).default
+  const app = createSSRApp(component, props)
+  app.component('el-button', {
+    props: { disabled: Boolean, loading: Boolean },
+    setup(buttonProps, { slots }) {
+      return () => h('button', {
+        disabled: buttonProps.disabled,
+        'data-loading': String(buttonProps.loading),
+      }, slots.default?.())
+    },
+  })
+  app.component('el-checkbox', {
+    setup(_props, { slots }) { return () => h('label', slots.default?.()) },
+  })
+  app.component('el-input', {
+    setup() { return () => h('textarea') },
   })
   return renderToString(app)
 }
@@ -178,6 +219,35 @@ function mediaExportRun() {
   }
 }
 
+function humanAvReview() {
+  const exported = mediaExportRun()
+  return parseMvpBenchmarkHumanAvReviewJson(JSON.stringify({
+    schemaVersion: 'mvp-benchmark-human-av-review.v1',
+    uid: uid(210),
+    sessionUid: uid(1),
+    authorizationUid: uid(80),
+    batchSha256: 'e'.repeat(64),
+    dramaUid: uid(2),
+    workflowRunUid: uid(3),
+    exportRunUid: exported.uid,
+    exportExecutionPlanSha256: exported.executionPlanSha256,
+    outputAssetUid: exported.outputAssetUid,
+    outputAssetVersionUid: exported.outputAssetVersionUid,
+    outputSha256: exported.output.sha256,
+    outputBytes: exported.output.bytes,
+    outputDurationMs: exported.output.durationMs,
+    outputWidth: exported.output.width,
+    outputHeight: exported.output.height,
+    exportCompletedAtEpochMs: Date.parse(exported.completedAt),
+    videoPlaybackAccepted: true,
+    subtitleSyncAccepted: true,
+    bgmBalanceAccepted: true,
+    reviewNote: 'Synthetic local audiovisual review.',
+    reviewedAtEpochMs: Date.parse(exported.completedAt) + 1_000,
+    reviewSha256: '8'.repeat(64),
+  }), session(), authorization(), batch(), exported)
+}
+
 test('finalization state accepts one exact local export result and ignores a stale response', async () => {
   const pending = []
   const calls = []
@@ -251,4 +321,108 @@ test('the compiled finalization panel renders a disabled gate until batch and BG
   assert.match(available, /<button [^>]*data-loading="false"[^>]*>编译并导出成片<\/button>/)
   assert.doesNotMatch(available, /<button disabled/)
   assert.match(available, /成片导出状态：已完成/)
+})
+
+test('human audiovisual review state keeps one exact reviewed export and rejects stale state', async () => {
+  const pending = []
+  const state = createMvpBenchmarkHumanAvReviewState({
+    get() { return Promise.resolve(humanAvReview()) },
+    review(...values) {
+      return new Promise((resolve) => pending.push({ resolve, values }))
+    },
+  })
+  const first = state.submit(
+    session(), authorization(), batch(), mediaExportRun(),
+    {
+      videoPlaybackAccepted: true,
+      subtitleSyncAccepted: true,
+      bgmBalanceAccepted: true,
+      reviewNote: 'First local review.',
+    },
+  )
+  const second = state.submit(
+    session(), authorization(), batch(), mediaExportRun(),
+    {
+      videoPlaybackAccepted: true,
+      subtitleSyncAccepted: true,
+      bgmBalanceAccepted: true,
+      reviewNote: 'Second local review.',
+    },
+  )
+  pending[1].resolve(humanAvReview())
+  assert.equal(await second, true)
+  pending[0].resolve(humanAvReview())
+  assert.equal(await first, false)
+  assert.equal(state.review.value.reviewNote, 'Synthetic local audiovisual review.')
+  assert.equal(pending[1].values[4].reviewNote, 'Second local review.')
+  assert.equal(await state.load(
+    session(), authorization(), batch(), mediaExportRun(),
+  ), true)
+  state.invalidate()
+  assert.equal(state.review.value, null)
+})
+
+test('human audiovisual review strictly binds the reviewed export and all three decisions', () => {
+  const review = humanAvReview()
+  assert.equal(review.videoPlaybackAccepted, true)
+  assert.equal(review.subtitleSyncAccepted, true)
+  assert.equal(review.bgmBalanceAccepted, true)
+  const exported = mediaExportRun()
+  assert.throws(() => parseMvpBenchmarkHumanAvReviewJson(JSON.stringify({
+    ...review,
+    outputSha256: '7'.repeat(64),
+  }), session(), authorization(), batch(), exported), TypeError)
+  assert.throws(() => parseMvpBenchmarkHumanAvReviewJson(JSON.stringify({
+    ...review,
+    subtitleSyncAccepted: false,
+  }), session(), authorization(), batch(), exported), TypeError)
+  assert.equal(mvpBenchmarkHumanAvReviewSeed({
+    videoPlaybackAccepted: true,
+    subtitleSyncAccepted: true,
+    bgmBalanceAccepted: true,
+    reviewNote: '已完整视听 ✅',
+  }).reviewNote, '已完整视听 ✅')
+  assert.throws(() => mvpBenchmarkHumanAvReviewSeed({
+    videoPlaybackAccepted: true,
+    subtitleSyncAccepted: true,
+    bgmBalanceAccepted: true,
+    reviewNote: 'bad\ud800',
+  }), TypeError)
+})
+
+test('the compiled human review panel is explicit, gated and shows immutable evidence', async () => {
+  const pending = await renderHumanAvReviewPanel({
+    run: mediaExportRun(),
+    review: null,
+    busy: false,
+    error: '',
+  })
+  assert.match(pending, /程序化解码只证明文件结构有效/)
+  assert.match(pending, /我已完整播放成片/)
+  assert.match(pending, /我已核对字幕/)
+  assert.match(pending, /BGM 没有盖住对白/)
+  assert.match(pending, /<button disabled[^>]*>提交不可变人工验收<\/button>/)
+
+  const completed = await renderHumanAvReviewPanel({
+    run: mediaExportRun(),
+    review: humanAvReview(),
+    busy: false,
+    error: '',
+  })
+  assert.match(completed, /已提交不可变验收/)
+  assert.match(completed, /Synthetic local audiovisual review/)
+
+  const canvas = fs.readFileSync(path.resolve(
+    __dirname, '../src/views/WorkflowCanvas.vue',
+  ), 'utf8')
+  assert.match(canvas, /MvpBenchmarkHumanAvReviewPanel/)
+  assert.match(canvas, /refreshMvpHumanAvReview/)
+  assert.match(canvas, /reviewMvpProduction/)
+  assert.match(canvas, /不会自动把 MVP 标记为完成/)
+  assert.doesNotMatch(
+    fs.readFileSync(path.resolve(
+      __dirname, '../src/components/benchmark/MvpBenchmarkHumanAvReviewPanel.vue',
+    ), 'utf8'),
+    /credentialRef|apiKey|secret/i,
+  )
 })

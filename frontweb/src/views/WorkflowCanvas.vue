@@ -171,6 +171,14 @@
               :error="mvpFinalization.error.value || ''"
               @finalize="finalizeMvpProduction"
             />
+            <MvpBenchmarkHumanAvReviewPanel
+              :run="mvpFinalization.run.value"
+              :review="mvpHumanAvReview.review.value"
+              :busy="mvpHumanAvReview.busy.value"
+              :error="mvpHumanAvReview.error.value || ''"
+              @refresh="refreshMvpHumanAvReview"
+              @review="reviewMvpProduction"
+            />
             <MvpBenchmarkAccountingStatusPanel
               :batch="mvpPreflight.batch.value"
               :status="mvpAccountingStatus.status.value"
@@ -230,6 +238,7 @@ import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadi
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
 import MvpBenchmarkExecutionPanel from '@/components/benchmark/MvpBenchmarkExecutionPanel.vue'
 import MvpBenchmarkFinalizationPanel from '@/components/benchmark/MvpBenchmarkFinalizationPanel.vue'
+import MvpBenchmarkHumanAvReviewPanel from '@/components/benchmark/MvpBenchmarkHumanAvReviewPanel.vue'
 import MvpBenchmarkPreflightPanel from '@/components/benchmark/MvpBenchmarkPreflightPanel.vue'
 import MvpBenchmarkResumePanel from '@/components/benchmark/MvpBenchmarkResumePanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
@@ -240,6 +249,7 @@ import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
 import { useMvpBenchmarkExecution } from '@/composables/useMvpBenchmarkExecution'
 import { useMvpBenchmarkFinalization } from '@/composables/useMvpBenchmarkFinalization'
+import { useMvpBenchmarkHumanAvReview } from '@/composables/useMvpBenchmarkHumanAvReview'
 import { useMvpBenchmarkPreflight } from '@/composables/useMvpBenchmarkPreflight'
 import { useMvpBenchmarkResume } from '@/composables/useMvpBenchmarkResume'
 import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
@@ -258,6 +268,7 @@ const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
 const mvpExecution = useMvpBenchmarkExecution()
 const mvpFinalization = useMvpBenchmarkFinalization()
+const mvpHumanAvReview = useMvpBenchmarkHumanAvReview()
 const mvpPreflight = useMvpBenchmarkPreflight()
 const mvpResume = useMvpBenchmarkResume()
 const mvpSession = useMvpBenchmarkSession()
@@ -436,6 +447,7 @@ async function resumeMvpState() {
   mvpPreflight.invalidate()
   mvpExecution.invalidate()
   mvpFinalization.invalidate()
+  mvpHumanAvReview.invalidate()
   mvpAccountingStatus.invalidate()
   mvpSession.session.value = snapshot.session
   mvpAuthorization.authorization.value = snapshot.authorization
@@ -459,6 +471,7 @@ async function prepareMvpSession() {
   }
   mvpResume.invalidate()
   mvpFinalization.invalidate()
+  mvpHumanAvReview.invalidate()
   mvpAccountingStatus.invalidate()
   await mvpAuthorization.refreshConnections()
   ElMessage.success('本地基准会话已冻结；尚未创建外部授权')
@@ -487,6 +500,7 @@ async function authorizeMvpSession(seed) {
     mvpResume.invalidate()
     mvpExecution.invalidate()
     mvpFinalization.invalidate()
+    mvpHumanAvReview.invalidate()
     mvpPreflight.invalidate()
     mvpAccountingStatus.invalidate()
     ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
@@ -513,6 +527,7 @@ async function preflightMvpSession() {
   }
   mvpExecution.invalidate()
   mvpFinalization.invalidate()
+  mvpHumanAvReview.invalidate()
   mvpAccountingStatus.invalidate()
   if (await mvpPreflight.preflight(session, authorization)) {
     mvpResume.invalidate()
@@ -554,6 +569,7 @@ async function executeNextMvpItem() {
   }
   mvpAccountingStatus.invalidate()
   mvpFinalization.invalidate()
+  mvpHumanAvReview.invalidate()
   if (await mvpExecution.executeNext(session, authorization, batch)) {
     mvpResume.invalidate()
     if (mvpExecution.step.value?.batchComplete) {
@@ -602,6 +618,7 @@ async function finalizeMvpProduction() {
   } catch {
     return
   }
+  mvpHumanAvReview.invalidate()
   if (await mvpFinalization.finalize(session, authorization, batch, bgmTrackUid)) {
     await Promise.allSettled([
       mediaExports.load(),
@@ -611,6 +628,47 @@ async function finalizeMvpProduction() {
     ElMessage.success('成片时间线已编译，导出结果已完成本地验证')
   } else {
     ElMessage.error('成片编译或导出失败；不会采用部分状态，也不会自动重试')
+  }
+}
+
+async function refreshMvpHumanAvReview() {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  const batch = mvpPreflight.batch.value
+  const exportRun = mvpFinalization.run.value
+  if (!session || !authorization || !batch || exportRun?.status !== 'succeeded') {
+    ElMessage.error('请先恢复或完成当前批次的成功成片导出')
+    return
+  }
+  if (await mvpHumanAvReview.load(session, authorization, batch, exportRun)) {
+    ElMessage.success('已读取与当前成片精确绑定的人工验收记录')
+  } else {
+    ElMessage.error('未找到可信人工验收，或持久证据已经变化')
+  }
+}
+
+async function reviewMvpProduction(seed) {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  const batch = mvpPreflight.batch.value
+  const exportRun = mvpFinalization.run.value
+  if (!session || !authorization || !batch || exportRun?.status !== 'succeeded') {
+    ElMessage.error('请先完成当前批次的成功成片导出')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '确认提交不可变人工音画验收？你确认已经实际完整播放当前成片，并核对字幕同步和 BGM/对白平衡。提交后不能修改；该记录只证明本次人工观看结论，不会自动把 MVP 标记为完成。',
+      '确认人工音画验收',
+      { type: 'warning', confirmButtonText: '确认提交验收', cancelButtonText: '继续检查' },
+    )
+  } catch {
+    return
+  }
+  if (await mvpHumanAvReview.submit(session, authorization, batch, exportRun, seed)) {
+    ElMessage.success('人工音画验收已与当前成片不可变绑定')
+  } else {
+    ElMessage.error('人工音画验收提交失败；不会采用部分记录')
   }
 }
 
@@ -701,6 +759,7 @@ watch(
     mvpPreflight.invalidate()
     mvpExecution.invalidate()
     mvpFinalization.invalidate()
+    mvpHumanAvReview.invalidate()
     mvpResume.invalidate()
     mvpAccountingStatus.invalidate()
   },
@@ -726,6 +785,7 @@ onBeforeUnmount(() => {
   mvpPreflight.invalidate()
   mvpExecution.invalidate()
   mvpFinalization.invalidate()
+  mvpHumanAvReview.invalidate()
   mvpResume.invalidate()
   mvpAccountingStatus.invalidate()
   mvpSession.invalidate()

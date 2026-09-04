@@ -41,6 +41,7 @@ const {
   serializeMvpBenchmarkExternalAuthorizationJson,
 } = require('../../benchmark/mvpBenchmarkExternalAuthorization');
 const {
+  createMvpBenchmarkExecutionPreflightBatch,
   parseMvpBenchmarkExecutionReservation,
   parseMvpBenchmarkLiveEnvironmentAttestation,
   parseMvpBenchmarkLiveEnvironmentObservation,
@@ -53,6 +54,10 @@ const {
   parseMvpBenchmarkResourceReleaseObligation,
   parseMvpBenchmarkResourceReleaseReceipt,
 } = require('../../benchmark/mvpBenchmarkExecutionAccounting');
+const {
+  parseMvpBenchmarkHumanAvReview,
+  serializeMvpBenchmarkHumanAvReview,
+} = require('../../benchmark/mvpBenchmarkHumanAvReview');
 const {
   narrativeExecutionRequestSha256,
 } = require('../../narrative/execution/request');
@@ -939,6 +944,121 @@ function mvpBenchmarkReleaseReceiptRecordValid(
   }
 }
 
+function mvpBenchmarkPreflightBatchSha256(
+  authorizationJson,
+  sessionPlanJson,
+  attestationJson,
+  reservationListJson,
+) {
+  try {
+    if (typeof authorizationJson !== 'string'
+      || typeof sessionPlanJson !== 'string'
+      || typeof attestationJson !== 'string'
+      || typeof reservationListJson !== 'string'
+      || Buffer.byteLength(authorizationJson, 'utf8') > 128 * 1024
+      || Buffer.byteLength(sessionPlanJson, 'utf8') > 16 * 1024 * 1024
+      || Buffer.byteLength(attestationJson, 'utf8') > 128 * 1024
+      || Buffer.byteLength(reservationListJson, 'utf8') > 16 * 1024 * 1024) return null;
+    const authorization = parseMvpBenchmarkExternalAuthorization(JSON.parse(authorizationJson));
+    const session = parseMvpBenchmarkSessionPlan(JSON.parse(sessionPlanJson));
+    const attestation = parseMvpBenchmarkLiveEnvironmentAttestation(JSON.parse(attestationJson));
+    const reservationsValue = JSON.parse(reservationListJson);
+    if (!ARRAY_IS_ARRAY(reservationsValue)
+      || reservationsValue.length !== session.h3Tasks.length + session.audioIntents.length) {
+      return null;
+    }
+    const parsed = new Array(reservationsValue.length);
+    for (let index = 0; index < reservationsValue.length; index += 1) {
+      parsed[index] = parseMvpBenchmarkExecutionReservation(reservationsValue[index]);
+    }
+    const ordered = new Array(parsed.length);
+    for (let index = 0; index < ordered.length; index += 1) {
+      const h3 = index < session.h3Tasks.length;
+      const planned = h3
+        ? session.h3Tasks[index]
+        : session.audioIntents[index - session.h3Tasks.length];
+      const kind = h3 ? 'h3' : 'tts';
+      const itemUid = h3 ? planned.taskUid : planned.intentUid;
+      let match = null;
+      let matchCount = 0;
+      for (let candidateIndex = 0; candidateIndex < parsed.length; candidateIndex += 1) {
+        const candidate = parsed[candidateIndex];
+        if (candidate.itemKind === kind && candidate.itemUid === itemUid) {
+          match = candidate;
+          matchCount += 1;
+        }
+      }
+      if (matchCount !== 1) return null;
+      ordered[index] = match;
+    }
+    return createMvpBenchmarkExecutionPreflightBatch({
+      authorization,
+      session,
+      attestation,
+      reservations: ordered,
+    }).batchSha256;
+  } catch {
+    return null;
+  }
+}
+
+function mvpBenchmarkHumanAvReviewRecordValid(
+  uid,
+  sessionUid,
+  authorizationUid,
+  batchSha256,
+  dramaUid,
+  workflowRunUid,
+  exportRunUid,
+  exportExecutionPlanSha256,
+  outputAssetUid,
+  outputAssetVersionUid,
+  outputSha256,
+  outputBytes,
+  outputDurationMs,
+  outputWidth,
+  outputHeight,
+  exportCompletedAtEpochMs,
+  videoPlaybackAccepted,
+  subtitleSyncAccepted,
+  bgmBalanceAccepted,
+  reviewNote,
+  reviewedAtEpochMs,
+  reviewJson,
+  reviewSha256,
+) {
+  try {
+    if (typeof reviewJson !== 'string'
+      || Buffer.byteLength(reviewJson, 'utf8') > 16 * 1024) return 0;
+    const review = parseMvpBenchmarkHumanAvReview(JSON.parse(reviewJson));
+    return serializeMvpBenchmarkHumanAvReview(review) === reviewJson
+      && review.uid === uid
+      && review.sessionUid === sessionUid
+      && review.authorizationUid === authorizationUid
+      && review.batchSha256 === batchSha256
+      && review.dramaUid === dramaUid
+      && review.workflowRunUid === workflowRunUid
+      && review.exportRunUid === exportRunUid
+      && review.exportExecutionPlanSha256 === exportExecutionPlanSha256
+      && review.outputAssetUid === outputAssetUid
+      && review.outputAssetVersionUid === outputAssetVersionUid
+      && review.outputSha256 === outputSha256
+      && review.outputBytes === outputBytes
+      && review.outputDurationMs === outputDurationMs
+      && review.outputWidth === outputWidth
+      && review.outputHeight === outputHeight
+      && review.exportCompletedAtEpochMs === exportCompletedAtEpochMs
+      && Number(review.videoPlaybackAccepted) === videoPlaybackAccepted
+      && Number(review.subtitleSyncAccepted) === subtitleSyncAccepted
+      && Number(review.bgmBalanceAccepted) === bgmBalanceAccepted
+      && review.reviewNote === reviewNote
+      && review.reviewedAtEpochMs === reviewedAtEpochMs
+      && review.reviewSha256 === reviewSha256 ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function mvpBenchmarkH3TerminalEvidence(
   uid,
   connectionEvidenceSha256,
@@ -1187,6 +1307,16 @@ function registerV2SqlFunctions(database) {
     mvpBenchmarkReleaseReceiptRecordValid,
   );
   database.function(
+    'mvp_benchmark_preflight_batch_sha256',
+    { deterministic: true },
+    mvpBenchmarkPreflightBatchSha256,
+  );
+  database.function(
+    'mvp_benchmark_human_av_review_record_valid',
+    { deterministic: true },
+    mvpBenchmarkHumanAvReviewRecordValid,
+  );
+  database.function(
     'mvp_benchmark_h3_terminal_evidence_sha256',
     { deterministic: true },
     mvpBenchmarkH3TerminalEvidence,
@@ -1219,6 +1349,8 @@ module.exports = Object.freeze({
   mvpBenchmarkExecutionSettlementRecordValid,
   mvpBenchmarkExternalAuthorizationRecordValid,
   mvpBenchmarkLiveEnvironmentAttestationRecordValid,
+  mvpBenchmarkHumanAvReviewRecordValid,
+  mvpBenchmarkPreflightBatchSha256,
   mvpBenchmarkReleaseObligationJson,
   mvpBenchmarkReleaseObligationRecordValid,
   mvpBenchmarkReleaseObligationSha256,

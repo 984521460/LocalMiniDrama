@@ -32,6 +32,9 @@ const {
   isMvpBenchmarkFinalizationError,
 } = require('../../benchmark/mvpBenchmarkFinalizationService');
 const {
+  isMvpBenchmarkHumanAvReviewError,
+} = require('../../benchmark/mvpBenchmarkHumanAvReview');
+const {
   MvpBenchmarkAccountingStatusError,
 } = require('../../benchmark/mvpBenchmarkAccountingStatusService');
 const { MvpBenchmarkResumeError } = require('../../benchmark/mvpBenchmarkResumeService');
@@ -135,6 +138,36 @@ function exactFinalizationSeed(value) {
   }
 }
 
+function exactHumanAvReviewSeed(value) {
+  const keys = [
+    'schemaVersion', 'expectedBatchSha256', 'exportRunUid',
+    'videoPlaybackAccepted', 'subtitleSyncAccepted', 'bgmBalanceAccepted', 'reviewNote',
+  ];
+  if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) {
+    return null;
+  }
+  try {
+    const prototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = REFLECT_APPLY(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== keys.length) {
+      return null;
+    }
+    const output = REFLECT_APPLY(OBJECT_CREATE, Object, [null]);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (!REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptors, key])) return null;
+      const descriptor = descriptors[key];
+      if (!descriptor.enumerable
+        || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
+      output[key] = descriptor.value;
+    }
+    return output;
+  } catch {
+    return null;
+  }
+}
+
 function mvpBenchmarkRoutes(log, runtime, database) {
   const router = express.Router();
   const readinessRepository = createMvpBenchmarkReadinessRepository(database);
@@ -190,6 +223,24 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       const finalize = Object.getOwnPropertyDescriptor(service, 'finalize')?.value;
       if (typeof finalize !== 'function' || isProxy(finalize)) return null;
       return Object.freeze({ finalize, service });
+    } catch {
+      return null;
+    }
+  }
+
+  function humanAvReviewService() {
+    try {
+      if (!runtime || typeof runtime !== 'object' || isProxy(runtime)) return null;
+      const benchmarkRuntime = Object.getOwnPropertyDescriptor(runtime, 'mvpBenchmark')?.value;
+      if (!benchmarkRuntime || typeof benchmarkRuntime !== 'object'
+        || isProxy(benchmarkRuntime)) return null;
+      const service = Object.getOwnPropertyDescriptor(benchmarkRuntime, 'humanAvReview')?.value;
+      if (!service || typeof service !== 'object' || isProxy(service)) return null;
+      const review = Object.getOwnPropertyDescriptor(service, 'review')?.value;
+      const get = Object.getOwnPropertyDescriptor(service, 'get')?.value;
+      if (typeof review !== 'function' || isProxy(review)
+        || typeof get !== 'function' || isProxy(get)) return null;
+      return Object.freeze({ get, review, service });
     } catch {
       return null;
     }
@@ -358,6 +409,33 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     );
   }
 
+  function humanAvReviewError(res, error) {
+    if (isMvpBenchmarkHumanAvReviewError(error)) {
+      const status = error.code === 'MVP_BENCHMARK_HUMAN_AV_REVIEW_INPUT_INVALID'
+        ? 400 : error.code === 'MVP_BENCHMARK_HUMAN_AV_REVIEW_NOT_FOUND' ? 404 : 409;
+      return response.error(res, status, error.code, error.message);
+    }
+    if (error instanceof V2RepositoryConflictError || error instanceof V2RepositoryDataError) {
+      return response.error(
+        res, 409, 'MVP_BENCHMARK_HUMAN_AV_REVIEW_UNAVAILABLE',
+        'MVP benchmark human audiovisual review is unavailable',
+      );
+    }
+    if (error instanceof TypeError) {
+      return response.error(
+        res, 400, 'MVP_BENCHMARK_HUMAN_AV_REVIEW_INPUT_INVALID',
+        'MVP benchmark human audiovisual review input is invalid',
+      );
+    }
+    log?.error?.('mvp-benchmark-human-av-review-unexpected', {
+      code: 'MVP_BENCHMARK_HUMAN_AV_REVIEW_UNEXPECTED',
+    });
+    return response.error(
+      res, 500, 'MVP_BENCHMARK_HUMAN_AV_REVIEW_UNEXPECTED',
+      'MVP benchmark human audiovisual review failed',
+    );
+  }
+
   function resumeError(res, error) {
     if (error instanceof MvpBenchmarkResumeError) {
       const status = error.code === 'MVP_BENCHMARK_RESUME_INPUT_INVALID' ? 400 : 409;
@@ -512,6 +590,59 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         }));
       } catch (error) {
         return sessionError(res, error);
+      }
+    },
+  );
+
+  router.get(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/batches/:batchSha256/human-av-review',
+    (req, res) => {
+      try {
+        const configured = humanAvReviewService();
+        if (!configured) {
+          return response.error(
+            res, 503, 'MVP_BENCHMARK_HUMAN_AV_REVIEW_UNAVAILABLE',
+            'MVP benchmark human audiovisual review is unavailable',
+          );
+        }
+        return response.success(res, REFLECT_APPLY(configured.get, configured.service, [{
+          dramaUid: req.params.dramaUid,
+          sessionUid: req.params.sessionUid,
+          authorizationUid: req.params.authorizationUid,
+          expectedBatchSha256: req.params.batchSha256,
+        }]));
+      } catch (error) {
+        return humanAvReviewError(res, error);
+      }
+    },
+  );
+
+  router.post(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/human-av-review',
+    (req, res) => {
+      try {
+        const seed = exactHumanAvReviewSeed(req.body);
+        if (!seed) {
+          return response.error(
+            res, 400, 'MVP_BENCHMARK_HUMAN_AV_REVIEW_INPUT_INVALID',
+            'MVP benchmark human audiovisual review input is invalid',
+          );
+        }
+        const configured = humanAvReviewService();
+        if (!configured) {
+          return response.error(
+            res, 503, 'MVP_BENCHMARK_HUMAN_AV_REVIEW_UNAVAILABLE',
+            'MVP benchmark human audiovisual review is unavailable',
+          );
+        }
+        return response.created(res, REFLECT_APPLY(configured.review, configured.service, [{
+          ...seed,
+          dramaUid: req.params.dramaUid,
+          sessionUid: req.params.sessionUid,
+          authorizationUid: req.params.authorizationUid,
+        }]));
+      } catch (error) {
+        return humanAvReviewError(res, error);
       }
     },
   );

@@ -11,6 +11,7 @@ const REQUIRED_TABLES = Object.freeze([
   'mvp_benchmark_execution_reservation_seals',
   'mvp_benchmark_live_environment_attestation_seals',
   'mvp_benchmark_execution_settlements', 'mvp_benchmark_execution_settlement_seals',
+  'mvp_benchmark_human_av_reviews', 'mvp_benchmark_human_av_review_seals',
   'mvp_benchmark_resource_release_obligations',
   'mvp_benchmark_resource_release_obligation_seals',
   'mvp_benchmark_resource_release_receipts',
@@ -18,15 +19,16 @@ const REQUIRED_TABLES = Object.freeze([
   'narrative_results', 'narrative_task_executions', 'remote_connections', 'source_documents',
   'voice_profiles', 'workflow_definitions', 'workflow_runs',
 ]);
-const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
 const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
 const REQUIRED_TRIGGERS = Object.freeze([
   'v2_audio_tts_execution_evidence_validate_insert',
   'v2_mvp_benchmark_external_authorizations_current_sources_insert',
   'v2_mvp_benchmark_sessions_current_sources_insert',
+  'v2_mvp_benchmark_human_av_reviews_validate_insert',
 ]);
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 29;
+const EXPECTED_MIGRATION_VERSION = 30;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -45,7 +47,7 @@ function createMvpBenchmarkReadinessRepository(database) {
         `).pluck(),
         triggerCount: database.prepare(`
           SELECT count(*) AS count FROM sqlite_schema
-          WHERE type='trigger' AND name IN (?,?,?)
+          WHERE type='trigger' AND name IN (?,?,?,?)
         `).pluck(),
         readyConnection: database.prepare(`
           SELECT EXISTS(
@@ -97,11 +99,14 @@ function createMvpBenchmarkReadinessRepository(database) {
         REQUIRED_TABLES[28],
         REQUIRED_TABLES[29],
         REQUIRED_TABLES[30],
+        REQUIRED_TABLES[31],
+        REQUIRED_TABLES[32],
       );
       const readyConnection = current.readyConnection.get();
       const viewCount = current.viewCount.get(REQUIRED_VIEW);
       const triggerCount = current.triggerCount.get(
         REQUIRED_TRIGGERS[0], REQUIRED_TRIGGERS[1], REQUIRED_TRIGGERS[2],
+        REQUIRED_TRIGGERS[3],
       );
       const migrationSummary = current.migrationSummary.get();
       return Object.freeze({

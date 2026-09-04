@@ -30,6 +30,9 @@ const {
   createMvpBenchmarkExecutionAccountingRepository,
 } = require('./mvpBenchmarkExecutionAccountingRepository');
 const {
+  createMvpBenchmarkHumanAvReviewRepository,
+} = require('./mvpBenchmarkHumanAvReviewRepository');
+const {
   createMvpBenchmarkSessionRepository,
 } = require('./mvpBenchmarkSessionRepository');
 const {
@@ -293,6 +296,19 @@ function createLazyMvpBenchmarkExecutionAccountingRepository(database) {
   });
 }
 
+function createLazyMvpBenchmarkHumanAvReviewRepository(database, dependencies) {
+  let target;
+  function getTarget() {
+    if (!target) target = createMvpBenchmarkHumanAvReviewRepository(database, dependencies);
+    return target;
+  }
+  return Object.freeze({
+    create(...args) { return getTarget().create(...args); },
+    get(...args) { return getTarget().get(...args); },
+    getByAuthorization(...args) { return getTarget().getByAuthorization(...args); },
+  });
+}
+
 function createTransactionScope(repositories) {
   let active = true;
 
@@ -412,6 +428,12 @@ function createV2Repositories(database) {
   });
   const mvpBenchmarkExecutionAccounting =
     createLazyMvpBenchmarkExecutionAccountingRepository(database);
+  const mediaExportRuns = createLazyMediaExportRunRepository(database);
+  const mvpBenchmarkHumanAvReviews = createLazyMvpBenchmarkHumanAvReviewRepository(database, {
+    mediaExportRuns,
+    preflights: mvpBenchmarkExecutionPreflights,
+    sessions: mvpBenchmarkSessions,
+  });
   const aggregates = {
     assets,
     audioModeIntents,
@@ -424,11 +446,12 @@ function createV2Repositories(database) {
     comfyManifests,
     generationHistory,
     h3GenerationIntents,
-    mediaExportRuns: createLazyMediaExportRunRepository(database),
+    mediaExportRuns,
     mvpBenchmarkExternalAuthorizations,
     mvpBenchmarkExecutionAccounting,
     mvpBenchmarkExecutionGate,
     mvpBenchmarkExecutionPreflights,
+    mvpBenchmarkHumanAvReviews,
     mvpBenchmarkReadiness: createMvpBenchmarkReadinessRepository(database),
     mvpBenchmarkSessions,
     narrativeReviews,

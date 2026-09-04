@@ -12,6 +12,8 @@ const express = require('express');
 const Ajv2020 = require('ajv/dist/2020');
 
 const finalizationRequestSchema = require('../../schemas/v9/mvp-benchmark-finalization-request.schema.json');
+const humanAvReviewRequestSchema = require('../../schemas/v9/mvp-benchmark-human-av-review-request.schema.json');
+const humanAvReviewSchema = require('../../schemas/v9/mvp-benchmark-human-av-review.schema.json');
 const { createGenerationHistoryRecord } = require('../src/assets/generationHistory');
 const { createAudioExecutionEvidence } = require('../src/audio/audioExecutionEvidence');
 const {
@@ -24,6 +26,9 @@ const {
 const {
   createMvpBenchmarkFinalizationService,
 } = require('../src/benchmark/mvpBenchmarkFinalizationService');
+const {
+  createMvpBenchmarkHumanAvReviewService,
+} = require('../src/benchmark/mvpBenchmarkHumanAvReviewService');
 const {
   createProductionMvpBenchmarkRuntime,
 } = require('../src/benchmark/productionRuntime');
@@ -532,6 +537,79 @@ test('the finalizer plan produces one real verified local 1080p MP4', async (t) 
   assert.equal(fileSha256(outputPath), result.output.sha256);
   assert.equal(version.sha256, result.output.sha256);
   assert.equal(version.mimeType, 'video/mp4');
+
+  const humanAvReview = createMvpBenchmarkHumanAvReviewService({
+    repositories: fixture.repositories,
+    createUid: () => uid(120600),
+    nowEpochMs: () => FINAL_TIME + 2_000,
+  });
+  const reviewRequest = {
+    schemaVersion: 'mvp-benchmark-human-av-review-request.v1',
+    sessionUid: fixture.prepared.session.uid,
+    authorizationUid: fixture.prepared.authorization.uid,
+    dramaUid: fixture.current.dramaUid,
+    expectedBatchSha256: fixture.prepared.batch.batchSha256,
+    exportRunUid: result.uid,
+    videoPlaybackAccepted: true,
+    subtitleSyncAccepted: true,
+    bgmBalanceAccepted: true,
+    reviewNote: 'Synthetic review: playback, subtitle timing and dialogue balance accepted. ✅',
+  };
+  const validateRequest = new Ajv2020({ strict: true }).compile(humanAvReviewRequestSchema);
+  const validateReview = new Ajv2020({ strict: true }).compile(humanAvReviewSchema);
+  assert.equal(validateRequest({
+    schemaVersion: reviewRequest.schemaVersion,
+    expectedBatchSha256: reviewRequest.expectedBatchSha256,
+    exportRunUid: reviewRequest.exportRunUid,
+    videoPlaybackAccepted: true,
+    subtitleSyncAccepted: true,
+    bgmBalanceAccepted: true,
+    reviewNote: reviewRequest.reviewNote,
+  }), true);
+  const review = humanAvReview.review(reviewRequest);
+  assert.equal(validateReview(review), true);
+  assert.equal(review.sessionUid, fixture.prepared.session.uid);
+  assert.equal(review.authorizationUid, fixture.prepared.authorization.uid);
+  assert.equal(review.exportRunUid, result.uid);
+  assert.equal(review.outputAssetVersionUid, result.outputAssetVersionUid);
+  assert.equal(review.outputSha256, result.output.sha256);
+  assert.equal(review.outputDurationMs, 6_500);
+  assert.equal(review.outputWidth, 1920);
+  assert.equal(review.outputHeight, 1080);
+  assert.deepEqual(humanAvReview.review(reviewRequest), review);
+  assert.deepEqual(humanAvReview.get({
+    sessionUid: review.sessionUid,
+    authorizationUid: review.authorizationUid,
+    dramaUid: review.dramaUid,
+    expectedBatchSha256: review.batchSha256,
+  }), review);
+  assert.equal(fixture.current.database.prepare(
+    'SELECT count(*) AS count FROM mvp_benchmark_human_av_reviews',
+  ).get().count, 1);
+  assert.throws(() => humanAvReview.review({
+    ...reviewRequest,
+    subtitleSyncAccepted: false,
+  }), { code: 'MVP_BENCHMARK_HUMAN_AV_REVIEW_INPUT_INVALID' });
+  assert.throws(() => humanAvReview.review({
+    ...reviewRequest,
+    reviewNote: 'bad\ud800',
+  }), { code: 'MVP_BENCHMARK_HUMAN_AV_REVIEW_INPUT_INVALID' });
+  assert.throws(() => fixture.current.database.prepare(
+    'UPDATE mvp_benchmark_human_av_reviews SET review_note=? WHERE uid=?',
+  ).run('replacement', review.uid), /immutable/u);
+
+  fixture.current.database.exec('DROP TRIGGER v2_media_export_run_seals_validate_update');
+  fixture.current.database.prepare(`
+    UPDATE media_export_run_seals
+    SET completed_at_epoch_ms=completed_at_epoch_ms+1
+    WHERE uid=?
+  `).run(result.uid);
+  assert.throws(() => humanAvReview.get({
+    sessionUid: review.sessionUid,
+    authorizationUid: review.authorizationUid,
+    dramaUid: review.dramaUid,
+    expectedBatchSha256: review.batchSha256,
+  }), { code: 'V2_REPOSITORY_DATA_INVALID' });
 });
 
 test('finalization rejects an incomplete H3 result without probing media or mutating export state', async (t) => {
@@ -696,4 +774,76 @@ test('the localhost finalization route binds path identity and rejects extra req
     expectedBatchSha256: body.expectedBatchSha256,
     bgmTrackUid: body.bgmTrackUid,
   }]);
+});
+
+test('the localhost human audiovisual review route binds path identity and exact request fields', async (t) => {
+  const calls = [];
+  const result = Object.freeze({ schemaVersion: 'synthetic-human-av-review.v1' });
+  const database = createMigratedV2Database(t);
+  const app = express();
+  app.use(express.json());
+  app.use('/v2', mvpBenchmarkRoutes(Object.freeze({ error() {} }), Object.freeze({
+    mvpBenchmark: Object.freeze({
+      humanAvReview: Object.freeze({
+        get(request) { calls.push({ method: 'get', request }); return result; },
+        review(request) { calls.push({ method: 'review', request }); return result; },
+      }),
+    }),
+  }), database));
+  const { server, base } = await listen(app);
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const dramaUid = uid(120700);
+  const sessionUid = uid(120701);
+  const authorizationUid = uid(120702);
+  const batchSha256 = '7'.repeat(64);
+  const root = `/v2/dramas/${dramaUid}/mvp-benchmark/sessions/${sessionUid}`
+    + `/authorizations/${authorizationUid}`;
+  const body = {
+    schemaVersion: 'mvp-benchmark-human-av-review-request.v1',
+    expectedBatchSha256: batchSha256,
+    exportRunUid: uid(120703),
+    videoPlaybackAccepted: true,
+    subtitleSyncAccepted: true,
+    bgmBalanceAccepted: true,
+    reviewNote: 'Synthetic local review.',
+  };
+  const invalid = await fetch(`${base}${root}/human-av-review`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...body, extra: true }),
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal(calls.length, 0);
+
+  const created = await fetch(`${base}${root}/human-av-review`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  assert.equal(created.status, 201);
+  assert.deepEqual((await created.json()).data, result);
+  assert.deepEqual(calls[0], {
+    method: 'review',
+    request: {
+      ...body,
+      dramaUid,
+      sessionUid,
+      authorizationUid,
+    },
+  });
+
+  const read = await fetch(
+    `${base}${root}/batches/${batchSha256}/human-av-review`,
+  );
+  assert.equal(read.status, 200);
+  assert.deepEqual((await read.json()).data, result);
+  assert.deepEqual(calls[1], {
+    method: 'get',
+    request: {
+      dramaUid,
+      sessionUid,
+      authorizationUid,
+      expectedBatchSha256: batchSha256,
+    },
+  });
 });

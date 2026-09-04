@@ -23,6 +23,9 @@ const {
 const {
   createMvpBenchmarkFinalizationService,
 } = require('./mvpBenchmarkFinalizationService');
+const {
+  createMvpBenchmarkHumanAvReviewService,
+} = require('./mvpBenchmarkHumanAvReviewService');
 const { createLocalMediaProbe } = require('../media/localMediaProbe');
 
 const DEPENDENCY_KEYS = Object.freeze([
@@ -104,6 +107,11 @@ function createProductionMvpBenchmarkRuntime({
     ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
   });
   const accountingStatus = createMvpBenchmarkAccountingStatusService({ repositories });
+  const humanAvReview = createMvpBenchmarkHumanAvReviewService({
+    repositories,
+    createUid: configured.createUid ?? randomUUID,
+    nowEpochMs: configured.nowEpochMs ?? Date.now,
+  });
   let finalization = null;
   if (localRoot !== null || mediaExportService !== null || configured.mediaProbe !== undefined) {
     if (typeof localRoot !== 'string' || localRoot.length < 1
@@ -120,7 +128,9 @@ function createProductionMvpBenchmarkRuntime({
       nowEpochMs: configured.nowEpochMs ?? Date.now,
     });
   }
-  return Object.freeze({ accountingStatus, execution, finalization, preflight, resume });
+  return Object.freeze({
+    accountingStatus, execution, finalization, humanAvReview, preflight, resume,
+  });
 }
 
 module.exports = Object.freeze({ createProductionMvpBenchmarkRuntime });

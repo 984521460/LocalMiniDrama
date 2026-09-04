@@ -234,6 +234,13 @@ manifest identities, assets, generation-spec hashes and audio-plan hashes. The
 session is append-only local operation evidence; it is deliberately excluded
 from project archives and is not external execution or human-review evidence.
 
+Migration 30 adds immutable, sealed human audiovisual review evidence for one
+successful MVP benchmark export. The record binds the stored session,
+authorization and preflight batch to the same workflow, MediaExportRun and
+final-video AssetVersion. It requires three explicit positive human decisions
+(playback, subtitle timing and BGM/dialogue balance), but is excluded from
+project archives and does not by itself mark the MVP complete.
+
 Migration `0021_mvp_benchmark_external_authorizations.sql` stores at most one
 immutable, secret-free external authorization for a frozen benchmark session.
 It binds the current ready connection evidence used by every prepared H3 task,

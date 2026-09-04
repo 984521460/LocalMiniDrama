@@ -14,6 +14,10 @@ const LABELS = Object.freeze({ queued: '等待中', running: '导出中', succee
 const ERROR_CODES = Object.freeze(new Set(['MEDIA_EXPORT_FAILED', 'MEDIA_EXPORT_CLEANUP_FAILED']))
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024 * 1024
 const MAX_DURATION_MS = 3_600_100
+const REFLECT_APPLY = Reflect.apply
+const WEAK_SET_ADD = WeakSet.prototype.add
+const WEAK_SET_HAS = WeakSet.prototype.has
+const TRUSTED_RUNS = new WeakSet()
 
 function invalid(message = 'Media export response is invalid') {
   throw new TypeError(message)
@@ -60,6 +64,8 @@ export function mediaExportRunRequest(value) {
 }
 
 export function mediaExportRunView(value) {
+  if ((typeof value === 'object' || typeof value === 'function') && value !== null
+    && REFLECT_APPLY(WEAK_SET_HAS, TRUSTED_RUNS, [value])) return value
   const input = exact(value, RUN_KEYS)
   const runUid = uid(input.uid)
   const dramaUid = uid(input.dramaUid)
@@ -84,5 +90,14 @@ export function mediaExportRunView(value) {
     || (completedAt !== null && (
       startedAt === null || Date.parse(completedAt) < Date.parse(startedAt)
     ))) invalid()
-  return Object.freeze({ ...input, output: normalizedOutput, statusLabel: LABELS[input.status], createdAt, startedAt, completedAt })
+  const result = Object.freeze({
+    ...input,
+    output: normalizedOutput,
+    statusLabel: LABELS[input.status],
+    createdAt,
+    startedAt,
+    completedAt,
+  })
+  REFLECT_APPLY(WEAK_SET_ADD, TRUSTED_RUNS, [result])
+  return result
 }

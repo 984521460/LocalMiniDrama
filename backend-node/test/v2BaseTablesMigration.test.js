@@ -81,8 +81,8 @@ function migrateEmptyLegacyDatabase(database) {
     VALUES ('legacy poster', 'image', 'legacy://poster', '2026-01-01', '2026-01-01')
   `).run();
   const result = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
-  assert.equal(result.currentVersion, 29);
+  assert.deepEqual(result.appliedVersions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
+  assert.equal(result.currentVersion, 30);
 }
 
 function migrateThroughFourteen(workspace, database, directoryName) {
@@ -469,7 +469,7 @@ test('migration fifteen preserves bounded legacy retry evidence and rejects unbo
   migrateThroughFourteen(workspace, preserved, 'through-fourteen-preserved');
   const preservedTaskUid = insertLegacyFormalTaskWithRetryCount(preserved, 4, 1);
   const upgraded = runV2Migrations(preserved, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(upgraded.appliedVersions, [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+  assert.deepEqual(upgraded.appliedVersions, [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
   assert.deepEqual(
     preserved.prepare('SELECT retry_count, max_retries FROM remote_tasks WHERE uid = ?')
       .get(preservedTaskUid),
@@ -765,8 +765,8 @@ test('rolls back a failed base-table migration and succeeds after the schema col
 
   database.exec('DROP TABLE source_documents');
   const recovered = runV2Migrations(database, { migrationsDir: V2_MIGRATIONS_DIR });
-  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
-  assert.equal(recovered.currentVersion, 29);
+  assert.deepEqual(recovered.appliedVersions, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
+  assert.equal(recovered.currentVersion, 30);
   assertBaseTableContract(database);
   assert.equal(database.prepare('SELECT count(*) AS count FROM legacy_assets').get().count, 0);
   assert.equal(database.pragma('integrity_check', { simple: true }), 'ok');

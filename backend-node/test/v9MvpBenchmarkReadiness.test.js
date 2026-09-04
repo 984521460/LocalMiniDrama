@@ -336,6 +336,23 @@ test('readiness fails closed when the version-twenty-nine TTS workflow trigger i
   });
 });
 
+test('readiness fails closed when the version-thirty human review contracts are missing', (t) => {
+  for (const sql of [
+    'DROP TABLE mvp_benchmark_human_av_review_seals',
+    'DROP TABLE mvp_benchmark_human_av_reviews',
+    'DROP TRIGGER v2_mvp_benchmark_human_av_reviews_validate_insert',
+  ]) {
+    const database = createMigratedV2Database(t);
+    const repository = createMvpBenchmarkReadinessRepository(database);
+    assert.equal(repository.inspect().contractsReady, true);
+    database.exec(sql);
+    assert.deepEqual(repository.inspect(), {
+      contractsReady: false,
+      readyConnection: false,
+    });
+  }
+});
+
 test('readiness fails closed when the version-twenty benchmark session table is missing', (t) => {
   const database = createMigratedV2Database(t);
   const repository = createMvpBenchmarkReadinessRepository(database);
