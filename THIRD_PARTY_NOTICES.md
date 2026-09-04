@@ -83,6 +83,23 @@ node licenses/collect-direct-npm-licenses.mjs
 
 Phase 1 起，每个资产必须登记来源、精确版本或哈希、许可证、商用与再分发条件、下载方式和是否进入安装包。默认策略是“运行时由用户在远程实例中按许可自行取得”，不把大模型权重打进桌面安装包。`licenses/distribution-policy.mjs` 会核验四套打包配置，并扫描实际可分发源码/生成输入中的常见模型权重扩展名；Windows 归档验证还会拒绝包内 FFmpeg、示例剧集和模型权重路径。
 
+### 4.1 当前 MiniMax H3 MVP 运行资产
+
+权威机器清单为 `licenses/h3-runtime-assets.json`。当前运行环境固定到 `Comfy-Org/MiniMax-H3` revision `4cc1d817b6184899b41293954329f576cb5ae86b`，七个文件的路径、字节数和 SHA-256 均由该 revision 的 Hugging Face 文件元数据逐项绑定；项目只验证运行时已有文件，不下载、不打包、也不授权再分发这些权重。
+
+有效基础许可为 [MiniMax H3 Community License Agreement](https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/42ed227ee7df40d41602854ae760620d6eb651fe/LICENSE)。工程采用前必须确认至少以下条件：
+
+- 适用地域排除欧盟、英国、韩国和美国；排除地域使用需另行取得许可；
+- 商业产品或服务年收入超过 2,000 万美元时需事先取得 MiniMax 书面授权；
+- 商业产品界面须显著展示“MiniMax H3”；
+- 必须遵守可接受使用政策、维护合理安全措施，并使下游用户受相应限制约束；
+- 向公共环境发布生成内容时须清晰披露其为 AI 生成；
+- MiniMax 不主张输出权利，但输出及后续使用责任由使用者承担。
+
+Comfy-Org 的[模型卡](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/4cc1d817b6184899b41293954329f576cb5ae86b/README.md)说明其文件是面向 ComfyUI 的重新打包，并列出 MiniMax 原始仓库、LightX2V Turbo 上游和 Qwen 编码器来源。LightX2V Turbo 与 Qwen3-VL 上游分别声明 Apache-2.0；这些组件声明不会替代整个 H3 运行组合适用的 MiniMax H3 基础许可。
+
+Phase 7 历史实测环境摘要 `541f91c7…c39f8` 被保留为发生过的历史证据，不因后来核对官方仓库而改写。当前 MVP 生产预检使用独立环境摘要 `716b53e4…52d43`；它采用官方 revision 中 Ref2VA diffusion 的 SHA-256 `9255f52b…65779` 与 Ref2VA Turbo LoRA 的 SHA-256 `5b9ab5ad…bb84c`，并要求每次付费执行前重新远端核验全部七个文件。
+
 ## 5. FFmpeg 工程判断依据
 
 FFmpeg 官方说明：启用 GPL 组件会使相应构建适用 GPL，合规清单要求分发者提供与所分发二进制精确对应的源码和构建信息。FFmpeg 官方下载页把 Windows 二进制构建链接到第三方构建提供者；当前文件自报的 Gyan 构建也说明其静态变体采用 GPLv3。参考：

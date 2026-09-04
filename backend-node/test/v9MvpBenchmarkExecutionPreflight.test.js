@@ -9,6 +9,7 @@ const Ajv2020 = require('ajv/dist/2020');
 
 const {
   APPROVED_LIVE_ENVIRONMENT,
+  MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256,
   createMvpBenchmarkCostEstimate,
   createMvpBenchmarkExecutionReservation,
   createMvpBenchmarkLiveEnvironmentAttestation,
@@ -47,7 +48,7 @@ function observation(current, observedAtEpochMs = 2_000, overrides = {}) {
     connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
     observedAtEpochMs,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
     gpu: structuredClone(APPROVED_LIVE_ENVIRONMENT.gpu),
     comfyUI: structuredClone(APPROVED_LIVE_ENVIRONMENT.comfyUI),
     runtime: structuredClone(APPROVED_LIVE_ENVIRONMENT.runtime),
@@ -63,18 +64,30 @@ function schema(name) {
   ));
 }
 
-test('live observation binds the reviewed GPU runtime and seven model files', (t) => {
+test('live observation binds the current licensed runtime without rewriting Phase 7 history', (t) => {
   const current = createMvpBenchmarkSessionFixture(t);
-  const reviewed = JSON.parse(fs.readFileSync(
+  const historical = JSON.parse(fs.readFileSync(
     path.resolve(__dirname, '../../evidence/h3/phase7/environment.json'),
     'utf8',
   ));
-  assert.deepEqual(APPROVED_LIVE_ENVIRONMENT, {
-    gpu: reviewed.gpu,
-    comfyUI: reviewed.comfyUI,
-    runtime: reviewed.runtime,
-    models: reviewed.models,
-  });
+  const licensedAssets = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, '../../licenses/h3-runtime-assets.json'),
+    'utf8',
+  ));
+  assert.deepEqual(APPROVED_LIVE_ENVIRONMENT.gpu, historical.gpu);
+  assert.deepEqual(APPROVED_LIVE_ENVIRONMENT.comfyUI, historical.comfyUI);
+  assert.deepEqual(APPROVED_LIVE_ENVIRONMENT.runtime, historical.runtime);
+  assert.deepEqual(APPROVED_LIVE_ENVIRONMENT.models, licensedAssets.assets.map((asset) => ({
+    role: asset.role,
+    fileName: asset.fileName,
+    sha256: asset.sha256,
+    bytes: asset.bytes,
+  })));
+  assert.notDeepEqual(APPROVED_LIVE_ENVIRONMENT.models, historical.models);
+  assert.equal(
+    licensedAssets.approvedEnvironmentSha256,
+    MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256,
+  );
   const accepted = observation(current);
   assert.equal(accepted.gpu.gpuClass, 'rtx4090-24gb');
   assert.equal(accepted.models.length, 7);

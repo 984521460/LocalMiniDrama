@@ -22,6 +22,10 @@ const EXPECTED_EXTRA_RESOURCES = Object.freeze([
   Object.freeze({ from: 'frontweb-dist', to: 'frontweb/dist', filter: Object.freeze(['**/*']) }),
   Object.freeze({ from: '../LICENSE', to: 'licenses/LICENSE' }),
   Object.freeze({ from: '../THIRD_PARTY_NOTICES.md', to: 'licenses/THIRD_PARTY_NOTICES.md' }),
+  Object.freeze({
+    from: '../licenses/h3-runtime-assets.json',
+    to: 'licenses/H3_RUNTIME_ASSETS.json',
+  }),
 ]);
 
 class DistributionAssetContractError extends Error {

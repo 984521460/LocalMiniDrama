@@ -86,6 +86,10 @@
       {
         "from": "../THIRD_PARTY_NOTICES.md",
         "to": "licenses/THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../licenses/h3-runtime-assets.json",
+        "to": "licenses/H3_RUNTIME_ASSETS.json"
       }
     ],
     "win": {

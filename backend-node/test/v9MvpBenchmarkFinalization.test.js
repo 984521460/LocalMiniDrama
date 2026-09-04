@@ -169,7 +169,7 @@ function observation(current) {
     connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
     observedAtEpochMs: 2_000,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
     gpu: structuredClone(APPROVED_LIVE_ENVIRONMENT.gpu),
     comfyUI: structuredClone(APPROVED_LIVE_ENVIRONMENT.comfyUI),
     runtime: structuredClone(APPROVED_LIVE_ENVIRONMENT.runtime),

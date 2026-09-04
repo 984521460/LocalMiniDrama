@@ -37,9 +37,13 @@ test('packaging config accepts only the reviewed frontend resource', () => {
       { from: 'frontweb-dist', to: 'frontweb/dist', filter: ['**/*'] },
       { from: '../LICENSE', to: 'licenses/LICENSE' },
       { from: '../THIRD_PARTY_NOTICES.md', to: 'licenses/THIRD_PARTY_NOTICES.md' },
+      {
+        from: '../licenses/h3-runtime-assets.json',
+        to: 'licenses/H3_RUNTIME_ASSETS.json',
+      },
     ],
   }
-  assert.deepEqual(assertDistributionBuildConfig(valid), { extraResourceCount: 3 })
+  assert.deepEqual(assertDistributionBuildConfig(valid), { extraResourceCount: 4 })
   for (const resource of [
     { from: '../backend-node/tools/ffmpeg', to: 'ffmpeg', filter: ['**/*'] },
     { from: '../example_drama', to: 'example_drama', filter: ['**/*'] },

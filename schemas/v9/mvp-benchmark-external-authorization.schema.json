@@ -22,7 +22,7 @@
     "connectionEvidenceSha256": { "$ref": "#/$defs/sha256" },
     "requiredGpuClass": { "const": "rtx4090-24gb" },
     "requiredEnvironmentSha256": {
-      "const": "541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8"
+      "const": "716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43"
     },
     "liveEnvironmentCheck": { "const": "required-before-execution" },
     "maximumCostCnyFen": { "type": "integer", "minimum": 1, "maximum": 1000000 },
@@ -35,7 +35,7 @@
     "expiresAtEpochMs": { "$ref": "#/$defs/epochMs" },
     "authorizationSha256": { "$ref": "#/$defs/sha256" }
   },
-  "$comment": "This is an authorization requirement, not proof that the current remote environment was inspected. Runtime additionally recomputes authorizationSha256, enforces a validity duration of 1 minute through 24 hours, revalidates the immutable session plus current ready connection evidence, and requires a separate live environment check before execution.",
+  "$comment": "This is an authorization requirement for the current licensed MVP environment, not proof that the remote environment was inspected. Runtime additionally recomputes authorizationSha256, enforces a validity duration of 1 minute through 24 hours, revalidates the immutable session plus current ready connection evidence, and requires a separate live environment check before execution.",
   "$defs": {
     "uuidV4": {
       "type": "string",

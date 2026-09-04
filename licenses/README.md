@@ -23,3 +23,14 @@ node licenses/collect-direct-npm-licenses.mjs
 `npm run licenses:check` 会同时执行 `distribution-policy.test.mjs`：四套 Electron Builder 配置只能携带前端构建目录，发布归档不得出现 FFmpeg、示例剧集或常见模型权重扩展名，实际可分发源码与已存在的生成输入也会被扫描。该机器门禁证明“当前配置排除了已知未闭合资产”，不等于对所有第三方许可证作法律结论。
 
 本目录不存放模型权重或第三方二进制本体，也不把软件许可证推断为模型或生成内容的使用许可。
+
+## H3 运行资产
+
+`h3-runtime-assets.json` 是当前 MVP 远程 H3 环境的可机读来源与许可清单，固定：
+
+- `Comfy-Org/MiniMax-H3` 的精确 revision、七个运行文件的仓库路径、字节数和 SHA-256；
+- MiniMax H3 Community License 的有效约束，以及 Qwen3-VL 和 LightX2V 上游组件声明；
+- `runtime-user-acquired`、`packaged: false` 和项目不得再分发权重的工程政策；
+- 付费运行前必须由操作者确认地域、收入阈值、商业 UI 标识、下游条款和可接受使用要求。
+
+`h3-runtime-assets.test.mjs` 将该清单与后端当前运行环境、前端授权合同及 H3 Profile 逐项交叉验证，同时确认 Phase 7 历史实测证据保持原始摘要，不用当前官方文件信息改写历史。该清单是工程合规证据，不是法律意见，也不代表已经替操作者完成许可资格判断。

@@ -12,6 +12,8 @@ const NUMBER_IS_SAFE_INTEGER = Number.isSafeInteger
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const SHA256 = /^[0-9a-f]{64}$/u
 const ERROR_MESSAGE = 'MVP benchmark authorization data is invalid'
+export const MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256 =
+  '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43'
 const AUTHORIZATION_KEYS = FREEZE([
   'schemaVersion', 'uid', 'sessionUid', 'dramaUid', 'sessionPlanSha256',
   'connectionUid', 'connectionEvidenceSha256', 'requiredGpuClass',
@@ -82,7 +84,7 @@ export function mvpBenchmarkAuthorizationView(value, expected = {}) {
   if (input.schemaVersion !== 'mvp-benchmark-external-authorization.v1'
     || input.requiredGpuClass !== 'rtx4090-24gb'
     || input.requiredEnvironmentSha256
-      !== '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8'
+      !== MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256
     || input.liveEnvironmentCheck !== 'required-before-execution'
     || input.dataScope !== 'single-benchmark-session'
     || input.perItemAttemptLimit !== 1

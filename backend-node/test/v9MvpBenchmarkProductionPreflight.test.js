@@ -47,7 +47,7 @@ function observationInput(current, observedAtEpochMs = 2_000) {
     connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
     observedAtEpochMs,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
     gpu: structuredClone(APPROVED_LIVE_ENVIRONMENT.gpu),
     comfyUI: structuredClone(APPROVED_LIVE_ENVIRONMENT.comfyUI),
     runtime: structuredClone(APPROVED_LIVE_ENVIRONMENT.runtime),
@@ -163,7 +163,7 @@ test('SSH live verifier binds connection evidence, returns exact observation, an
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   }));
   assert.deepEqual(actual, observationInput(current));
   assert.equal(openCalls, 1);
@@ -209,7 +209,7 @@ test('SSH live verifier binds connection evidence, returns exact observation, an
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   })), { code: 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNAVAILABLE' });
   assert.equal(failedCloseCalls, 1);
 
@@ -240,7 +240,7 @@ test('SSH live verifier binds connection evidence, returns exact observation, an
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   })), { code: 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNAVAILABLE' });
   assert.equal(mismatchedExecCalls, 0);
   assert.equal(mismatchedCloseCalls, 1);
@@ -267,7 +267,7 @@ test('SSH live verifier binds connection evidence, returns exact observation, an
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   })), { code: 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNAVAILABLE' });
   assert.equal(timeoutCloseCalls, 1);
 
@@ -294,7 +294,7 @@ test('SSH live verifier binds connection evidence, returns exact observation, an
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   })), { code: 'MVP_BENCHMARK_EXECUTION_PREFLIGHT_UNAVAILABLE' });
 });
 
@@ -307,7 +307,7 @@ test('SSH live verifier does not execute connection or stream accessors', async 
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   });
 
   let connectionAccessorReads = 0;
@@ -392,7 +392,7 @@ test('SSH live verifier closes resources that settle after its deadline', async 
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   });
 
   let resolveOpen;
@@ -458,7 +458,7 @@ test('SSH live verifier bounds stderr and combined probe output', async (t) => {
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   });
   const stdout = exactProbeOutput();
 
@@ -513,7 +513,7 @@ test('SSH live verifier contains immediate and late stderr errors', async (t) =>
     connectionUid: current.connection.uid,
     connectionEvidenceSha256: evidence,
     approvedEnvironmentSha256:
-      '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+      '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   });
   const uncaught = [];
   const unhandled = [];

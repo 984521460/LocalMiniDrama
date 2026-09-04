@@ -143,7 +143,7 @@ test('authorization contract fixes trusted environment, limits, expiry, and its 
   assert.equal(authorization.requiredGpuClass, 'rtx4090-24gb');
   assert.equal(
     authorization.requiredEnvironmentSha256,
-    '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+    '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
   );
   assert.equal(authorization.liveEnvironmentCheck, 'required-before-execution');
   assert.equal(authorization.dataScope, 'single-benchmark-session');

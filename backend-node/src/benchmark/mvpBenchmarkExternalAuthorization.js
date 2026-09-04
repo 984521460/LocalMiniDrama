@@ -3,8 +3,10 @@
 const { createHash } = require('node:crypto');
 const { types: { isProxy } } = require('node:util');
 
-const { H3_PHASE_7_ENVIRONMENT_SHA256 } = require('../h3/realValidationEnvironment');
 const { RTX_4090_GPU_CLASS } = require('../h3/gpuClasses');
+const {
+  MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256,
+} = require('./mvpBenchmarkApprovedEnvironment');
 
 const REQUEST_SCHEMA_VERSION = 'mvp-benchmark-external-authorization-request.v1';
 const AUTHORIZATION_SCHEMA_VERSION = 'mvp-benchmark-external-authorization.v1';
@@ -164,7 +166,7 @@ function baseAuthorization(value, code) {
   const input = exactObject(value, AUTHORIZATION_KEYS, code);
   if (input.schemaVersion !== AUTHORIZATION_SCHEMA_VERSION
     || input.requiredGpuClass !== RTX_4090_GPU_CLASS
-    || input.requiredEnvironmentSha256 !== H3_PHASE_7_ENVIRONMENT_SHA256
+    || input.requiredEnvironmentSha256 !== MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256
     || input.liveEnvironmentCheck !== 'required-before-execution'
     || input.dataScope !== 'single-benchmark-session'
     || input.perItemAttemptLimit !== 1
@@ -221,7 +223,7 @@ function createMvpBenchmarkExternalAuthorization(
     connectionUid: request.connectionUid,
     connectionEvidenceSha256: request.connectionEvidenceSha256,
     requiredGpuClass: RTX_4090_GPU_CLASS,
-    requiredEnvironmentSha256: H3_PHASE_7_ENVIRONMENT_SHA256,
+    requiredEnvironmentSha256: MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256,
     liveEnvironmentCheck: 'required-before-execution',
     maximumCostCnyFen: request.maximumCostCnyFen,
     dataScope: 'single-benchmark-session',

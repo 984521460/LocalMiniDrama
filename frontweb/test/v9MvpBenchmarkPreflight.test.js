@@ -53,7 +53,7 @@ function authorization() {
     connectionUid: uid(81),
     connectionEvidenceSha256: 'c'.repeat(64),
     requiredGpuClass: 'rtx4090-24gb',
-    requiredEnvironmentSha256: '541f91c78fedfd097abb6eced612fdcf916e8472fdccbb19b0097b90390c39f8',
+    requiredEnvironmentSha256: '716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43',
     liveEnvironmentCheck: 'required-before-execution',
     maximumCostCnyFen: 374,
     dataScope: 'single-benchmark-session',
