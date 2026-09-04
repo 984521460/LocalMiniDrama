@@ -37,6 +37,7 @@ const EXPECTED_TABLES = Object.freeze([
   'character_identity_lock_events',
   'character_reference_packages',
   'character_reference_package_items',
+  'character_reference_package_executions',
   'shot_continuity_snapshots',
   'shot_continuity_character_refs',
   'shot_continuity_prop_refs',
@@ -196,7 +197,8 @@ test('2.1 structured evidence exports every P9-04B domain without credential ref
   const records = repositories.projectArchives.exportStructuredV21(dramaUid);
   for (const [name, rows] of Object.entries(records)) {
     if (name === 'characterCandidateExecutions'
-      || name === 'characterCandidateExecutionItems') {
+      || name === 'characterCandidateExecutionItems'
+      || name === 'characterReferencePackageExecutions') {
       assert.deepEqual(rows, []);
       continue;
     }

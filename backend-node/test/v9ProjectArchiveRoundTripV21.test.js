@@ -90,6 +90,7 @@ test('production export defaults to a strict minimal 2.1 archive', (t) => {
   const preE3Manifest = JSON.parse(preE3Zip.readAsText('v2/manifest.json'));
   delete preE3Manifest.structuredRecords.characterCandidateExecutions;
   delete preE3Manifest.structuredRecords.characterCandidateExecutionItems;
+  delete preE3Manifest.structuredRecords.characterReferencePackageExecutions;
   preE3Zip.updateFile(
     'v2/manifest.json',
     Buffer.from(JSON.stringify(preE3Manifest, null, 2), 'utf8'),
@@ -110,6 +111,7 @@ test('production export defaults to a strict minimal 2.1 archive', (t) => {
   ).buffer).manifestData;
   assert.deepEqual(normalizedPreE3.structuredRecords.characterCandidateExecutions, []);
   assert.deepEqual(normalizedPreE3.structuredRecords.characterCandidateExecutionItems, []);
+  assert.deepEqual(normalizedPreE3.structuredRecords.characterReferencePackageExecutions, []);
 
   let trapReads = 0;
   const hostileDramaId = new Proxy({}, {
@@ -187,6 +189,7 @@ test('a complete migrated project round-trips through a clean database as normal
   const schemaPreE3 = structuredClone(firstManifest);
   delete schemaPreE3.structuredRecords.characterCandidateExecutions;
   delete schemaPreE3.structuredRecords.characterCandidateExecutionItems;
+  delete schemaPreE3.structuredRecords.characterReferencePackageExecutions;
   assert.equal(validateSchema(schemaPreE3), true, JSON.stringify(validateSchema.errors));
   const schemaMediaExtra = structuredClone(firstManifest);
   schemaMediaExtra.mediaBindings[0].unexpected = true;
@@ -248,8 +251,9 @@ test('a complete migrated project round-trips through a clean database as normal
 
   for (const [name, rows] of Object.entries(firstManifest.structuredRecords)) {
     if (name === 'characterCandidateExecutions'
-      || name === 'characterCandidateExecutionItems') {
-      assert.deepEqual(rows, [], `structured ${name} is an optional E3 extension`);
+      || name === 'characterCandidateExecutionItems'
+      || name === 'characterReferencePackageExecutions') {
+      assert.deepEqual(rows, [], `structured ${name} is an optional production extension`);
     } else {
       assert.ok(rows.length > 0, `structured ${name} should be represented`);
     }

@@ -12,6 +12,9 @@ const {
   createCharacterCandidateExecutionRepository,
 } = require('./characterCandidateExecutionRepository');
 const { createCharacterReferencePackageRepository } = require('./characterReferencePackageRepository');
+const {
+  createCharacterReferencePackageExecutionRepository,
+} = require('./characterReferencePackageExecutionRepository');
 const { createCharacterVersionRepository } = require('./characterVersionRepository');
 const { createComfyManifestRepository } = require('./comfyManifestRepository');
 const { createGenerationHistoryRepository } = require('./generationHistoryRepository');
@@ -154,6 +157,22 @@ function createLazyCharacterCandidateExecutionRepository(database) {
     fail(...args) { return getTarget().fail(...args); },
     get(...args) { return getTarget().get(...args); },
     getCharacterSource(...args) { return getTarget().getCharacterSource(...args); },
+    markUnknown(...args) { return getTarget().markUnknown(...args); },
+    recoverInterrupted(...args) { return getTarget().recoverInterrupted(...args); },
+    reserve(...args) { return getTarget().reserve(...args); },
+  });
+}
+
+function createLazyCharacterReferencePackageExecutionRepository(database, dependencies) {
+  let target;
+  function getTarget() {
+    if (!target) target = createCharacterReferencePackageExecutionRepository(database, dependencies);
+    return target;
+  }
+  return Object.freeze({
+    complete(...args) { return getTarget().complete(...args); },
+    fail(...args) { return getTarget().fail(...args); },
+    get(...args) { return getTarget().get(...args); },
     markUnknown(...args) { return getTarget().markUnknown(...args); },
     recoverInterrupted(...args) { return getTarget().recoverInterrupted(...args); },
     reserve(...args) { return getTarget().reserve(...args); },
@@ -353,6 +372,11 @@ function createV2Repositories(database) {
   const narrativeReviews = createNarrativeReviewRepository(database);
   const narrativeExecutions = createLazyNarrativeExecutionRepository(database);
   const characterCandidateExecutions = createLazyCharacterCandidateExecutionRepository(database);
+  const characterReferencePackageExecutions =
+    createLazyCharacterReferencePackageExecutionRepository(database, {
+      characterCandidateExecutions,
+      characterReferencePackages,
+    });
   const remote = createRemoteRepository(database);
   const scenePropVersions = createScenePropVersionRepository(database);
   const sources = createSourceRepository(database);
@@ -442,6 +466,7 @@ function createV2Repositories(database) {
     characterCandidates: createCharacterCandidateRepository(database),
     characterCandidateExecutions,
     characterReferencePackages,
+    characterReferencePackageExecutions,
     characterVersions,
     comfyManifests,
     generationHistory,

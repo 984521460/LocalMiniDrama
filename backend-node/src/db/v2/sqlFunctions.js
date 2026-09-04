@@ -66,6 +66,9 @@ const {
   parseCharacterCandidateExecutionRequest,
 } = require('../../characterCandidates/execution/request');
 const {
+  characterReferencePackageExecutionRequestSha256,
+} = require('../../characterCandidates/referencePackage/request');
+const {
   characterCandidateSourceSha256,
   parseCharacterCandidateSource,
 } = require('../../characterCandidates/execution/source');
@@ -172,6 +175,12 @@ function characterCandidateExecutionRequestSha256Sql(value) {
   const parsed = canonicalJson(value, 16 * 1024);
   if (parsed === null) return null;
   try { return characterCandidateExecutionRequestSha256(parsed); } catch { return null; }
+}
+
+function characterReferencePackageExecutionRequestSha256Sql(value) {
+  const parsed = canonicalJson(value, 16 * 1024);
+  if (parsed === null) return null;
+  try { return characterReferencePackageExecutionRequestSha256(parsed); } catch { return null; }
 }
 
 function characterCandidateSourceSha256Sql(value) {
@@ -1102,6 +1111,11 @@ function registerV2SqlFunctions(database) {
     characterCandidateExecutionRequestSha256Sql,
   );
   database.function(
+    'character_reference_package_execution_request_sha256',
+    { deterministic: true },
+    characterReferencePackageExecutionRequestSha256Sql,
+  );
+  database.function(
     'character_candidate_source_sha256',
     { deterministic: true },
     characterCandidateSourceSha256Sql,
@@ -1334,6 +1348,7 @@ module.exports = Object.freeze({
   characterCandidatePromptSha256Sql,
   characterCandidateProfileSha256Sql,
   characterCandidateSourceSha256Sql,
+  characterReferencePackageExecutionRequestSha256Sql,
   h3GenerationSpecSha256,
   h3HistoryMatchesIntent,
   h3OfficialManifestMatches,

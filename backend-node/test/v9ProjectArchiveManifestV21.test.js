@@ -204,17 +204,20 @@ test('creates and parses an exact deeply frozen 2.1 manifest without activating 
   assert.equal(v20.schemaVersion, '2.0.0');
 });
 
-test('normalizes pre-E3 2.1 manifests with no candidate execution groups to empty evidence', () => {
+test('normalizes older 2.1 manifests with no production execution groups to empty evidence', () => {
   const { parts } = fixture();
   const preE3 = structuredClone(createProjectManifestV21(parts));
   delete preE3.structuredRecords.characterCandidateExecutions;
   delete preE3.structuredRecords.characterCandidateExecutionItems;
+  delete preE3.structuredRecords.characterReferencePackageExecutions;
 
   const parsed = parseProjectManifestV21(preE3);
   assert.deepEqual(parsed.structuredRecords.characterCandidateExecutions, []);
   assert.deepEqual(parsed.structuredRecords.characterCandidateExecutionItems, []);
+  assert.deepEqual(parsed.structuredRecords.characterReferencePackageExecutions, []);
   assert.equal(Object.isFrozen(parsed.structuredRecords.characterCandidateExecutions), true);
   assert.equal(Object.isFrozen(parsed.structuredRecords.characterCandidateExecutionItems), true);
+  assert.equal(Object.isFrozen(parsed.structuredRecords.characterReferencePackageExecutions), true);
 
   const partialE3 = structuredClone(createProjectManifestV21(parts));
   delete partialE3.structuredRecords.characterCandidateExecutionItems;

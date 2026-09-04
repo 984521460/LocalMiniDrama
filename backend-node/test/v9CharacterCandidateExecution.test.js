@@ -657,6 +657,29 @@ test('configured-image adapter stays local until generate and binds the requeste
   assert.equal(output.parameters.requestedSeed, 123456);
   assert.equal(output.parameters.ordinal, 2);
   assert.deepEqual(output.bytes, imageBytes);
+  const referenceBytes = Buffer.from(imageBytes);
+  const referenceSha256 = sha256(referenceBytes);
+  const referencePrompt = 'synthetic image-conditioned reference prompt';
+  const referenceOutput = await provider.generate({
+    schemaVersion: 'character-reference-package-generation-command.v1',
+    operationUid: uid(31016),
+    ordinal: 4,
+    prompt: referencePrompt,
+    promptSha256: sha256(referencePrompt),
+    width: 256,
+    height: 256,
+    seed: 654321,
+    referenceImage: {
+      mimeType: 'image/png',
+      contentSha256: referenceSha256,
+      bytes: referenceBytes,
+    },
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].reference_image_urls, [
+    `data:image/png;base64,${referenceBytes.toString('base64')}`,
+  ]);
+  assert.equal(referenceOutput.parameters.referenceImageSha256, referenceSha256);
 });
 
 test('bounded image source enforces bytes and rejects response Proxy without traps', async () => {

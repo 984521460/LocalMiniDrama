@@ -316,9 +316,9 @@ then records exactly four sequential independent calls. Successful completion
 atomically seals four normalized local PNG AssetVersions, the existing
 CharacterCandidateBatch, and per-call prompt/provider/parameter/hash evidence.
 Interrupted or uncertain Provider work becomes `submission_unknown`; startup
-recovery never replays it. These operational rows are not yet represented by
-Project Archive 2.1, so 2.1 export fails closed for a drama containing them
-instead of silently dropping the audit trail.
+recovery never replays it. Project Archive 2.1 preserves the successful and
+terminal operation evidence together with the four item records, so a project
+round-trip cannot silently drop the configured-image audit trail.
 
 Migration `0027_mvp_benchmark_session_current_sources.sql` adds a final
 transactional current-source seal to MVP benchmark session insertion. A new
@@ -333,3 +333,13 @@ cannot authorize a session after its H3 current AssetVersion or audio
 narrative, continuity, active VoiceProfile, workflow, or connection evidence
 has drifted. The trigger writes no external evidence and performs no SSH,
 Vault, Provider, GPU, billing, media, or instance operation.
+
+Migration `0031_character_reference_package_executions.sql` reserves the
+explicit candidate-selection operation before the first configured-image
+reference call. It binds the current successful four-candidate execution,
+chosen candidate AssetVersion and exact request, then permits one terminal
+transition to a complete ten-item reference package, a bounded failure, or
+`submission_unknown`. Startup recovery converts interrupted reservations to
+`submission_unknown` without replaying Provider work. The operation is
+append-only, revalidated on every read, and included in Project Archive 2.1 so
+successful and uncertain production evidence survive a clean round-trip.

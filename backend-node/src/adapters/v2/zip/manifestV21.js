@@ -522,6 +522,7 @@ function assertStructuredBaseReferences(records, structured, legacyRecords) {
     structured.characterIdentityLockEvents,
     structured.characterReferencePackages,
     structured.characterReferencePackageItems,
+    structured.characterReferencePackageExecutions,
     structured.shotContinuityCharacterRefs,
     structured.voiceProfiles,
     structured.voiceProfileSelectionEvents,
@@ -558,16 +559,32 @@ function normalizeCharacterCandidateExecutionGroups(root) {
   const descriptors = apply(OBJECT_GET_DESCRIPTORS, Object, [structured]);
   const hasExecutions = safeHasOwn(descriptors, 'characterCandidateExecutions');
   const hasItems = safeHasOwn(descriptors, 'characterCandidateExecutionItems');
-  if (hasExecutions || hasItems) return root;
+  const hasReferenceExecutions = safeHasOwn(
+    descriptors,
+    'characterReferencePackageExecutions',
+  );
+  if (hasExecutions !== hasItems) return root;
+  if (hasExecutions && hasReferenceExecutions) return root;
 
   const names = apply(REFLECT_OWN_KEYS, Reflect, [STRUCTURED_RECORD_SPECS]);
   const actual = apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
-  if (actual.length !== names.length - 2) return root;
+  const missingCount = (hasExecutions ? 0 : 2) + (hasReferenceExecutions ? 0 : 1);
+  if (actual.length !== names.length - missingCount) return root;
   const normalized = apply(OBJECT_CREATE, Object, [null]);
   for (let index = 0; index < names.length; index += 1) {
     const name = names[index];
     if (name === 'characterCandidateExecutions'
-      || name === 'characterCandidateExecutionItems') {
+      || name === 'characterCandidateExecutionItems'
+      || name === 'characterReferencePackageExecutions') {
+      if ((name === 'characterCandidateExecutions' || name === 'characterCandidateExecutionItems')
+        && hasExecutions) {
+        normalized[name] = descriptors[name].value;
+        continue;
+      }
+      if (name === 'characterReferencePackageExecutions' && hasReferenceExecutions) {
+        normalized[name] = descriptors[name].value;
+        continue;
+      }
       normalized[name] = apply(OBJECT_FREEZE, Object, [new Array(0)]);
       continue;
     }

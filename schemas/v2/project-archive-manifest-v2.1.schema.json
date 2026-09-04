@@ -201,6 +201,7 @@
         "characterIdentityLockEvents": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackages": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackageItems": { "$ref": "#/$defs/recordRows" },
+        "characterReferencePackageExecutions": { "$ref": "#/$defs/recordRows" },
         "shotContinuitySnapshots": { "$ref": "#/$defs/recordRows" },
         "shotContinuityCharacterRefs": { "$ref": "#/$defs/recordRows" },
         "shotContinuityPropRefs": { "$ref": "#/$defs/recordRows" },

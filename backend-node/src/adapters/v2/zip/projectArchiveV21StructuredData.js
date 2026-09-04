@@ -9,6 +9,9 @@ const {
 const {
   assertProjectArchiveV21CharacterCandidateExecutionStructured,
 } = require('./projectArchiveV21CharacterCandidateExecutionEvidence');
+const {
+  assertProjectArchiveV21CharacterReferencePackageExecutionStructured,
+} = require('./projectArchiveV21CharacterReferencePackageExecutionEvidence');
 
 const MAX_RECORDS = 100000;
 const MAX_STRING_BYTES = 16 * 1024 * 1024;
@@ -99,6 +102,13 @@ const STRUCTURED_RECORD_SPECS = Object.freeze({
     'asset_version_parent_uid', 'asset_version_created_at', 'asset_created_at',
     'asset_updated_at', 'logical_uri', 'media_type', 'width', 'height', 'content_sha256',
   ]),
+  characterReferencePackageExecutions: spec('character_reference_package_executions', [
+    'operation_uid', 'drama_uid', 'character_uid', 'candidate_execution_uid',
+    'candidate_uid', 'request_json', 'request_sha256',
+    'candidate_execution_request_sha256', 'candidate_execution_source_sha256',
+    'candidate_content_sha256', 'state', 'package_uid', 'error_code',
+    'created_at_epoch_ms', 'updated_at_epoch_ms',
+  ]),
   shotContinuitySnapshots: spec('shot_continuity_snapshots', [
     'uid', 'drama_uid', 'shot_result_uid', 'shot_result_hash', 'shot_envelope_hash',
     'shot_review_uid', 'shot_id', 'shot_ordinal', 'scene_uid', 'scene_version_uid',
@@ -159,6 +169,7 @@ const OWNER_FILTERS = Object.freeze({
   characterIdentityLockEvents: "EXISTS (SELECT 1 FROM characters AS owner JOIN dramas AS drama ON drama.id = owner.drama_id WHERE owner.uid = row.character_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)",
   characterReferencePackages: "EXISTS (SELECT 1 FROM characters AS owner JOIN dramas AS drama ON drama.id = owner.drama_id WHERE owner.uid = row.character_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)",
   characterReferencePackageItems: 'EXISTS (SELECT 1 FROM character_reference_packages AS package JOIN characters AS owner ON owner.uid = package.character_uid JOIN dramas AS drama ON drama.id = owner.drama_id WHERE package.uid = row.package_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)',
+  characterReferencePackageExecutions: 'row.drama_uid = @dramaUid',
   shotContinuitySnapshots: 'row.drama_uid = @dramaUid',
   shotContinuityCharacterRefs: 'EXISTS (SELECT 1 FROM shot_continuity_snapshots AS snapshot WHERE snapshot.uid = row.snapshot_uid AND snapshot.drama_uid = @dramaUid)',
   shotContinuityPropRefs: 'EXISTS (SELECT 1 FROM shot_continuity_snapshots AS snapshot WHERE snapshot.uid = row.snapshot_uid AND snapshot.drama_uid = @dramaUid)',
@@ -311,6 +322,7 @@ function recordIdentity(name, row) {
   if (Object.hasOwn(row, 'uid')) return row.uid;
   if (name === 'characterCandidateExecutions') return row.operation_uid;
   if (name === 'characterCandidateExecutionItems') return `${row.operation_uid}:${row.ordinal}`;
+  if (name === 'characterReferencePackageExecutions') return row.operation_uid;
   if (name === 'shotContinuityCharacterRefs' || name === 'shotContinuityPropRefs') {
     return `${row.snapshot_uid}:${row.ordinal}`;
   }
@@ -623,6 +635,7 @@ function validateProjectStructuredRecords(value, dramaUid) {
   }
   assertReferences(records, dramaUid);
   assertProjectArchiveV21CharacterCandidateExecutionStructured(records, invalidManifest);
+  assertProjectArchiveV21CharacterReferencePackageExecutionStructured(records, invalidManifest);
   assertSecretFree(value);
   assertProjectStructuredDomainEvidence(records, invalidManifest);
   return value;
@@ -642,6 +655,7 @@ function orderBy(name) {
   }
   if (name === 'characterCandidateExecutions') return 'row.operation_uid';
   if (name === 'characterCandidateExecutionItems') return 'row.operation_uid, row.ordinal';
+  if (name === 'characterReferencePackageExecutions') return 'row.operation_uid';
   return 'row.uid';
 }
 

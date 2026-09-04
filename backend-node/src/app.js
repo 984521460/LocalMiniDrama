@@ -200,6 +200,8 @@ function createApp({
     audioTtsSubmissions: recoveryRepositories.audioTtsSubmissions,
     narrativeExecutions: recoveryRepositories.narrativeExecutions,
     characterCandidateExecutions: recoveryRepositories.characterCandidateExecutions,
+    characterReferencePackageExecutions:
+      recoveryRepositories.characterReferencePackageExecutions,
     benchmarkReleases: recoveryRepositories.mvpBenchmarkExecutionAccounting,
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,

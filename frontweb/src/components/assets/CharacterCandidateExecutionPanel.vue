@@ -40,12 +40,43 @@
           :alt="`${selected.characterName}候选 ${item.ordinal + 1}`"
         />
         <figcaption>候选 {{ item.ordinal + 1 }} · {{ item.provider }} / {{ item.model }}</figcaption>
+        <el-radio v-model="selectedCandidateUid" :value="item.candidateUid">
+          锁定候选 {{ item.ordinal + 1 }}
+        </el-radio>
       </figure>
     </div>
 
+    <div v-if="candidates.length" class="reference-package-actions">
+      <div>
+        <strong>锁定角色并生成参考包</strong>
+        <p>建立不可变身份、外貌和默认服装版本，并独立生成 10 张视图/表情参考图。</p>
+      </div>
+      <el-button
+        type="success"
+        :loading="referenceExecution.busy.value"
+        :disabled="!selectedCandidateUid || busy.value || paidActionBusy"
+        @click="lockAndGenerateReferencePackage"
+      >锁定并生成 10 项参考包</el-button>
+    </div>
+
+    <p v-if="referenceExecution.error.value" class="candidate-error">
+      角色锁定或参考包生成失败；未完成结果不会被报告为成功。
+    </p>
+
+    <CharacterReferencePackageCard
+      v-if="currentPackage"
+      class="candidate-reference-package"
+      :package-record="currentPackage"
+    />
+
     <div class="candidate-actions">
       <span>提交前会再次确认四次外部生图调用及可能费用。</span>
-      <el-button type="primary" :loading="busy" :disabled="!selected" @click="run">
+      <el-button
+        type="primary"
+        :loading="busy"
+        :disabled="!selected || referenceExecution.busy.value || paidActionBusy"
+        @click="run"
+      >
         生成四候选
       </el-button>
     </div>
@@ -56,7 +87,11 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+import CharacterReferencePackageCard from './CharacterReferencePackageCard.vue'
 import { useCharacterCandidateExecution } from '@/composables/useCharacterCandidateExecution.js'
+import {
+  useCharacterReferencePackageExecution,
+} from '@/composables/useCharacterReferencePackageExecution.js'
 import {
   approvedCharacterCandidateOptions,
 } from '@/characterCandidates/characterCandidateExecution.js'
@@ -68,12 +103,16 @@ const props = defineProps({
   results: { type: Array, default: () => [] },
 })
 const execution = useCharacterCandidateExecution()
+const referenceExecution = useCharacterReferencePackageExecution()
 const { busy, error } = execution
 const selectedIdentity = ref('')
 const width = ref(512)
 const height = ref(512)
 const seed = ref(42)
 const completedByIdentity = ref([])
+const packagesByIdentity = ref([])
+const selectedCandidateUid = ref('')
+const paidActionBusy = ref(false)
 const options = computed(() => {
   try {
     return approvedCharacterCandidateOptions({
@@ -101,6 +140,15 @@ const candidates = computed(() => {
   }
   return []
 })
+const currentPackage = computed(() => {
+  const identity = selected.value?.identity
+  if (!identity) return null
+  const values = packagesByIdentity.value
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index].identity === identity) return values[index].packageRecord
+  }
+  return null
+})
 
 function remember(identity, response) {
   const current = completedByIdentity.value
@@ -119,34 +167,89 @@ function remember(identity, response) {
 }
 
 async function run() {
-  if (!selected.value) return
+  if (paidActionBusy.value || busy.value || referenceExecution.busy.value || !selected.value) return
   const selection = selected.value
   if (width.value * height.value > 4_194_304) {
     ElMessage.error('候选图片总像素不能超过 4194304')
     return
   }
+  paidActionBusy.value = true
   try {
-    await ElMessageBox.confirm(
-      '本次将向当前配置的图片服务独立提交 4 次生成请求，可能产生服务费用。确认继续？',
-      '确认四候选生成',
-      { type: 'warning', confirmButtonText: '确认生成', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
+    try {
+      await ElMessageBox.confirm(
+        '本次将向当前配置的图片服务独立提交 4 次生成请求，可能产生服务费用。确认继续？',
+        '确认四候选生成',
+        { type: 'warning', confirmButtonText: '确认生成', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
+    const response = await execution.execute({
+      dramaId: props.dramaId,
+      dramaUid: props.dramaUid,
+      characterUid: selection.characterUid,
+      extractionResultUid: selection.extractionResultUid,
+      characterFactId: selection.characterFactId,
+      width: width.value,
+      height: height.value,
+      seed: seed.value,
+    })
+    if (response) {
+      remember(selection.identity, response)
+      ElMessage.success(`${selection.characterName}的四张角色候选已生成并保存`)
+    }
+  } finally {
+    paidActionBusy.value = false
   }
-  const response = await execution.execute({
-    dramaId: props.dramaId,
-    dramaUid: props.dramaUid,
-    characterUid: selection.characterUid,
-    extractionResultUid: selection.extractionResultUid,
-    characterFactId: selection.characterFactId,
-    width: width.value,
-    height: height.value,
-    seed: seed.value,
-  })
-  if (response) {
-    remember(selection.identity, response)
-    ElMessage.success(`${selection.characterName}的四张角色候选已生成并保存`)
+}
+
+async function lockAndGenerateReferencePackage() {
+  if (paidActionBusy.value || busy.value || referenceExecution.busy.value) return
+  const selection = selected.value
+  let completed = null
+  for (let index = 0; index < completedByIdentity.value.length; index += 1) {
+    if (completedByIdentity.value[index].identity === selection?.identity) {
+      completed = completedByIdentity.value[index]
+    }
+  }
+  if (!selection || !completed || !selectedCandidateUid.value) return
+  paidActionBusy.value = true
+  try {
+    try {
+      await ElMessageBox.confirm(
+        '将锁定当前候选，并向图片服务独立提交 10 次参考图生成请求，可能产生服务费用。确认继续？',
+        '确认锁定并生成参考包',
+        { type: 'warning', confirmButtonText: '确认生成', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
+    const result = await referenceExecution.execute({
+      dramaId: props.dramaId,
+      operationUid: crypto.randomUUID(),
+      dramaUid: props.dramaUid,
+      characterUid: selection.characterUid,
+      candidateExecutionUid: completed.response.execution.operationUid,
+      candidateUid: selectedCandidateUid.value,
+      width: width.value,
+      height: height.value,
+      seed: seed.value,
+    })
+    if (!result) return
+    const next = []
+    for (let index = 0; index < packagesByIdentity.value.length; index += 1) {
+      if (packagesByIdentity.value[index].identity !== selection.identity) {
+        next[next.length] = packagesByIdentity.value[index]
+      }
+    }
+    next[next.length] = Object.freeze({
+      identity: selection.identity,
+      packageRecord: result.package,
+    })
+    packagesByIdentity.value = Object.freeze(next)
+    ElMessage.success(`${selection.characterName}已锁定，10 项参考包已保存`)
+  } finally {
+    paidActionBusy.value = false
   }
 }
 
@@ -160,9 +263,20 @@ watch(options, (items) => {
   }
 }, { immediate: true })
 
+watch(candidates, (items) => {
+  let present = false
+  for (let index = 0; index < items.length; index += 1) {
+    if (items[index].candidateUid === selectedCandidateUid.value) present = true
+  }
+  if (!present) selectedCandidateUid.value = items[0]?.candidateUid || ''
+}, { immediate: true })
+
 watch(() => props.dramaUid, () => {
   execution.invalidate()
+  referenceExecution.invalidate()
   completedByIdentity.value = Object.freeze([])
+  packagesByIdentity.value = Object.freeze([])
+  selectedCandidateUid.value = ''
   selectedIdentity.value = options.value[0]?.identity || ''
 })
 </script>
@@ -178,6 +292,10 @@ watch(() => props.dramaUid, () => {
 .candidate-grid figure { margin: 0; min-width: 0; }
 .candidate-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .candidate-grid figcaption { margin-top: 6px; overflow: hidden; color: var(--el-text-color-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.candidate-grid :deep(.el-radio) { margin-top: 7px; margin-right: 0; }
+.reference-package-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 16px; padding: 12px; border-radius: 10px; background: var(--el-color-success-light-9); }
+.reference-package-actions p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 12px; }
+.candidate-reference-package { margin-top: 16px; }
 .candidate-actions { margin-top: 14px; color: var(--el-text-color-secondary); font-size: 12px; }
 .candidate-error { color: var(--el-color-danger); font-size: 12px; }
 @media (max-width: 900px) { .candidate-form, .candidate-grid { grid-template-columns: 1fr 1fr; } .candidate-heading, .candidate-actions { align-items: flex-start; flex-direction: column; } }

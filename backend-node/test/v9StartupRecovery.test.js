@@ -25,6 +25,9 @@ function coordinatorForBoundary({
     audioTtsSubmissions: { recoverInterrupted() { return { recoveredCount: 0 }; } },
     narrativeExecutions: { recoverInterrupted() { return { recoveredCount: 0 }; } },
     characterCandidateExecutions: { recoverInterrupted() { return { recoveredCount: 0 }; } },
+    characterReferencePackageExecutions: {
+      recoverInterrupted() { return { recoveredCount: 0 }; },
+    },
     benchmarkReleases: { recoverOpen() { return benchmarkResult; } },
     remoteTasks: { async recoverAll() { return remoteResult; } },
     log: { info() {}, warn() {} },
@@ -46,6 +49,9 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
     characterCandidateExecutions: {
       recoverInterrupted() { calls.push('character-candidate'); return { recoveredCount: 7 }; },
     },
+    characterReferencePackageExecutions: {
+      recoverInterrupted() { calls.push('character-reference-package'); return { recoveredCount: 8 }; },
+    },
     benchmarkReleases: {
       recoverOpen() {
         calls.push('benchmark-release');
@@ -66,7 +72,7 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
   assert.strictEqual(second, first);
   assert.deepEqual(calls, [
     'legacy-async', 'legacy-video', 'workflow', 'media', 'h3', 'tts', 'narrative',
-    'character-candidate',
+    'character-candidate', 'character-reference-package',
     'benchmark-release', 'remote',
   ]);
   assert.equal(first.schemaVersion, 'startup-recovery.v1');
@@ -76,6 +82,7 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
     'media_exports', 'h3_api_submissions', 'audio_tts_submissions',
     'narrative_task_executions',
     'character_candidate_executions',
+    'character_reference_package_executions',
     'benchmark_releases', 'remote_tasks',
   ]);
   assert.deepEqual(first.families.at(-1), {
@@ -226,6 +233,12 @@ test('P9-01 actual createApp runs startup recovery before serving paid submissio
     assert.equal(
       report.families.find((family) => family.name === 'character_candidate_executions')
         .recoveredCount,
+      0,
+    );
+    assert.equal(
+      report.families.find(
+        (family) => family.name === 'character_reference_package_executions',
+      ).recoveredCount,
       0,
     );
     assert.equal(

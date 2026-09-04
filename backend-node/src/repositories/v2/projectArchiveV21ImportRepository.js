@@ -17,6 +17,12 @@ const { createProjectArchiveRepository } = require('./projectArchiveRepository')
 const {
   createCharacterCandidateExecutionRepository,
 } = require('./characterCandidateExecutionRepository');
+const {
+  createCharacterReferencePackageRepository,
+} = require('./characterReferencePackageRepository');
+const {
+  createCharacterReferencePackageExecutionRepository,
+} = require('./characterReferencePackageExecutionRepository');
 const { projectArchiveRecordsForManifest } = require('../../services/projectArchiveSourceEvidence');
 const { assertDatabase } = require('./repositorySupport');
 
@@ -34,6 +40,7 @@ const STRUCTURED_ORDER = Object.freeze([
   'characterCandidateExecutions', 'characterCandidateExecutionItems',
   'characterIdentityLockEvents',
   'characterReferencePackageItems', 'characterReferencePackages',
+  'characterReferencePackageExecutions',
   'shotContinuityCharacterRefs', 'shotContinuityPropRefs', 'shotContinuitySnapshots',
   'voiceProfiles', 'voiceProfileSelectionEvents', 'bgmLicenses', 'bgmTracks',
 ]);
@@ -230,6 +237,12 @@ function targetTables() {
 function createProjectArchiveV21ImportRepository(database) {
   assertDatabase(database);
   const characterCandidateExecutions = createCharacterCandidateExecutionRepository(database);
+  const characterReferencePackages = createCharacterReferencePackageRepository(database);
+  const characterReferencePackageExecutions =
+    createCharacterReferencePackageExecutionRepository(database, {
+      characterCandidateExecutions,
+      characterReferencePackages,
+    });
   const tables = targetTables();
   const placeholderValues = new Array(tables.length);
   for (let index = 0; index < tables.length; index += 1) placeholderValues[index] = '?';
@@ -432,6 +445,15 @@ function createProjectArchiveV21ImportRepository(database) {
         || restored.state !== expected.state || restored.items.length !== (
           expected.state === 'succeeded' ? 4 : 0
         )) fail();
+    }
+    for (let index = 0;
+      index < manifest.structuredRecords.characterReferencePackageExecutions.length;
+      index += 1) {
+      const expected = manifest.structuredRecords.characterReferencePackageExecutions[index];
+      const restored = characterReferencePackageExecutions.get(expected.operation_uid);
+      if (!restored || restored.operationUid !== expected.operation_uid
+        || restored.state !== expected.state || restored.packageUid !== expected.package_uid
+        || restored.errorCode !== expected.error_code) fail();
     }
   }
 

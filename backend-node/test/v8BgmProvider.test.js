@@ -92,7 +92,7 @@ function createProvider(t, database, overrides = {}) {
 test('migration thirteen installs immutable BGM license evidence and public schemas match runtime', async (t) => {
   const database = createMigratedV2Database(t);
   insertDrama(database, DRAMA_UID, 'BGM contract drama');
-  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 30);
+  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 31);
   assert.equal(database.prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bgm_tracks'").pluck().get(), 1);
   assert.equal(database.prepare("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bgm_licenses'").pluck().get(), 1);
   assert.throws(() => database.transaction(() => database.prepare(`
