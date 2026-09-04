@@ -337,12 +337,20 @@ function seedContinuityFixture(t, existingDatabase = null, options = {}) {
   const database = existingDatabase ?? createMigratedV2Database(t);
   const dramaUid = options.dramaUid ?? uid(18000);
   insertDrama(database, dramaUid, 'Continuity fixture drama');
-  database.prepare("INSERT INTO characters (id, drama_id, name) VALUES (1, 1, 'Hero')").run();
+  const factMatchedEntities = options.factMatchedEntities === true;
+  database.prepare('INSERT INTO characters (id, drama_id, name) VALUES (1, 1, ?)')
+    .run(factMatchedEntities ? '赵云' : 'Hero');
+  if (factMatchedEntities) {
+    database.prepare("INSERT INTO characters (id, drama_id, name) VALUES (2, 1, '掌柜')").run();
+  }
   database.prepare(`
-    INSERT INTO scenes (id, drama_id, location, time) VALUES (1, 1, 'Courtyard', 'Dawn')
-  `).run();
+    INSERT INTO scenes (id, drama_id, location, time) VALUES (1, 1, ?, ?)
+  `).run(factMatchedEntities ? '客栈' : 'Courtyard', factMatchedEntities ? '雨夜' : 'Dawn');
   database.prepare("INSERT INTO props (id, drama_id, name) VALUES (1, 1, 'Sword')").run();
   const characterUid = database.prepare('SELECT uid FROM characters WHERE id = 1').pluck().get();
+  const innkeeperUid = factMatchedEntities
+    ? database.prepare('SELECT uid FROM characters WHERE id = 2').pluck().get()
+    : null;
   const sceneUid = database.prepare('SELECT uid FROM scenes WHERE id = 1').pluck().get();
   const propUid = database.prepare('SELECT uid FROM props WHERE id = 1').pluck().get();
   const repositories = createV2Repositories(database);
@@ -352,7 +360,14 @@ function seedContinuityFixture(t, existingDatabase = null, options = {}) {
     18100,
     options.materializeAssetVersion,
   );
-  const sceneVersion = repositories.scenePropVersions.create({
+  const innkeeper = innkeeperUid ? createReferencePackage(
+    repositories,
+    innkeeperUid,
+    28100,
+    options.materializeAssetVersion,
+  ) : null;
+  const createScenePropVersions = options.createScenePropVersions !== false;
+  const sceneVersion = createScenePropVersions ? repositories.scenePropVersions.create({
     schemaVersion: '5.0',
     kind: 'scene',
     uid: uid(18300),
@@ -360,14 +375,14 @@ function seedContinuityFixture(t, existingDatabase = null, options = {}) {
     parentUid: null,
     state: 'ready',
     metadata: {
-      name: 'Courtyard',
-      visualDescription: 'Stone courtyard after rain.',
-      lighting: 'Cool dawn light.',
+      name: factMatchedEntities ? '客栈' : 'Courtyard',
+      visualDescription: factMatchedEntities ? '雨夜的客栈' : 'Stone courtyard after rain.',
+      lighting: factMatchedEntities ? '雨夜' : 'Cool dawn light.',
       colorAnchors: ['#334455'],
     },
     createdAtEpochMs: 0,
-  });
-  const propVersion = repositories.scenePropVersions.create({
+  }) : null;
+  const propVersion = createScenePropVersions ? repositories.scenePropVersions.create({
     schemaVersion: '5.0',
     kind: 'prop',
     uid: uid(18301),
@@ -380,11 +395,20 @@ function seedContinuityFixture(t, existingDatabase = null, options = {}) {
       colorAnchors: ['#778899'],
     },
     createdAtEpochMs: 0,
-  });
+  }) : null;
   const shot = createApprovedShot(repositories, dramaUid);
   return {
     character,
     characterUid,
+    factCharacters: Object.freeze({
+      'character-zhao-yun': Object.freeze({ characterUid, reference: character }),
+      ...(innkeeperUid ? {
+        'character-innkeeper': Object.freeze({
+          characterUid: innkeeperUid,
+          reference: innkeeper,
+        }),
+      } : {}),
+    }),
     database,
     dramaUid,
     propUid,

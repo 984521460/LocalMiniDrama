@@ -10,6 +10,9 @@ const {
   isNarrativeReviewError,
 } = require('../../narrative/reviews');
 const {
+  createShotVersionBindingService,
+} = require('../../continuity/shotVersionBindingService');
+const {
   createV2Repositories,
   V2RepositoryConflictError,
   V2RepositoryDataError,
@@ -23,8 +26,18 @@ function shotContinuitySnapshotRoutes(log, runtime = {}, database) {
   const createSnapshotUid = typeof runtime.createSnapshotUid === 'function'
     ? runtime.createSnapshotUid
     : randomUUID;
+  const createBindingUid = typeof runtime.createBindingUid === 'function'
+    ? runtime.createBindingUid
+    : randomUUID;
   const nowEpochMs = typeof runtime.nowEpochMs === 'function' ? runtime.nowEpochMs : Date.now;
   const reviewService = repositories ? createNarrativeReviewService({ repositories }) : null;
+  const bindingService = repository ? createShotVersionBindingService({
+    database,
+    repositories,
+    reviewService,
+    createUid: createBindingUid,
+    nowEpochMs,
+  }) : null;
 
   function unavailable(res) {
     return response.error(
@@ -54,6 +67,17 @@ function shotContinuitySnapshotRoutes(log, runtime = {}, database) {
       shotId: shot.shotId,
       shotOrdinal: shot.ordinal,
     });
+  }
+
+  function assertEmptyRequest(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new TypeError('Shot continuity request is invalid');
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || Reflect.ownKeys(Object.getOwnPropertyDescriptors(value)).length !== 0) {
+      throw new TypeError('Shot continuity request is invalid');
+    }
   }
 
   function handleError(res, error, event) {
@@ -132,6 +156,16 @@ function shotContinuitySnapshotRoutes(log, runtime = {}, database) {
       }));
     } catch (error) {
       return handleError(res, error, 'shot-continuity-create');
+    }
+  });
+
+  router.post('/narrative-results/:resultUid/continuity-snapshots/materialize', (req, res) => {
+    if (!bindingService) return unavailable(res);
+    try {
+      assertEmptyRequest(req.body);
+      return response.success(res, bindingService.materialize(req.params.resultUid));
+    } catch (error) {
+      return handleError(res, error, 'shot-continuity-materialize');
     }
   });
 

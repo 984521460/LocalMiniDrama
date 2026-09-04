@@ -6,7 +6,11 @@
         <h2>资产版本与连续性</h2>
         <p>查看每个镜头绑定的身份、服装、场景和道具版本；旧参考包与旧镜头快照会保留在历史中。</p>
       </div>
-      <el-button :loading="workspace.loading.value" @click="workspace.load">刷新版本证据</el-button>
+      <el-button
+        :loading="workspace.loading.value"
+        :disabled="workspace.materializing.value"
+        @click="workspace.load"
+      >刷新版本证据</el-button>
     </header>
 
     <el-alert
@@ -28,7 +32,19 @@
         v-else-if="workspace.emptyReason.value === 'CONTINUITY_SNAPSHOTS_EMPTY'"
         description="已批准分镜尚未建立连续性快照"
         :image-size="64"
-      />
+      >
+        <template #default>
+          <div class="continuity-workspace__materialize">
+            <p>仅在本地建立不可变场景、角色和道具版本引用，不调用模型或产生费用。</p>
+            <el-button
+              type="primary"
+              :loading="workspace.materializing.value"
+              :disabled="workspace.loading.value"
+              @click="workspace.materialize"
+            >建立镜头版本引用</el-button>
+          </div>
+        </template>
+      </el-empty>
 
       <template v-else-if="workspace.snapshots.value.length">
         <div class="continuity-workspace__metrics">
@@ -154,6 +170,8 @@ watch(() => props.dramaId, () => {
 .continuity-workspace__header > div > p:last-child, .continuity-workspace__history p { margin-top: 5px; color: var(--el-text-color-secondary); font-size: 12px; }
 .continuity-workspace__eyebrow { color: var(--el-color-primary); font-size: 12px; font-weight: 700; }
 .continuity-workspace__body { min-height: 90px; margin-top: 16px; }
+.continuity-workspace__materialize { display: grid; justify-items: center; gap: 10px; }
+.continuity-workspace__materialize p { margin: 0; color: var(--el-text-color-secondary); font-size: 12px; }
 .continuity-workspace__metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .continuity-workspace__metrics article { display: grid; gap: 3px; padding: 14px; border-radius: 12px; background: var(--el-fill-color-light); }
 .continuity-workspace__metrics strong { font-size: 24px; }

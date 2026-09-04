@@ -183,6 +183,44 @@ test('asset continuity workspace loads approved shots, package history, and clea
   assert.equal(workspace.error.value, 'ASSET_VERSION_CONTINUITY_INVALID')
 })
 
+test('approved empty continuity workspace explicitly materializes and reopens all local bindings', async () => {
+  const first = snapshot(1)
+  let materialized = false
+  let materializeCalls = 0
+  const workspace = useAssetVersionContinuity({
+    dramaId: 1,
+    reviewApi: {
+      async listForDrama() {
+        return [{
+          uid: uid(2), resultType: 'shot', status: 'approved',
+          createdAt: '1970-01-01T00:00:00.000Z', upstreamResultUid: null,
+        }]
+      },
+    },
+    continuityApi: {
+      async list() { return materialized ? [first] : [] },
+      async materialize(resultUid) {
+        assert.equal(resultUid, uid(2))
+        materializeCalls += 1
+        materialized = true
+        return [first]
+      },
+      async compare() { throw new Error('must not compare one shot') },
+    },
+    packageApi: { async list() { return [packageRecord(1)] } },
+  })
+
+  assert.equal(await workspace.load(), true)
+  assert.equal(workspace.emptyReason.value, 'CONTINUITY_SNAPSHOTS_EMPTY')
+  assert.equal(workspace.shotResultUid.value, uid(2))
+  assert.equal(await workspace.materialize(), true)
+  assert.equal(materializeCalls, 1)
+  assert.equal(workspace.materializing.value, false)
+  assert.equal(workspace.snapshots.value.length, 1)
+  assert.equal(workspace.emptyReason.value, '')
+  assert.equal(workspace.error.value, null)
+})
+
 test('continuity UI fails closed on mismatched comparisons and invalid package history', async () => {
   const first = snapshot(1)
   const second = snapshot(2, { propVersion: uid(91) })
@@ -305,6 +343,8 @@ test('continuity component is integrated into the local narrative workflow witho
   assert.match(component, /CharacterReferencePackageCard/)
   assert.match(component, /连续性冲突/)
   assert.match(component, /锁定身份复用/)
+  assert.match(component, /建立镜头版本引用/)
+  assert.match(component, /不调用模型或产生费用/)
   assert.match(page, /AssetVersionContinuityWorkspace/)
   assert.doesNotMatch(component, /api[_-]?key|credential|secret|provider/i)
 })

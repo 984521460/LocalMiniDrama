@@ -46,6 +46,7 @@ export function useAssetVersionContinuity({
   const characterHistories = ref([])
   const shotResultUid = ref('')
   const loading = ref(false)
+  const materializing = ref(false)
   const error = ref(null)
   const emptyReason = ref('')
   const guard = createLatestRequestGuard()
@@ -129,6 +130,33 @@ export function useAssetVersionContinuity({
     }
   }
 
+  async function materialize() {
+    if (loading.value || materializing.value || !shotResultUid.value) return false
+    const requestedDramaId = currentDramaId()
+    const requestedShotResultUid = shotResultUid.value
+    materializing.value = true
+    error.value = null
+    try {
+      const created = shotContinuitySnapshotListView(
+        await continuityApi.materialize(requestedShotResultUid),
+      )
+      if (requestedDramaId !== currentDramaId()
+        || shotResultUid.value !== requestedShotResultUid) return false
+      if (created.length < 1
+        || created.some((snapshot) => snapshot.shotResultUid !== requestedShotResultUid)) {
+        throw new TypeError(ERROR_CODE)
+      }
+      return load()
+    } catch {
+      if (requestedDramaId !== currentDramaId()
+        || shotResultUid.value !== requestedShotResultUid) return false
+      error.value = ERROR_CODE
+      return false
+    } finally {
+      materializing.value = false
+    }
+  }
+
   function invalidate() {
     guard.invalidate()
     loading.value = false
@@ -142,10 +170,12 @@ export function useAssetVersionContinuity({
     characterHistories,
     shotResultUid,
     loading,
+    materializing,
     error,
     emptyReason,
     reuse,
     load,
+    materialize,
     invalidate,
   })
 }
