@@ -3,6 +3,7 @@
     <header>
       <div>
         <strong>逐项付费执行</strong>
+        <span class="model-attribution">Powered by MiniMax H3</span>
         <small>每次明确确认并仅执行这一项；不会自动继续下一项</small>
       </div>
       <div class="actions">
@@ -23,7 +24,7 @@
       </div>
     </header>
 
-    <p class="external-note">执行会重新读取本地 Vault 凭据、进行 SSH live environment 检查，并提交一个真实 H3 或 TTS Provider 作业，可能消耗 GPU/API 资源并产生费用。完成一项不代表费用已经结算，也不代表实例已经归还。</p>
+    <p class="external-note">执行会重新读取本地 Vault 凭据、进行 SSH live environment 检查，并提交一个真实 MiniMax H3 或 TTS Provider 作业，可能消耗 GPU/API 资源并产生费用。完成一项不代表费用已经结算，也不代表实例已经归还。</p>
     <p v-if="error" class="error-message">本项未取得可信成功回执；请先刷新可信进度核对持久结果，界面不会自动重试。</p>
     <p v-else-if="!batch" class="empty-message">请先完成 live preflight。</p>
     <p v-else-if="batchComplete" class="complete-message">预检批次内 {{ totalCount }} 项均已有可信成功结果；仍未结算，实例尚未归还。</p>
@@ -89,6 +90,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 header > div { display: flex; flex-direction: column; gap: 3px; }
 .actions { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
 strong { color: #fafafa; font-size: 12px; }
+.model-attribution { align-self: flex-start; padding: 3px 7px; border: 1px solid rgba(96, 165, 250, .55); border-radius: 999px; background: rgba(30, 64, 175, .24); color: #bfdbfe; font-size: 10px; font-weight: 700; letter-spacing: .02em; }
 small { color: #71717a; font-size: 9px; line-height: 1.45; }
 .external-note, .error-message, .empty-message, .complete-message, .progress-message { margin: 0; padding: 8px 9px; border-radius: 8px; background: rgba(120, 53, 15, .2); color: #fcd34d; font-size: 10px; line-height: 1.55; }
 .error-message { background: rgba(127, 29, 29, .18); color: #fca5a5; }

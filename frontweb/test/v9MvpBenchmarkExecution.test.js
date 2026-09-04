@@ -371,6 +371,8 @@ test('execution UI requires per-item paid confirmation and exposes no automation
   assert.match(api, /expectedItemKind/u)
   assert.match(api, /expectedItemUid/u)
   assert.match(panel, /仅执行这一项/u)
+  assert.match(panel, />Powered by MiniMax H3</u)
+  assert.match(panel, /真实 MiniMax H3 或 TTS Provider 作业/u)
   assert.match(panel, /刷新可信进度/u)
   assert.match(panel, /刷新不会提交任务/u)
   assert.match(panel, /未结算|尚未归还/u)
