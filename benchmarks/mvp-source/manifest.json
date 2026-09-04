@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "mvp-benchmark-source.v1",
+  "sourceId": "rain-before-clear-v1",
+  "title": "雨停之前",
+  "language": "zh-CN",
+  "sourceFile": "source.md",
+  "sourceType": "markdown",
+  "encoding": "utf-8",
+  "contentSha256": "323a780347d995b3883fe6bf5da972765f40a1ebb05d9dc3ba802571e319875e",
+  "licenseFile": "LICENSE.md",
+  "licenseSha256": "d95c5a9dffc7c33c0c7ca157c39a300d9bc3b6465a15310f68356be93ec3a7e1",
+  "selection": {
+    "startText": "暴雨压住海城最后一班列车。",
+    "endText": "远处警笛穿过雨幕，车站警报重新亮起。",
+    "startCodePoint": 22,
+    "endCodePoint": 478,
+    "selectedCodePointLength": 456,
+    "selectedTextSha256": "20b8570f2899bbd86ad22281b742a90e05a3c04cc9ca8796e1fd411c4f351439",
+    "expectedHeadingPath": [
+      "雨停之前",
+      "第一章：失电的车站"
+    ],
+    "targetNarrativeDurationSeconds": 60
+  },
+  "encodingProbe": {
+    "fileName": "encoding-choice.txt",
+    "bytesHex": "c4e3bac30acac0bde7",
+    "expectedOptions": [
+      "gb18030",
+      "gbk"
+    ],
+    "selectedEncoding": "gbk",
+    "decodedTextSha256": "9d4fd5df825a6e1422c2390c63653794766ac7a4fd847ce0e89021de878bf382"
+  }
+}

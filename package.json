@@ -9,6 +9,7 @@
   "scripts": {
     "build:log-directory-lease": "node scripts/build-log-directory-lease.mjs",
     "licenses:check": "node --test licenses/*.test.mjs && node licenses/collect-direct-npm-licenses.mjs",
+    "benchmark:source:check": "node scripts/validate-mvp-benchmark-source.js",
     "install:workspace": "npm ci --ignore-scripts",
     "install:backend": "npm --prefix backend-node ci",
     "install:frontend": "npm --prefix frontweb ci",
@@ -43,7 +44,7 @@
     "pack:windows": "npm --prefix desktop run pack",
     "pack:win": "npm run pack:windows",
     "dist:windows": "npm --prefix desktop run dist",
-    "verify:mvp": "npm run licenses:check && npm run test:unit && npm run test:integration && npm run test:e2e && npm run build",
+    "verify:mvp": "npm run benchmark:source:check && npm run licenses:check && npm run test:unit && npm run test:integration && npm run test:e2e && npm run build",
     "verify": "npm run verify:mvp"
   },
   "engines": {

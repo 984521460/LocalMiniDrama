@@ -319,6 +319,16 @@ LocalMiniDrama/
 
 ---
 
+## 🎬 MVP 基准项目源
+
+仓库内置一份项目自有、无用户数据的中文 Markdown 基准文本，后续叙事、角色、工作流、H3、TTS 与成片验收统一绑定同一内容摘要。运行：
+
+```bash
+npm run benchmark:source:check
+```
+
+源文本、选择范围、编码选择探针和许可声明位于 [`benchmarks/mvp-source`](benchmarks/mvp-source)。该内容包不含模型、声音、图片、音乐、凭据或生成媒体。
+
 ## 📄 License
 
 [MIT](LICENSE)
