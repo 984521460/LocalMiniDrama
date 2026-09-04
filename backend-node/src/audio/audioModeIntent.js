@@ -290,7 +290,7 @@ function configuration(dependencies) {
   return dependencies;
 }
 
-function resolveAudioModeIntentInternal(value, dependencies, allowRunningWorkflow) {
+function resolveAudioModeIntentInternal(value, dependencies, sourcePhase) {
   const request = parseAudioModeIntentRequest(value);
   const configured = configuration(dependencies);
   try {
@@ -299,8 +299,14 @@ function resolveAudioModeIntentInternal(value, dependencies, allowRunningWorkflo
     const definition = configured.workflows.getDefinition(run.workflowUid);
     const executionPlan = validateWorkflowExecutionPlan(run.graphSnapshot);
     const planNode = findPlanNode({ graphSnapshot: executionPlan }, node);
-    if (node.workflowRunUid !== run.uid || node.status !== 'queued'
-      || (run.status !== 'queued' && !(allowRunningWorkflow && run.status === 'running'))
+    const workflowStatusAllowed = sourcePhase === 'completed'
+      ? run.status === 'running'
+      : run.status === 'queued' || (sourcePhase === 'execution' && run.status === 'running');
+    const nodeStatusAllowed = sourcePhase === 'completed'
+      ? node.status === 'succeeded'
+      : node.status === 'queued';
+    if (node.workflowRunUid !== run.uid || !nodeStatusAllowed
+      || !workflowStatusAllowed
       || definition.dramaUid !== request.dramaUid
       || definition.uid !== run.workflowUid
       || definition.registryVersion !== executionPlan.registryVersion
@@ -398,11 +404,15 @@ function resolveAudioModeIntentInternal(value, dependencies, allowRunningWorkflo
 }
 
 function resolveAudioModeIntent(value, dependencies) {
-  return resolveAudioModeIntentInternal(value, dependencies, false);
+  return resolveAudioModeIntentInternal(value, dependencies, 'preparing');
 }
 
 function resolveAudioModeIntentExecutionSource(value, dependencies) {
-  return resolveAudioModeIntentInternal(value, dependencies, true);
+  return resolveAudioModeIntentInternal(value, dependencies, 'execution');
+}
+
+function resolveAudioModeIntentCompletedSource(value, dependencies) {
+  return resolveAudioModeIntentInternal(value, dependencies, 'completed');
 }
 
 function createAudioModeIntentRecord(value, code = DATA_CODE) {
@@ -526,5 +536,6 @@ module.exports = Object.freeze({
   parseAudioModeIntentRequest,
   publicAudioModeIntent,
   resolveAudioModeIntent,
+  resolveAudioModeIntentCompletedSource,
   resolveAudioModeIntentExecutionSource,
 });

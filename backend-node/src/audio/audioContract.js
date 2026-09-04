@@ -7,14 +7,17 @@ const JSON_STRINGIFY = JSON.stringify;
 const ARRAY_IS_ARRAY = Array.isArray;
 const DEFINE_PROPERTY = Object.defineProperty;
 const FREEZE = Object.freeze;
+const OBJECT_CREATE = Object.create;
 const GET_OWN_PROPERTY_DESCRIPTORS = Object.getOwnPropertyDescriptors;
 const GET_PROTOTYPE_OF = Object.getPrototypeOf;
 const HAS_OWN = Object.hasOwn;
+const REFLECT_APPLY = Reflect.apply;
 const REFLECT_OWN_KEYS = Reflect.ownKeys;
 const REGEXP_TEST = RegExp.prototype.test;
 const WEAK_SET_ADD = WeakSet.prototype.add;
 const WEAK_SET_DELETE = WeakSet.prototype.delete;
 const WEAK_SET_HAS = WeakSet.prototype.has;
+const WEAK_SET_CONSTRUCTOR = WeakSet;
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -23,7 +26,7 @@ const ASSET_KEYS = Object.freeze([
   'uid', 'ownerType', 'ownerUid', 'assetType', 'currentVersionUid',
   'status', 'createdAt', 'updatedAt',
 ]);
-const ERRORS = new WeakSet();
+const ERRORS = new WEAK_SET_CONSTRUCTOR();
 const ERROR_MESSAGES = Object.freeze({
   AUDIO_MODE_INPUT_INVALID: 'Audio mode input is invalid',
   AUDIO_MODE_DATA_INVALID: 'Audio mode data is invalid',
@@ -69,7 +72,7 @@ const ERROR_MESSAGES = Object.freeze({
 });
 
 function append(target, value) {
-  Reflect.apply(DEFINE_PROPERTY, Object, [target, String(target.length), {
+  REFLECT_APPLY(DEFINE_PROPERTY, Object, [target, String(target.length), {
     configurable: true,
     enumerable: true,
     writable: true,
@@ -82,7 +85,7 @@ class AudioModeContractError extends Error {
     super(ERROR_MESSAGES[code] || 'Audio mode contract failed');
     this.name = 'AudioModeContractError';
     this.code = code;
-    Reflect.apply(WEAK_SET_ADD, ERRORS, [this]);
+    REFLECT_APPLY(WEAK_SET_ADD, ERRORS, [this]);
   }
 
   toJSON() {
@@ -92,7 +95,7 @@ class AudioModeContractError extends Error {
 
 function isAudioModeContractError(value) {
   return (typeof value === 'object' || typeof value === 'function')
-    && value !== null && Reflect.apply(WEAK_SET_HAS, ERRORS, [value]);
+    && value !== null && REFLECT_APPLY(WEAK_SET_HAS, ERRORS, [value]);
 }
 
 function fail(code) {
@@ -104,20 +107,21 @@ function exactObject(value, expectedKeys, code) {
     if (value === null || typeof value !== 'object' || ARRAY_IS_ARRAY(value) || isProxy(value)) {
       fail(code);
     }
-    const prototype = Reflect.apply(GET_PROTOTYPE_OF, Object, [value]);
+    const prototype = REFLECT_APPLY(GET_PROTOTYPE_OF, Object, [value]);
     if (prototype !== Object.prototype && prototype !== null) fail(code);
-    const descriptors = Reflect.apply(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
-    const keys = Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+    const descriptors = REFLECT_APPLY(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    const keys = REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]);
     if (keys.length !== expectedKeys.length) fail(code);
     for (let index = 0; index < keys.length; index += 1) {
       if (typeof keys[index] !== 'string') fail(code);
     }
-    const output = Object.create(null);
+    const output = OBJECT_CREATE(null);
     for (let index = 0; index < expectedKeys.length; index += 1) {
       const key = expectedKeys[index];
+      if (!HAS_OWN(descriptors, key)) fail(code);
       const descriptor = descriptors[key];
       if (!descriptor?.enumerable || !HAS_OWN(descriptor, 'value')) fail(code);
-      Reflect.apply(DEFINE_PROPERTY, Object, [output, key, {
+      REFLECT_APPLY(DEFINE_PROPERTY, Object, [output, key, {
         configurable: true,
         enumerable: true,
         writable: true,
@@ -134,20 +138,21 @@ function exactObject(value, expectedKeys, code) {
 function denseArray(value, maximumLength, code) {
   try {
     if (isProxy(value) || !ARRAY_IS_ARRAY(value)
-      || Reflect.apply(GET_PROTOTYPE_OF, Object, [value]) !== Array.prototype) fail(code);
-    const descriptors = Reflect.apply(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+      || REFLECT_APPLY(GET_PROTOTYPE_OF, Object, [value]) !== Array.prototype) fail(code);
+    const descriptors = REFLECT_APPLY(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
     const lengthDescriptor = descriptors.length;
     if (!lengthDescriptor || !HAS_OWN(lengthDescriptor, 'value')
       || !Number.isSafeInteger(lengthDescriptor.value)
       || lengthDescriptor.value < 0 || lengthDescriptor.value > maximumLength) fail(code);
     const length = lengthDescriptor.value;
-    const keys = Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+    const keys = REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]);
     if (keys.length !== length + 1) fail(code);
     for (let index = 0; index < keys.length; index += 1) {
       if (typeof keys[index] !== 'string') fail(code);
     }
     const output = [];
     for (let index = 0; index < length; index += 1) {
+      if (!HAS_OWN(descriptors, String(index))) fail(code);
       const descriptor = descriptors[String(index)];
       if (!descriptor?.enumerable || !HAS_OWN(descriptor, 'value')) fail(code);
       append(output, descriptor.value);
@@ -160,12 +165,12 @@ function denseArray(value, maximumLength, code) {
 }
 
 function canonicalUid(value, code) {
-  if (typeof value !== 'string' || !Reflect.apply(REGEXP_TEST, UUID_V4, [value])) fail(code);
+  if (typeof value !== 'string' || !REFLECT_APPLY(REGEXP_TEST, UUID_V4, [value])) fail(code);
   return value;
 }
 
 function sha256(value, code) {
-  if (typeof value !== 'string' || !Reflect.apply(REGEXP_TEST, SHA256, [value])) fail(code);
+  if (typeof value !== 'string' || !REFLECT_APPLY(REGEXP_TEST, SHA256, [value])) fail(code);
   return value;
 }
 
@@ -211,25 +216,25 @@ function jsonSnapshot(value, ancestors) {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (!value || typeof value !== 'object' || isProxy(value)
-    || Reflect.apply(WEAK_SET_HAS, ancestors, [value])) {
+    || REFLECT_APPLY(WEAK_SET_HAS, ancestors, [value])) {
     throw new TypeError('Audio canonical JSON is invalid');
   }
   let prototype;
   let descriptors;
   try {
-    prototype = Reflect.apply(GET_PROTOTYPE_OF, Object, [value]);
-    descriptors = Reflect.apply(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    prototype = REFLECT_APPLY(GET_PROTOTYPE_OF, Object, [value]);
+    descriptors = REFLECT_APPLY(GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
   } catch {
     throw new TypeError('Audio canonical JSON is invalid');
   }
-  Reflect.apply(WEAK_SET_ADD, ancestors, [value]);
+  REFLECT_APPLY(WEAK_SET_ADD, ancestors, [value]);
   try {
     if (ARRAY_IS_ARRAY(value)) {
       if (prototype !== Array.prototype) throw new TypeError('Audio canonical JSON is invalid');
       const length = descriptors.length;
       if (!length || !HAS_OWN(length, 'value') || !Number.isSafeInteger(length.value)
         || length.value < 0) throw new TypeError('Audio canonical JSON is invalid');
-      const keys = Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+      const keys = REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]);
       if (keys.length !== length.value + 1) {
         throw new TypeError('Audio canonical JSON is invalid');
       }
@@ -239,18 +244,21 @@ function jsonSnapshot(value, ancestors) {
         }
       }
       const output = [];
-      Reflect.apply(DEFINE_PROPERTY, Object, [output, 'toJSON', {
+      REFLECT_APPLY(DEFINE_PROPERTY, Object, [output, 'toJSON', {
         configurable: false,
         enumerable: false,
         writable: false,
         value: undefined,
       }]);
       for (let index = 0; index < length.value; index += 1) {
+        if (!HAS_OWN(descriptors, String(index))) {
+          throw new TypeError('Audio canonical JSON is invalid');
+        }
         const descriptor = descriptors[String(index)];
         if (!descriptor?.enumerable || !HAS_OWN(descriptor, 'value')) {
           throw new TypeError('Audio canonical JSON is invalid');
         }
-        Reflect.apply(DEFINE_PROPERTY, Object, [output, String(index), {
+        REFLECT_APPLY(DEFINE_PROPERTY, Object, [output, String(index), {
           configurable: true,
           enumerable: true,
           writable: true,
@@ -262,8 +270,8 @@ function jsonSnapshot(value, ancestors) {
     if (prototype !== Object.prototype && prototype !== null) {
       throw new TypeError('Audio canonical JSON is invalid');
     }
-    const output = Object.create(null);
-    const keys = Reflect.apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
+    const output = OBJECT_CREATE(null);
+    const keys = REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]);
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index];
       const descriptor = descriptors[key];
@@ -271,7 +279,7 @@ function jsonSnapshot(value, ancestors) {
         throw new TypeError('Audio canonical JSON is invalid');
       }
       if (!descriptor.enumerable) continue;
-      Reflect.apply(DEFINE_PROPERTY, Object, [output, key, {
+      REFLECT_APPLY(DEFINE_PROPERTY, Object, [output, key, {
         configurable: true,
         enumerable: true,
         writable: true,
@@ -280,13 +288,13 @@ function jsonSnapshot(value, ancestors) {
     }
     return output;
   } finally {
-    Reflect.apply(WEAK_SET_DELETE, ancestors, [value]);
+    REFLECT_APPLY(WEAK_SET_DELETE, ancestors, [value]);
   }
 }
 
 function canonicalJson(value) {
-  const snapshot = jsonSnapshot(value, new WeakSet());
-  return Reflect.apply(JSON_STRINGIFY, JSON, [snapshot]);
+  const snapshot = jsonSnapshot(value, new WEAK_SET_CONSTRUCTOR());
+  return REFLECT_APPLY(JSON_STRINGIFY, JSON, [snapshot]);
 }
 
 function canonicalHash(value) {
@@ -302,7 +310,7 @@ function textHash(value) {
 function frozenArray(values) {
   const output = [];
   for (let index = 0; index < values.length; index += 1) append(output, values[index]);
-  return Reflect.apply(FREEZE, Object, [output]);
+  return REFLECT_APPLY(FREEZE, Object, [output]);
 }
 
 module.exports = Object.freeze({

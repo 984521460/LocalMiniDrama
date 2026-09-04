@@ -517,6 +517,9 @@ function createMvpBenchmarkSessionRepository(database, dependencies) {
 
   return Object.freeze({
     get,
+    getStored(uid) {
+      return mapStoredRow(statements.get.get(uid));
+    },
     getStoredByWorkflowRun(workflowRunUid) {
       const row = statements.getByWorkflow.get(workflowRunUid);
       return row ? mapStoredRow(row) : null;

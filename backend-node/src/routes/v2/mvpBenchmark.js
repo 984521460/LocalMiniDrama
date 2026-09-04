@@ -29,6 +29,9 @@ const {
   isMvpBenchmarkProductionExecutionError,
 } = require('../../benchmark/mvpBenchmarkProductionExecutionService');
 const {
+  isMvpBenchmarkFinalizationError,
+} = require('../../benchmark/mvpBenchmarkFinalizationService');
+const {
   MvpBenchmarkAccountingStatusError,
 } = require('../../benchmark/mvpBenchmarkAccountingStatusService');
 const { MvpBenchmarkResumeError } = require('../../benchmark/mvpBenchmarkResumeService');
@@ -105,6 +108,33 @@ function exactExecutionSeed(value) {
   }
 }
 
+function exactFinalizationSeed(value) {
+  const keys = ['schemaVersion', 'expectedBatchSha256', 'bgmTrackUid'];
+  if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) {
+    return null;
+  }
+  try {
+    const prototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
+    const descriptors = REFLECT_APPLY(OBJECT_GET_OWN_PROPERTY_DESCRIPTORS, Object, [value]);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || REFLECT_APPLY(REFLECT_OWN_KEYS, Reflect, [descriptors]).length !== keys.length) {
+      return null;
+    }
+    const output = REFLECT_APPLY(OBJECT_CREATE, Object, [null]);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (!REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptors, key])) return null;
+      const descriptor = descriptors[key];
+      if (!descriptor.enumerable
+        || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
+      output[key] = descriptor.value;
+    }
+    return output;
+  } catch {
+    return null;
+  }
+}
+
 function mvpBenchmarkRoutes(log, runtime, database) {
   const router = express.Router();
   const readinessRepository = createMvpBenchmarkReadinessRepository(database);
@@ -144,6 +174,22 @@ function mvpBenchmarkRoutes(log, runtime, database) {
       if (typeof executeNext !== 'function' || isProxy(executeNext)
         || typeof readProgress !== 'function' || isProxy(readProgress)) return null;
       return Object.freeze({ service, executeNext, readProgress });
+    } catch {
+      return null;
+    }
+  }
+
+  function finalizationService() {
+    try {
+      if (!runtime || typeof runtime !== 'object' || isProxy(runtime)) return null;
+      const benchmarkRuntime = Object.getOwnPropertyDescriptor(runtime, 'mvpBenchmark')?.value;
+      if (!benchmarkRuntime || typeof benchmarkRuntime !== 'object'
+        || isProxy(benchmarkRuntime)) return null;
+      const service = Object.getOwnPropertyDescriptor(benchmarkRuntime, 'finalization')?.value;
+      if (!service || typeof service !== 'object' || isProxy(service)) return null;
+      const finalize = Object.getOwnPropertyDescriptor(service, 'finalize')?.value;
+      if (typeof finalize !== 'function' || isProxy(finalize)) return null;
+      return Object.freeze({ finalize, service });
     } catch {
       return null;
     }
@@ -281,6 +327,34 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     return response.error(
       res, 500, 'MVP_BENCHMARK_PRODUCTION_EXECUTION_UNEXPECTED',
       'MVP benchmark production execution failed',
+    );
+  }
+
+  function finalizationError(res, error) {
+    if (isMvpBenchmarkFinalizationError(error)) {
+      const status = error.code === 'MVP_BENCHMARK_FINALIZATION_INPUT_INVALID' ? 400
+        : error.code === 'MVP_BENCHMARK_FINALIZATION_IN_PROGRESS' ? 409
+          : error.code === 'MVP_BENCHMARK_FINALIZATION_UNAVAILABLE' ? 409 : 502;
+      return response.error(res, status, error.code, error.message);
+    }
+    if (error instanceof V2RepositoryNotFoundError) {
+      return response.error(
+        res, 404, 'MVP_BENCHMARK_FINALIZATION_UNAVAILABLE',
+        'MVP benchmark finalization is unavailable',
+      );
+    }
+    if (error instanceof V2RepositoryConflictError || error instanceof V2RepositoryDataError) {
+      return response.error(
+        res, 409, 'MVP_BENCHMARK_FINALIZATION_UNAVAILABLE',
+        'MVP benchmark finalization is unavailable',
+      );
+    }
+    log?.error?.('mvp-benchmark-finalization-unexpected', {
+      code: 'MVP_BENCHMARK_FINALIZATION_UNEXPECTED',
+    });
+    return response.error(
+      res, 500, 'MVP_BENCHMARK_FINALIZATION_UNEXPECTED',
+      'MVP benchmark finalization failed',
     );
   }
 
@@ -618,6 +692,41 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         return response.success(res, result);
       } catch (error) {
         return executionError(res, error);
+      }
+    },
+  );
+
+  router.post(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/finalize',
+    async (req, res) => {
+      try {
+        const seed = exactFinalizationSeed(req.body);
+        if (!seed) {
+          return response.error(
+            res, 400, 'MVP_BENCHMARK_FINALIZATION_INPUT_INVALID',
+            'MVP benchmark finalization input is invalid',
+          );
+        }
+        const configured = finalizationService();
+        if (!configured) {
+          return response.error(
+            res, 503, 'MVP_BENCHMARK_FINALIZATION_UNAVAILABLE',
+            'MVP benchmark finalization is unavailable',
+          );
+        }
+        const result = await REFLECT_APPLY(configured.finalize, configured.service, [{
+          schemaVersion: seed.schemaVersion,
+          authorizationUid: parseMvpBenchmarkExternalAuthorizationUid(
+            req.params.authorizationUid,
+          ),
+          dramaUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.dramaUid),
+          sessionUid: parseMvpBenchmarkExternalAuthorizationUid(req.params.sessionUid),
+          expectedBatchSha256: seed.expectedBatchSha256,
+          bgmTrackUid: parseMvpBenchmarkExternalAuthorizationUid(seed.bgmTrackUid),
+        }]);
+        return response.success(res, result);
+      } catch (error) {
+        return finalizationError(res, error);
       }
     },
   );

@@ -150,6 +150,8 @@ function createApp({
     sessionService: remoteRuntime.remoteConnections.remoteSessionService,
     h3LocalExecution: h3Runtime.localExecution,
     audioTtsExecution: audioTtsRuntime.audioTts.service,
+    localRoot: storageRoot,
+    mediaExportService: mediaExportRuntime.mediaExports.service,
     dependencies: benchmarkDependencies,
   });
   const narrativeRuntime = createProductionNarrativeExecutionRuntime({

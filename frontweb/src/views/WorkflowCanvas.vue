@@ -163,6 +163,14 @@
               @import="importBgmTrack"
               @select="selectBgmTrack"
             />
+            <MvpBenchmarkFinalizationPanel
+              :batch-complete="mvpExecutionBatchComplete"
+              :selected-track-uid="bgmLibrary.selectedTrackUid.value"
+              :run="mvpFinalization.run.value"
+              :busy="mvpFinalization.busy.value"
+              :error="mvpFinalization.error.value || ''"
+              @finalize="finalizeMvpProduction"
+            />
             <MvpBenchmarkAccountingStatusPanel
               :batch="mvpPreflight.batch.value"
               :status="mvpAccountingStatus.status.value"
@@ -221,6 +229,7 @@ import MvpBenchmarkAccountingStatusPanel from '@/components/benchmark/MvpBenchma
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
 import MvpBenchmarkExecutionPanel from '@/components/benchmark/MvpBenchmarkExecutionPanel.vue'
+import MvpBenchmarkFinalizationPanel from '@/components/benchmark/MvpBenchmarkFinalizationPanel.vue'
 import MvpBenchmarkPreflightPanel from '@/components/benchmark/MvpBenchmarkPreflightPanel.vue'
 import MvpBenchmarkResumePanel from '@/components/benchmark/MvpBenchmarkResumePanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
@@ -230,6 +239,7 @@ import { useMvpBenchmarkAccountingStatus } from '@/composables/useMvpBenchmarkAc
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
 import { useMvpBenchmarkExecution } from '@/composables/useMvpBenchmarkExecution'
+import { useMvpBenchmarkFinalization } from '@/composables/useMvpBenchmarkFinalization'
 import { useMvpBenchmarkPreflight } from '@/composables/useMvpBenchmarkPreflight'
 import { useMvpBenchmarkResume } from '@/composables/useMvpBenchmarkResume'
 import { useMvpBenchmarkSession } from '@/composables/useMvpBenchmarkSession'
@@ -247,6 +257,7 @@ const mvpAccountingStatus = useMvpBenchmarkAccountingStatus()
 const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
 const mvpExecution = useMvpBenchmarkExecution()
+const mvpFinalization = useMvpBenchmarkFinalization()
 const mvpPreflight = useMvpBenchmarkPreflight()
 const mvpResume = useMvpBenchmarkResume()
 const mvpSession = useMvpBenchmarkSession()
@@ -276,6 +287,12 @@ const succeededExportNodeRunUid = computed(() => {
     (node) => node?.status === 'succeeded' && exportNodeUids.has(node.nodeUid),
   )?.uid || ''
 })
+
+const mvpExecutionBatchComplete = computed(() => (
+  mvpExecution.step.value?.batchComplete
+  ?? mvpExecution.progress.value?.batchComplete
+  ?? false
+))
 
 function onConnect(connection) {
   const result = canvas.connectNodes(connection)
@@ -418,6 +435,7 @@ async function resumeMvpState() {
   mvpAuthorization.invalidate()
   mvpPreflight.invalidate()
   mvpExecution.invalidate()
+  mvpFinalization.invalidate()
   mvpAccountingStatus.invalidate()
   mvpSession.session.value = snapshot.session
   mvpAuthorization.authorization.value = snapshot.authorization
@@ -440,6 +458,7 @@ async function prepareMvpSession() {
     return
   }
   mvpResume.invalidate()
+  mvpFinalization.invalidate()
   mvpAccountingStatus.invalidate()
   await mvpAuthorization.refreshConnections()
   ElMessage.success('本地基准会话已冻结；尚未创建外部授权')
@@ -467,6 +486,7 @@ async function authorizeMvpSession(seed) {
   if (await mvpAuthorization.authorize(session, seed.connectionUid, seed)) {
     mvpResume.invalidate()
     mvpExecution.invalidate()
+    mvpFinalization.invalidate()
     mvpPreflight.invalidate()
     mvpAccountingStatus.invalidate()
     ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
@@ -492,6 +512,7 @@ async function preflightMvpSession() {
     return
   }
   mvpExecution.invalidate()
+  mvpFinalization.invalidate()
   mvpAccountingStatus.invalidate()
   if (await mvpPreflight.preflight(session, authorization)) {
     mvpResume.invalidate()
@@ -532,6 +553,7 @@ async function executeNextMvpItem() {
     return
   }
   mvpAccountingStatus.invalidate()
+  mvpFinalization.invalidate()
   if (await mvpExecution.executeNext(session, authorization, batch)) {
     mvpResume.invalidate()
     if (mvpExecution.step.value?.batchComplete) {
@@ -558,6 +580,37 @@ async function refreshMvpExecution() {
     ElMessage.success('已从本地持久成功证据重建进度；未提交任务、结算费用或归还实例')
   } else {
     ElMessage.error('可信进度刷新失败；不会自动重试')
+  }
+}
+
+async function finalizeMvpProduction() {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  const batch = mvpPreflight.batch.value
+  const bgmTrackUid = bgmLibrary.selectedTrackUid.value
+  if (!session || !authorization || !batch || !mvpExecutionBatchComplete.value
+    || !bgmTrackUid) {
+    ElMessage.error('请先完成全部批次项目并显式选择可导出的本地 BGM')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '确认编译并导出当前生产成片？系统会从本地持久成功证据重建镜头和对白时间线，重新校验 BGM 权利与全部本地媒体，执行完整解码和 FFmpeg 1080p 导出，并写入最终成片资产。不会再次访问 SSH、Vault、Provider 或 GPU，不会创建生成任务，也不会自动重试失败导出。',
+      '确认本地成片编译',
+      { type: 'warning', confirmButtonText: '确认编译并导出', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  if (await mvpFinalization.finalize(session, authorization, batch, bgmTrackUid)) {
+    await Promise.allSettled([
+      mediaExports.load(),
+      canvas.loadRun(session.workflowRunUid),
+    ])
+    rightTab.value = 'export'
+    ElMessage.success('成片时间线已编译，导出结果已完成本地验证')
+  } else {
+    ElMessage.error('成片编译或导出失败；不会采用部分状态，也不会自动重试')
   }
 }
 
@@ -647,6 +700,7 @@ watch(
     mvpAuthorization.invalidate()
     mvpPreflight.invalidate()
     mvpExecution.invalidate()
+    mvpFinalization.invalidate()
     mvpResume.invalidate()
     mvpAccountingStatus.invalidate()
   },
@@ -671,6 +725,7 @@ onBeforeUnmount(() => {
   mvpAuthorization.invalidate()
   mvpPreflight.invalidate()
   mvpExecution.invalidate()
+  mvpFinalization.invalidate()
   mvpResume.invalidate()
   mvpAccountingStatus.invalidate()
   mvpSession.invalidate()

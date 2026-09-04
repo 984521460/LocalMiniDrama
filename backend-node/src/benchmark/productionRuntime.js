@@ -1,5 +1,6 @@
 'use strict';
 
+const { randomUUID } = require('node:crypto');
 const { types: { isProxy } } = require('node:util');
 
 const { createV2Repositories } = require('../repositories/v2');
@@ -19,9 +20,14 @@ const { createMvpBenchmarkResumeService } = require('./mvpBenchmarkResumeService
 const {
   createMvpBenchmarkSshLiveEnvironmentVerifier,
 } = require('./mvpBenchmarkSshLiveEnvironmentVerifier');
+const {
+  createMvpBenchmarkFinalizationService,
+} = require('./mvpBenchmarkFinalizationService');
+const { createLocalMediaProbe } = require('../media/localMediaProbe');
 
 const DEPENDENCY_KEYS = Object.freeze([
-  'liveEnvironmentVerifier', 'costEstimator', 'createUid', 'nowEpochMs', 'timeoutMs',
+  'liveEnvironmentVerifier', 'costEstimator', 'mediaProbe',
+  'createUid', 'nowEpochMs', 'timeoutMs',
 ]);
 
 function dependencySnapshot(value) {
@@ -54,7 +60,8 @@ function dependencySnapshot(value) {
 }
 
 function createProductionMvpBenchmarkRuntime({
-  database, sessionService, h3LocalExecution, audioTtsExecution, dependencies = {},
+  database, sessionService, h3LocalExecution, audioTtsExecution,
+  localRoot = null, mediaExportService = null, dependencies = {},
 } = {}) {
   if (!database || typeof database !== 'object' || isProxy(database)
     || !sessionService || typeof sessionService !== 'object' || isProxy(sessionService)
@@ -97,7 +104,23 @@ function createProductionMvpBenchmarkRuntime({
     ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
   });
   const accountingStatus = createMvpBenchmarkAccountingStatusService({ repositories });
-  return Object.freeze({ accountingStatus, execution, preflight, resume });
+  let finalization = null;
+  if (localRoot !== null || mediaExportService !== null || configured.mediaProbe !== undefined) {
+    if (typeof localRoot !== 'string' || localRoot.length < 1
+      || !mediaExportService || typeof mediaExportService.start !== 'function') {
+      throw new TypeError('Production MVP benchmark runtime configuration is invalid');
+    }
+    finalization = createMvpBenchmarkFinalizationService({
+      repositories,
+      h3LocalExecution,
+      audioTtsExecution,
+      mediaProbe: configured.mediaProbe ?? createLocalMediaProbe({ localRoot }),
+      mediaExportService,
+      createUid: configured.createUid ?? randomUUID,
+      nowEpochMs: configured.nowEpochMs ?? Date.now,
+    });
+  }
+  return Object.freeze({ accountingStatus, execution, finalization, preflight, resume });
 }
 
 module.exports = Object.freeze({ createProductionMvpBenchmarkRuntime });

@@ -32,7 +32,7 @@ function uidSequence(start) {
   };
 }
 
-function createMvpBenchmarkSessionFixture(t) {
+function createMvpBenchmarkSessionFixture(t, options = {}) {
   const fixture = seedContinuityFixture(t);
   const promptFixture = createPromptSemanticFixture(fixture, 99200);
   const repositories = createV2Repositories(fixture.database);
@@ -173,13 +173,45 @@ function createMvpBenchmarkSessionFixture(t) {
     domainRef: { type: 'narrative_result', uid: fixture.shot.resultUid },
     status: 'ready',
   });
+  const includeExportFinal = options.includeExportFinal === true;
+  const exportNodeUid = includeExportFinal ? uid(99331) : null;
+  if (includeExportFinal) {
+    nodes.push({
+      uid: exportNodeUid,
+      nodeType: 'export.final',
+      position: { x: 800, y: 300 },
+      config: { format: 'mp4', fps: 30, height: 1080, width: 1920 },
+      domainRef: null,
+      status: 'ready',
+    });
+  }
+
+  const edges = [];
+  if (includeExportFinal) {
+    for (let index = 0; index < videoRecords.length; index += 1) {
+      edges.push({
+        uid: uid(99370 + index),
+        sourceNodeUid: videoRecords[index].nodeUid,
+        sourcePort: 'video',
+        targetNodeUid: exportNodeUid,
+        targetPort: 'videos',
+      });
+    }
+    edges.push({
+      uid: uid(99374),
+      sourceNodeUid: audioNodeUid,
+      sourcePort: 'audio',
+      targetNodeUid: exportNodeUid,
+      targetPort: 'audio',
+    });
+  }
 
   const workflowService = createWorkflowService({ repositories, createUid: () => uid(99340) });
   const workflow = workflowService.createWorkflow({ dramaId: 1, name: 'MVP benchmark session' });
   workflowService.replaceGraph(workflow.definition.uid, {
     expectedRevision: 0,
     nodes,
-    edges: [],
+    edges,
   });
   const run = createWorkflowRunService({
     repositories,
@@ -297,6 +329,8 @@ function createMvpBenchmarkSessionFixture(t) {
     ...fixture,
     audioIntent,
     connection,
+    exportNodeRun: exportNodeUid === null ? null : nodeRunByNodeUid.get(exportNodeUid),
+    exportNodeUid,
     h3Intents,
     profile,
     repositories,

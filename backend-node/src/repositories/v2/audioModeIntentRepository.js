@@ -6,6 +6,7 @@ const {
   createAudioModeIntentRecord,
   parseAudioModeIntentRequest,
   resolveAudioModeIntent,
+  resolveAudioModeIntentCompletedSource,
   resolveAudioModeIntentExecutionSource,
 } = require('../../audio/audioModeIntent');
 const {
@@ -52,11 +53,15 @@ function createAudioModeIntentRepository(database, dependencies) {
     return statements;
   }
 
-  function expected(request, ErrorClass, executionSource = false) {
+  function expected(request, ErrorClass, sourcePhase = 'preparing') {
     try {
-      return executionSource
-        ? resolveAudioModeIntentExecutionSource(request, dependencies)
-        : resolveAudioModeIntent(request, dependencies);
+      if (sourcePhase === 'execution') {
+        return resolveAudioModeIntentExecutionSource(request, dependencies);
+      }
+      if (sourcePhase === 'completed') {
+        return resolveAudioModeIntentCompletedSource(request, dependencies);
+      }
+      return resolveAudioModeIntent(request, dependencies);
     } catch (error) {
       if (isAudioModeContractError(error) && error.code === DATA_CODE) {
         throw new ErrorClass('audio mode intent', 'referenced');
@@ -65,7 +70,7 @@ function createAudioModeIntentRepository(database, dependencies) {
     }
   }
 
-  function mapRow(row, executionSource = false) {
+  function mapRow(row, sourcePhase = 'preparing') {
     try {
       const requestJson = canonicalJson(row.request_json, 4 * 1024 * 1024);
       const planJson = canonicalJson(row.plan_json, 32 * 1024 * 1024);
@@ -82,7 +87,7 @@ function createAudioModeIntentRepository(database, dependencies) {
         createdAtEpochMs: row.created_at_epoch_ms,
       });
       if (stored.plan.planSha256 !== row.plan_sha256) throw new TypeError();
-      const resolved = expected(stored.request, V2RepositoryDataError, executionSource);
+      const resolved = expected(stored.request, V2RepositoryDataError, sourcePhase);
       if (serializeCanonicalJson(resolved.request) !== row.request_json
         || serializeCanonicalJson(resolved.plan) !== row.plan_json) throw new TypeError();
       return Object.freeze({ ...stored, request: resolved.request, plan: resolved.plan });
@@ -113,7 +118,19 @@ function createAudioModeIntentRepository(database, dependencies) {
       }
       return mapRow(
         requiredRow(prepared().get.get(canonical), 'audio mode intent', canonical),
-        true,
+        'execution',
+      );
+    },
+    getCompletedSource(uid) {
+      let canonical;
+      try {
+        canonical = canonicalUid(uid, DATA_CODE);
+      } catch {
+        throw new TypeError('Audio mode intent uid is invalid');
+      }
+      return mapRow(
+        requiredRow(prepared().get.get(canonical), 'audio mode intent', canonical),
+        'completed',
       );
     },
     prepare(value) {

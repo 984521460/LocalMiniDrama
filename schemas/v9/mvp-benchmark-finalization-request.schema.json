@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-finalization-request.schema.json",
+  "title": "MVP benchmark finalization request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "expectedBatchSha256", "bgmTrackUid"],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-finalization-request.v1" },
+    "expectedBatchSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "bgmTrackUid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}
