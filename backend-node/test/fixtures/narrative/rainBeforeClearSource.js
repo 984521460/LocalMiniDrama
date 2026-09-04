@@ -3,7 +3,13 @@
 const { createHash } = require('node:crypto');
 const path = require('node:path');
 
+const { createNarrativeReviewService } = require('../../../src/narrative/reviews');
 const { createSourceDocumentService } = require('../../../src/narrative/sourceDocuments');
+const {
+  createEpisodeAdaptationTask,
+  createNovelExtractionTask,
+  createScriptFormattingTask,
+} = require('../../../src/narrative/tasks');
 const { createV2Repositories } = require('../../../src/repositories/v2');
 const {
   validateMvpBenchmarkSourcePack,
@@ -13,6 +19,7 @@ const {
   insertDrama,
   uid,
 } = require('../../helpers/v2RepositoryDatabase');
+const { completionMetadata } = require('./benchmarkFixture');
 
 const PACK_ROOT = path.resolve(__dirname, '../../../../benchmarks/mvp-source');
 const DURATION_BUDGET = Object.freeze({ targetSeconds: 60, toleranceSeconds: 5 });
@@ -280,9 +287,9 @@ function createRainShotOutput() {
   });
 }
 
-function setupRainBeforeClearSource(t, start = 180000) {
+function setupRainBeforeClearSource(t, start = 180000, existingDatabase = null) {
   const pack = validateMvpBenchmarkSourcePack(PACK_ROOT);
-  const database = createMigratedV2Database(t);
+  const database = existingDatabase ?? createMigratedV2Database(t);
   const dramaUid = uid(start);
   insertDrama(database, dramaUid, '雨停之前同源叙事证据');
   const dramaId = database.prepare('SELECT id FROM dramas WHERE uid=?').get(dramaUid).id;
@@ -304,6 +311,80 @@ function setupRainBeforeClearSource(t, start = 180000) {
   return Object.freeze({
     pack, database, dramaId, dramaUid, repositories, sourceService, imported, selection,
   });
+}
+
+function persistApprovedRainNarrativeChain(current, start = 180500) {
+  if (!current?.repositories || !current?.selection?.selection || !current?.imported?.document) {
+    throw new TypeError('rain narrative fixture is invalid');
+  }
+  const reviews = createNarrativeReviewService({
+    repositories: current.repositories,
+    createUid: uidFactory(start),
+  });
+  const approve = (resultType, result, upstreamResultUid) => {
+    const stored = reviews.recordResult({
+      dramaUid: current.dramaUid,
+      sourceSelectionUid: current.selection.selection.uid,
+      resultType,
+      ...(upstreamResultUid ? { upstreamResultUid } : {}),
+      result,
+    });
+    return reviews.reviewResult({ resultUid: stored.uid, decision: 'approve' });
+  };
+  const startIndex = current.imported.blocks.findIndex((block) => (
+    block.uid === current.selection.selection.startBlockUid
+  ));
+  const endIndex = current.imported.blocks.findIndex((block) => (
+    block.uid === current.selection.selection.endBlockUid
+  ));
+  if (startIndex < 0 || endIndex < startIndex) {
+    throw new TypeError('rain narrative source selection is invalid');
+  }
+  const source = Object.freeze({
+    documentUid: current.imported.document.uid,
+    blocks: Object.freeze(current.imported.blocks.slice(startIndex, endIndex + 1)
+      .map((block) => Object.freeze({
+        uid: block.uid,
+        documentUid: block.documentUid,
+        ordinal: block.ordinal,
+        text: block.text,
+        textSha256: block.textSha256,
+      }))),
+    selection: Object.freeze({
+      uid: current.selection.selection.uid,
+      documentUid: current.selection.selection.documentUid,
+      startBlockUid: current.selection.selection.startBlockUid,
+      endBlockUid: current.selection.selection.endBlockUid,
+      startOffset: current.selection.selection.startOffset,
+      endOffset: current.selection.selection.endOffset,
+      selectedTextSha256: current.selection.selection.selectedTextSha256,
+    }),
+  });
+  const extractionOutput = createRainExtractionOutput(current.imported.blocks);
+  const extractionResult = createNovelExtractionTask().complete({
+    source,
+    ...completionMetadata('novel-extraction', start + 100, extractionOutput),
+  });
+  const extraction = approve('extraction', extractionResult);
+  const adaptationOutput = createRainAdaptationOutput();
+  const adaptationResult = createEpisodeAdaptationTask().complete({
+    approvedExtraction: extractionResult.output,
+    approval: extraction.approval,
+    durationBudget: DURATION_BUDGET,
+    style: STYLE,
+    ...completionMetadata('episode-adaptation', start + 101, adaptationOutput),
+  });
+  const adaptation = approve('adaptation', adaptationResult, extraction.result.uid);
+  const scriptOutput = createRainScriptOutput();
+  const scriptResult = createScriptFormattingTask().complete({
+    approvedExtraction: extractionResult.output,
+    extractionApproval: extraction.approval,
+    adaptationResult,
+    adaptationApproval: adaptation.approval,
+    ...completionMetadata('script-formatting', start + 102, scriptOutput),
+  });
+  const script = approve('script', scriptResult, adaptation.result.uid);
+  return Object.freeze({ adaptation, extraction, script });
 }
 
 function insertRainMainCharacters(current, start = 180100) {
@@ -350,6 +431,7 @@ module.exports = Object.freeze({
   createRainScriptOutput,
   createRainShotOutput,
   insertRainMainCharacters,
+  persistApprovedRainNarrativeChain,
   setupRainBeforeClearSource,
   sha256,
   uidFactory,

@@ -10,6 +10,12 @@ const { types: { isProxy } } = require('node:util');
 
 const MAX_NODES = 500;
 const MAX_EDGES = 2000;
+const PROVENANCE_BOUND_INPUT_NODES = new Set([
+  'story.facts',
+  'episode.adaptation',
+  'script.structured',
+  'shot.plan',
+]);
 
 export interface WorkflowGraphNodeInput {
   readonly uid: string;
@@ -229,9 +235,10 @@ export function validateWorkflowGraph(input: unknown): Readonly<WorkflowGraphVal
 
   for (const node of nodes) {
     const definition = getNodeTypeDefinition(node.nodeType);
-    if (node.bound && definition.inputs.some((port) => (
-      (inputCounts.get(`${node.uid}\u0000${port.id}`) ?? 0) > 0
-    ))) fail('WORKFLOW_GRAPH_BOUND_INPUT');
+    if (node.bound && !PROVENANCE_BOUND_INPUT_NODES.has(node.nodeType)
+      && definition.inputs.some((port) => (
+        (inputCounts.get(`${node.uid}\u0000${port.id}`) ?? 0) > 0
+      ))) fail('WORKFLOW_GRAPH_BOUND_INPUT');
     if (node.bound || node.disabled) continue;
     for (const port of definition.inputs) {
       if (port.required && (inputCounts.get(`${node.uid}\u0000${port.id}`) ?? 0) === 0) {

@@ -95,10 +95,23 @@ test('rejects duplicate edges, self edges, directed cycles, and hostile accessor
   assert.equal(proxyTrapCalls, 0);
 });
 
-test('rejects graph inputs to bound nodes and active consumers of disabled nodes', () => {
+test('allows typed provenance inputs to bound nodes and rejects active consumers of disabled nodes', () => {
   const boundInput = validGraph();
   boundInput.nodes[1].bound = true;
-  expectGraphError(boundInput, 'WORKFLOW_GRAPH_BOUND_INPUT');
+  const validated = workflowEngine.validateWorkflowGraph(boundInput);
+  assert.deepEqual(validated.topologicalOrder, ['source', 'facts', 'beats', 'script']);
+
+  const unsupportedBoundInput = {
+    nodes: [
+      { uid: 'shots', nodeType: 'shot.plan', bound: true },
+      { uid: 'image', nodeType: 'shot.image', bound: true },
+    ],
+    edges: [{
+      uid: 'image-edge', sourceNodeUid: 'shots', sourcePort: 'shots',
+      targetNodeUid: 'image', targetPort: 'shot',
+    }],
+  };
+  expectGraphError(unsupportedBoundInput, 'WORKFLOW_GRAPH_BOUND_INPUT');
 
   const disabledDependency = validGraph();
   disabledDependency.nodes[0].disabled = true;

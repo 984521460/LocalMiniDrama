@@ -121,6 +121,50 @@ test('builds a disabled editable canvas graph and serializes the saved v2 contra
   })
 })
 
+test('keeps approved evidence bindings while a connected graph is saved and reopened', () => {
+  const sourceUid = '11111111-1111-4111-8111-111111111111'
+  const resultUid = '22222222-2222-4222-8222-222222222222'
+  const persisted = {
+    definition: { uid: 'workflow', graphRevision: 7 },
+    nodes: [
+      {
+        uid: 'source-node', nodeType: 'source.selection', position: { x: 0, y: 0 },
+        config: {}, domainRef: { type: 'source_selection', uid: sourceUid }, status: 'ready',
+      },
+      {
+        uid: 'facts-node', nodeType: 'story.facts', position: { x: 240, y: 0 },
+        config: {}, domainRef: { type: 'narrative_result', uid: resultUid }, status: 'ready',
+      },
+    ],
+    edges: [{
+      uid: 'edge-one', sourceNodeUid: 'source-node', sourcePort: 'selection',
+      targetNodeUid: 'facts-node', targetPort: 'selection',
+    }],
+  }
+  const reopened = createWorkflowCanvasGraph(persisted, [SOURCE, FACTS])
+  assert.equal(reopened.nodes[0].data.status, 'ready')
+  assert.deepEqual(reopened.nodes[1].data.domainRef, {
+    type: 'narrative_result', uid: resultUid,
+  })
+  assert.deepEqual(serializeWorkflowGraph(reopened, 7), {
+    expected_revision: 7,
+    nodes: [
+      {
+        uid: 'source-node', node_type: 'source.selection', position: { x: 0, y: 0 },
+        config: {}, domain_ref: { type: 'source_selection', uid: sourceUid }, status: 'ready',
+      },
+      {
+        uid: 'facts-node', node_type: 'story.facts', position: { x: 240, y: 0 },
+        config: {}, domain_ref: { type: 'narrative_result', uid: resultUid }, status: 'ready',
+      },
+    ],
+    edges: [{
+      uid: 'edge-one', source_node_uid: 'source-node', source_port: 'selection',
+      target_node_uid: 'facts-node', target_port: 'selection',
+    }],
+  })
+})
+
 test('rejects incompatible, duplicate, cardinality, and cyclic connections locally', () => {
   const base = createWorkflowCanvasGraph({
     definition: { uid: 'workflow', graphRevision: 0 },

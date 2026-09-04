@@ -10,6 +10,7 @@ const {
   isNodeExecutionError,
 } = require('./nodeExecutionError');
 const { snapshotJson } = require('./jsonSnapshot');
+const { assertMaterializedDependencies } = require('./materializedDependencyValidator');
 
 const {
   getOwnPropertyDescriptors: GET_OWN_PROPERTY_DESCRIPTORS,
@@ -135,6 +136,12 @@ function createMaterializedNodeExecutor({ repositories, runService }) {
       }, repositories, definition.dramaUid)) {
         throw executionError('ERR_NODE_EXECUTION_DATA_INVALID');
       }
+      assertMaterializedDependencies({
+        aggregate,
+        planNode,
+        inputSnapshot: requestedInput,
+        repositories,
+      });
 
       return trustedSnapshot({
         [OUTPUT_PORTS[planNode.nodeType]]: {
