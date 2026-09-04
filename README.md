@@ -333,6 +333,8 @@ npm run benchmark:source:check
 
 改编结果支持显式打开“原著事实与改编决策”对照；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/adaptation-comparison` 会重新校验已批准事实来源、当前原文证据、改编输入与五段节拍，把原著事实、基于事实的推断和带理由的改编决策分栏展示，且原著事实可继续定位到原文。
 
+叙事执行面板默认以 `60 ± 5` 秒生成单集剧情节拍。生产链只接受当前原文聚合与已批准提取结果完全绑定的请求，输出固定为 `hook → setup → escalation → climax → cliffhanger` 五段且总时长必须落在预算内；结果持久化后进入人工审核，重复提交同一操作不会重复调用文本 Provider。
+
 ## 📄 License
 
 [MIT](LICENSE)

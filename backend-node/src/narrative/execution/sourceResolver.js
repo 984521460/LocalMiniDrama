@@ -1,5 +1,8 @@
 'use strict';
 
+const {
+  assertSourceEvidenceAggregate,
+} = require('../sourceDocuments/evidenceValidator');
 const { normalizeSource } = require('../tasks/sourceEvidence');
 
 class NarrativeExecutionSourceError extends TypeError {
@@ -45,6 +48,11 @@ function createNarrativeExecutionSourceResolver({
     const document = repositories.sources.getDocument(selection.documentUid);
     if (document.dramaUid !== request.dramaUid) invalid();
     const blocks = repositories.sources.listBlocks(document.uid);
+    try {
+      assertSourceEvidenceAggregate({ document, blocks, selections: [selection] });
+    } catch {
+      return invalid();
+    }
     let startIndex = -1;
     let endIndex = -1;
     for (let index = 0; index < blocks.length; index += 1) {
@@ -77,7 +85,7 @@ function createNarrativeExecutionSourceResolver({
           endOffset: selection.endOffset,
           selectedTextSha256: selection.selectedTextSha256,
         },
-      }).source;
+      });
     } catch {
       return invalid();
     }
@@ -102,7 +110,7 @@ function createNarrativeExecutionSourceResolver({
     resolve(request) {
       const trustedSource = source(request);
       if (request.resultType === 'extraction') {
-        return Object.freeze({ source: trustedSource, domain: null });
+        return Object.freeze({ source: trustedSource.source, domain: null });
       }
       const directType = request.resultType === 'adaptation'
         ? 'extraction' : request.resultType === 'script' ? 'adaptation' : 'script';
@@ -112,8 +120,9 @@ function createNarrativeExecutionSourceResolver({
         || direct.approval.reviewRef !== request.upstreamApprovalRef) invalid();
 
       if (request.resultType === 'adaptation') {
+        if (direct.result.inputHash !== trustedSource.inputHash) invalid();
         return Object.freeze({
-          source: trustedSource,
+          source: trustedSource.source,
           domain: Object.freeze({
             approvedExtraction: direct.result.output,
             approval: direct.approval,
@@ -130,9 +139,10 @@ function createNarrativeExecutionSourceResolver({
         : approved(direct.record.upstreamResultUid, 'adaptation', request);
       const rootExtraction = extraction
         || approved(adaptation.record.upstreamResultUid, 'extraction', request);
+      if (rootExtraction.result.inputHash !== trustedSource.inputHash) invalid();
       if (request.resultType === 'script') {
         return Object.freeze({
-          source: trustedSource,
+          source: trustedSource.source,
           domain: Object.freeze({
             approvedExtraction: rootExtraction.result.output,
             extractionApproval: rootExtraction.approval,
@@ -142,7 +152,7 @@ function createNarrativeExecutionSourceResolver({
         });
       }
       return Object.freeze({
-        source: trustedSource,
+        source: trustedSource.source,
         domain: Object.freeze({
           approvedExtraction: rootExtraction.result.output,
           extractionApproval: rootExtraction.approval,
