@@ -149,6 +149,137 @@ function createRainAdaptationOutput() {
   });
 }
 
+function createRainScriptOutput() {
+  return Object.freeze({
+    schemaVersion: 'script-formatting.v1',
+    durationSummary: { totalSeconds: 60 },
+    scenes: [
+      {
+        sceneId: 'script-scene-station-hall',
+        ordinal: 1,
+        heading: { interiorExterior: 'UNKNOWN', location: '海城旧车站', time: '暴雨夜' },
+        purpose: '恢复照明并确认芯片成为争夺目标。',
+        sceneFactRef: 'scene-old-station',
+        characterFactRefs: ['character-lin-che', 'character-xia-xian'],
+        propFactRefs: ['prop-evidence-case'],
+        beatRefs: ['beat-power-restored', 'beat-broadcast-threat', 'beat-chip-chase'],
+        adaptationDecisionRefs: ['decision-add-chip-chase'],
+        estimatedDurationSeconds: 34,
+        entries: [
+          {
+            entryId: 'entry-power-action', type: 'action',
+            text: '林澈接通备用电源，站台灯依次亮起。',
+            characterFactRefs: ['character-lin-che'], propFactRefs: [],
+            beatRefs: ['beat-power-restored'], adaptationDecisionRefs: [], durationSeconds: 8,
+          },
+          {
+            entryId: 'entry-broadcast-action', type: 'action',
+            text: '夏弦确认广播仍来自站内旧线路，两人警惕地望向楼梯。',
+            characterFactRefs: ['character-lin-che', 'character-xia-xian'], propFactRefs: [],
+            beatRefs: ['beat-broadcast-threat'], adaptationDecisionRefs: [], durationSeconds: 12,
+          },
+          {
+            entryId: 'entry-chip-warning', type: 'dialogue',
+            speakerCharacterFactId: null, dialogueFactRef: 'dialogue-real-target',
+            text: '真正目标是记录事故真相的存储芯片。', emotion: '紧迫',
+            speechRateWordsPerMinute: 120, narrativePurpose: 'escalation',
+            beatRefs: ['beat-chip-chase'],
+            adaptationDecisionRefs: ['decision-add-chip-chase'], durationSeconds: 14,
+          },
+        ],
+      },
+      {
+        sceneId: 'script-scene-station-platform',
+        ordinal: 2,
+        heading: { interiorExterior: 'UNKNOWN', location: '海城旧车站', time: '暴雨夜' },
+        purpose: '完成站台对峙并揭开第二段事故记录。',
+        sceneFactRef: 'scene-old-station',
+        characterFactRefs: ['character-lin-che', 'character-xia-xian'],
+        propFactRefs: ['prop-evidence-case'],
+        beatRefs: ['beat-platform-confrontation', 'beat-chip-reveal'],
+        adaptationDecisionRefs: ['decision-add-chip-chase'],
+        estimatedDurationSeconds: 26,
+        entries: [
+          {
+            entryId: 'entry-platform-confrontation', type: 'action',
+            text: '林澈护住证物箱，夏弦在站台拦住追踪者。',
+            characterFactRefs: ['character-lin-che', 'character-xia-xian'],
+            propFactRefs: ['prop-evidence-case'],
+            beatRefs: ['beat-platform-confrontation'],
+            adaptationDecisionRefs: ['decision-add-chip-chase'], durationSeconds: 16,
+          },
+          {
+            entryId: 'entry-chip-reveal', type: 'action',
+            text: '芯片亮起，屏幕显示第二段未公开的事故记录。',
+            characterFactRefs: ['character-lin-che'], propFactRefs: ['prop-evidence-case'],
+            beatRefs: ['beat-chip-reveal'],
+            adaptationDecisionRefs: ['decision-add-chip-chase'], durationSeconds: 10,
+          },
+        ],
+      },
+    ],
+  });
+}
+
+function createRainShotOutput() {
+  const shots = [
+    {
+      shotId: 'shot-power-action', sceneId: 'script-scene-station-hall',
+      entryRefs: ['entry-power-action'], durationSeconds: 8, shotSize: 'MS',
+      cameraAngle: 'eye_level', cameraMovement: 'dolly',
+      composition: '林澈与备用电源位于画面前后景。', action: '跟随林澈接通备用电源。',
+      characterFactRefs: ['character-lin-che'], propFactRefs: [], dialogueEntryRefs: [],
+    },
+    {
+      shotId: 'shot-broadcast-action', sceneId: 'script-scene-station-hall',
+      entryRefs: ['entry-broadcast-action'], durationSeconds: 12, shotSize: 'MS',
+      cameraAngle: 'eye_level', cameraMovement: 'pan',
+      composition: '林澈与夏弦同框，楼梯位于画面深处。', action: '两人循广播声望向楼梯。',
+      characterFactRefs: ['character-lin-che', 'character-xia-xian'],
+      propFactRefs: [], dialogueEntryRefs: [],
+    },
+    {
+      shotId: 'shot-chip-warning', sceneId: 'script-scene-station-hall',
+      entryRefs: ['entry-chip-warning'], durationSeconds: 14, shotSize: 'CU',
+      cameraAngle: 'eye_level', cameraMovement: 'static',
+      composition: '广播喇叭与证物箱形成前后景关联。', action: '广播揭示争夺目标。',
+      characterFactRefs: [], propFactRefs: [], dialogueEntryRefs: ['entry-chip-warning'],
+    },
+    {
+      shotId: 'shot-platform-confrontation', sceneId: 'script-scene-station-platform',
+      entryRefs: ['entry-platform-confrontation'], durationSeconds: 16, shotSize: 'LS',
+      cameraAngle: 'low', cameraMovement: 'truck',
+      composition: '站台纵深分隔两人和追踪者。', action: '林澈护箱，夏弦拦截追踪者。',
+      characterFactRefs: ['character-lin-che', 'character-xia-xian'],
+      propFactRefs: ['prop-evidence-case'], dialogueEntryRefs: [],
+    },
+    {
+      shotId: 'shot-chip-reveal', sceneId: 'script-scene-station-platform',
+      entryRefs: ['entry-chip-reveal'], durationSeconds: 10, shotSize: 'ECU',
+      cameraAngle: 'overhead', cameraMovement: 'static',
+      composition: '芯片屏幕占据画面中心。', action: '屏幕显示第二段事故记录。',
+      characterFactRefs: ['character-lin-che'], propFactRefs: ['prop-evidence-case'],
+      dialogueEntryRefs: [],
+    },
+  ].map((shot, index) => Object.freeze({
+    ...shot,
+    ordinal: index + 1,
+    assetVersionRefs: [],
+    continuity: {
+      transitionFromPrevious: index === 0 ? 'start' : 'cut',
+      screenDirection: 'neutral',
+      axisStrategy: index === 0 || index === 3 ? 'establish' : 'maintain',
+      notes: '保持人物朝向、站台轴线与证物箱位置连续。',
+    },
+  }));
+  return Object.freeze({
+    schemaVersion: 'shot-planning.v1',
+    aspectRatio: '16:9',
+    durationSummary: { totalSeconds: 60 },
+    shots: Object.freeze(shots),
+  });
+}
+
 function setupRainBeforeClearSource(t, start = 180000) {
   const pack = validateMvpBenchmarkSourcePack(PACK_ROOT);
   const database = createMigratedV2Database(t);
@@ -180,6 +311,8 @@ module.exports = Object.freeze({
   STYLE,
   createRainAdaptationOutput,
   createRainExtractionOutput,
+  createRainScriptOutput,
+  createRainShotOutput,
   setupRainBeforeClearSource,
   sha256,
   uidFactory,

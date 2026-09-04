@@ -335,6 +335,8 @@ npm run benchmark:source:check
 
 叙事执行面板默认以 `60 ± 5` 秒生成单集剧情节拍。生产链只接受当前原文聚合与已批准提取结果完全绑定的请求，输出固定为 `hook → setup → escalation → climax → cliffhanger` 五段且总时长必须落在预算内；结果持久化后进入人工审核，重复提交同一操作不会重复调用文本 Provider。
 
+已批准的一分钟改编可继续生成 `script-formatting.v1` 结构化剧本和 `shot-planning.v1` 结构化分镜。两级输出都先通过公开 Draft 2020-12 Schema，再重验场次/条目/节拍/事实引用、总时长、镜头顺序、资产引用和轴线连续性；任何结构或跨链语义不一致都不会写入结果表。
+
 ## 📄 License
 
 [MIT](LICENSE)
