@@ -348,6 +348,7 @@ test('resume route is GET-only, path-bound, and unavailable without production w
     }),
   });
   assert.equal(typeof production.resume.read, 'function');
+  assert.equal(typeof production.accountingStatus.read, 'function');
   const app = express();
   app.use(express.json());
   app.use('/api/v1/v2', mvpBenchmarkRoutes(Object.freeze({}), Object.freeze({

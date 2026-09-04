@@ -7,6 +7,9 @@ const {
   createMvpBenchmarkAuthorizationCeilingEstimator,
 } = require('./mvpBenchmarkAuthorizationCeilingEstimator');
 const {
+  createMvpBenchmarkAccountingStatusService,
+} = require('./mvpBenchmarkAccountingStatusService');
+const {
   createMvpBenchmarkExecutionPreflightService,
 } = require('./mvpBenchmarkExecutionPreflightService');
 const {
@@ -93,7 +96,8 @@ function createProductionMvpBenchmarkRuntime({
     execution,
     ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
   });
-  return Object.freeze({ execution, preflight, resume });
+  const accountingStatus = createMvpBenchmarkAccountingStatusService({ repositories });
+  return Object.freeze({ accountingStatus, execution, preflight, resume });
 }
 
 module.exports = Object.freeze({ createProductionMvpBenchmarkRuntime });

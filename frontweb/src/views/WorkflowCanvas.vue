@@ -153,6 +153,13 @@
               @execute="executeNextMvpItem"
               @refresh="refreshMvpExecution"
             />
+            <MvpBenchmarkAccountingStatusPanel
+              :batch="mvpPreflight.batch.value"
+              :status="mvpAccountingStatus.status.value"
+              :busy="mvpAccountingStatus.busy.value"
+              :error="mvpAccountingStatus.error.value || ''"
+              @refresh="refreshMvpAccountingStatus"
+            />
             <MvpBenchmarkReadinessPanel
               :readiness="mvpReadiness.readiness.value"
               :busy="mvpReadiness.busy.value"
@@ -199,6 +206,7 @@ import WorkflowPalette from '@/components/workflow/WorkflowPalette.vue'
 import WorkflowRunPanel from '@/components/workflow/WorkflowRunPanel.vue'
 import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
+import MvpBenchmarkAccountingStatusPanel from '@/components/benchmark/MvpBenchmarkAccountingStatusPanel.vue'
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
 import MvpBenchmarkExecutionPanel from '@/components/benchmark/MvpBenchmarkExecutionPanel.vue'
@@ -206,6 +214,7 @@ import MvpBenchmarkPreflightPanel from '@/components/benchmark/MvpBenchmarkPrefl
 import MvpBenchmarkResumePanel from '@/components/benchmark/MvpBenchmarkResumePanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
+import { useMvpBenchmarkAccountingStatus } from '@/composables/useMvpBenchmarkAccountingStatus'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
 import { useMvpBenchmarkExecution } from '@/composables/useMvpBenchmarkExecution'
@@ -221,6 +230,7 @@ const dramaId = Number(route.params.id)
 const { isDark, toggle: toggleTheme } = useTheme()
 const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
+const mvpAccountingStatus = useMvpBenchmarkAccountingStatus()
 const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
 const mvpExecution = useMvpBenchmarkExecution()
@@ -395,6 +405,7 @@ async function resumeMvpState() {
   mvpAuthorization.invalidate()
   mvpPreflight.invalidate()
   mvpExecution.invalidate()
+  mvpAccountingStatus.invalidate()
   mvpSession.session.value = snapshot.session
   mvpAuthorization.authorization.value = snapshot.authorization
   mvpPreflight.batch.value = snapshot.batch
@@ -416,6 +427,7 @@ async function prepareMvpSession() {
     return
   }
   mvpResume.invalidate()
+  mvpAccountingStatus.invalidate()
   await mvpAuthorization.refreshConnections()
   ElMessage.success('本地基准会话已冻结；尚未创建外部授权')
 }
@@ -443,6 +455,7 @@ async function authorizeMvpSession(seed) {
     mvpResume.invalidate()
     mvpExecution.invalidate()
     mvpPreflight.invalidate()
+    mvpAccountingStatus.invalidate()
     ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
   } else {
     ElMessage.error('本地授权创建失败')
@@ -466,6 +479,7 @@ async function preflightMvpSession() {
     return
   }
   mvpExecution.invalidate()
+  mvpAccountingStatus.invalidate()
   if (await mvpPreflight.preflight(session, authorization)) {
     mvpResume.invalidate()
     ElMessage.success('live preflight 已完成；尚未执行任何生成任务')
@@ -504,6 +518,7 @@ async function executeNextMvpItem() {
   } catch {
     return
   }
+  mvpAccountingStatus.invalidate()
   if (await mvpExecution.executeNext(session, authorization, batch)) {
     mvpResume.invalidate()
     if (mvpExecution.step.value?.batchComplete) {
@@ -526,9 +541,29 @@ async function refreshMvpExecution() {
   }
   if (await mvpExecution.refresh(session, authorization, batch)) {
     mvpResume.invalidate()
+    mvpAccountingStatus.invalidate()
     ElMessage.success('已从本地持久成功证据重建进度；未提交任务、结算费用或归还实例')
   } else {
     ElMessage.error('可信进度刷新失败；不会自动重试')
+  }
+}
+
+async function refreshMvpAccountingStatus() {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  const batch = mvpPreflight.batch.value
+  if (!session || !authorization || !batch) {
+    ElMessage.error('请先恢复或完成有效的会话、授权与 live preflight')
+    return
+  }
+  if (await mvpAccountingStatus.load(session, authorization, batch)) {
+    const status = mvpAccountingStatus.status.value
+    const releaseText = status.releaseState === 'released' ? '已有可信归还回执' : '仍需归还'
+    ElMessage.success(
+      `已读取本地会计状态：${status.settledCount}/${status.totalCount} 项已结算，${releaseText}；未执行结算或归还`,
+    )
+  } else {
+    ElMessage.error('结算与归还状态读取失败；不会采用部分结果')
   }
 }
 
@@ -560,6 +595,7 @@ watch(
     mvpPreflight.invalidate()
     mvpExecution.invalidate()
     mvpResume.invalidate()
+    mvpAccountingStatus.invalidate()
   },
 )
 
@@ -582,6 +618,7 @@ onBeforeUnmount(() => {
   mvpPreflight.invalidate()
   mvpExecution.invalidate()
   mvpResume.invalidate()
+  mvpAccountingStatus.invalidate()
   mvpSession.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })

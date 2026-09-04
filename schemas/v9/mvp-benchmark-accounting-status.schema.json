@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-accounting-status.schema.json",
+  "title": "MVP Benchmark Accounting Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "dramaUid",
+    "sessionUid",
+    "authorizationUid",
+    "batchSha256",
+    "totalCount",
+    "settledCount",
+    "actualCostCnyFen",
+    "allSettled",
+    "releaseState",
+    "obligationSha256",
+    "receiptSha256",
+    "items"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-accounting-status.v1" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "sessionUid": { "$ref": "#/$defs/uuid" },
+    "authorizationUid": { "$ref": "#/$defs/uuid" },
+    "batchSha256": { "$ref": "#/$defs/sha256" },
+    "totalCount": { "type": "integer", "minimum": 1, "maximum": 128 },
+    "settledCount": { "type": "integer", "minimum": 0, "maximum": 128 },
+    "actualCostCnyFen": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "allSettled": { "type": "boolean" },
+    "releaseState": { "enum": ["required", "released"] },
+    "obligationSha256": { "$ref": "#/$defs/sha256" },
+    "receiptSha256": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha256" },
+        { "type": "null" }
+      ]
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/item" }
+    }
+  },
+  "$comment": "Runtime additionally binds item order and identities to the stored preflight batch, recomputes settledCount/actualCostCnyFen/allSettled, and revalidates every settlement, obligation, and release receipt through the immutable repositories. Reading this DTO performs no settlement, release, Vault, SSH, Provider, GPU, media, or database write.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "itemKind",
+        "itemUid",
+        "reservationUid",
+        "settlementState",
+        "settlementUid",
+        "settlementSha256",
+        "actualCostCnyFen"
+      ],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "itemKind": { "enum": ["h3", "tts"] },
+        "itemUid": { "$ref": "#/$defs/uuid" },
+        "reservationUid": { "$ref": "#/$defs/uuid" },
+        "settlementState": { "enum": ["pending", "settled"] },
+        "settlementUid": {
+          "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }]
+        },
+        "settlementSha256": {
+          "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        },
+        "actualCostCnyFen": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 1000000 },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}
