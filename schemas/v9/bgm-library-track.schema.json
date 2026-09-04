@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/bgm-library-track.schema.json",
+  "title": "Secret-free local BGM library track",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "uid",
+    "dramaUid",
+    "title",
+    "mimeType",
+    "durationMs",
+    "license",
+    "exportEligible",
+    "createdAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bgm-library-track.v1" },
+    "uid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?:[\\p{L}\\p{N}]|[\\p{L}\\p{N}](?:[\\p{L}\\p{N} ._()'&-]{0,254}[\\p{L}\\p{N}._()'&-]))$"
+    },
+    "mimeType": {
+      "enum": ["audio/aac", "audio/flac", "audio/mpeg", "audio/wav", "audio/x-wav"]
+    },
+    "durationMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+    "license": { "$ref": "#/$defs/license" },
+    "exportEligible": { "type": "boolean" },
+    "createdAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "license": {
+            "type": "object",
+            "properties": {
+              "commercialUseAllowed": { "const": true },
+              "derivativesAllowed": { "const": true }
+            },
+            "required": ["commercialUseAllowed", "derivativesAllowed"]
+          }
+        },
+        "required": ["license"]
+      },
+      "then": { "properties": { "exportEligible": { "const": true } } },
+      "else": { "properties": { "exportEligible": { "const": false } } }
+    }
+  ],
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis", "commercialUseAllowed", "derivativesAllowed"],
+      "properties": {
+        "basis": { "enum": ["user-owned", "licensed", "public-domain", "provider-grant"] },
+        "commercialUseAllowed": { "type": "boolean" },
+        "derivativesAllowed": { "type": "boolean" }
+      }
+    }
+  },
+  "$comment": "Runtime additionally verifies the local file hash, bounded size, real container format, ffprobe evidence, and a complete ffmpeg decode before persistence. The license is an explicit user attestation, not independent legal advice. No path, credential, or secret is exposed."
+}

@@ -22,6 +22,7 @@ const REQUEST_KEYS = Object.freeze([
   'assetUid',
   'assetVersionUid',
   'title',
+  'mimeType',
   'license',
   'bytes',
   'createdAtEpochMs',
@@ -33,7 +34,7 @@ const typedArrayByteLength = Object.getOwnPropertyDescriptor(typedArrayPrototype
 const typedArrayBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer').get;
 const typedArraySet = Uint8Array.prototype.set;
 const storageWrite = LocalStorageProvider.prototype.write;
-const storageRead = LocalStorageProvider.prototype.read;
+const storageReadBounded = LocalStorageProvider.prototype.readBounded;
 const storageRemove = LocalStorageProvider.prototype.remove;
 
 function exactMethod(value, name) {
@@ -94,24 +95,8 @@ function createLocalBgmProvider(value) {
       const title = publicText(input.title, 'BGM_IMPORT_INVALID');
       const createdAtEpochMs = epoch(input.createdAtEpochMs, 'BGM_IMPORT_INVALID');
       if (license.attestedAtEpochMs > createdAtEpochMs) fail('BGM_IMPORT_INVALID');
-      let inspection;
-      try {
-        const inspectionInput = Buffer.allocUnsafe(bytes.byteLength);
-        Reflect.apply(typedArraySet, inspectionInput, [bytes, 0]);
-        inspection = exactObject(
-          Reflect.apply(options.inspectAudio, undefined, [inspectionInput]),
-          INSPECTION_KEYS,
-          'BGM_IMPORT_INVALID',
-        );
-      } catch (error) {
-        if (isAudioModeContractError(error)) throw error;
-        return fail('BGM_IMPORT_INVALID');
-      }
-      const extension = EXTENSION_BY_MIME[inspection.mimeType];
-      if (!extension
-        || !Number.isSafeInteger(inspection.durationMs)
-        || inspection.durationMs < 1
-        || inspection.durationMs > 86_400_000) fail('BGM_IMPORT_INVALID');
+      const extension = EXTENSION_BY_MIME[input.mimeType];
+      if (!extension) fail('BGM_IMPORT_INVALID');
 
       const locator = createAssetLocator({
         logicalSegments: ['dramas', dramaUid, 'bgm', assetUid, assetVersionUid],
@@ -125,8 +110,35 @@ function createLocalBgmProvider(value) {
       try {
         await Reflect.apply(storageWrite, options.storageProvider, [locator, bytes]);
         wrote = true;
+        const inspection = exactObject(
+          await Reflect.apply(options.inspectAudio, undefined, [Object.freeze({
+            uid: assetVersionUid,
+            assetUid,
+            storageProvider: locator.storageProvider,
+            logicalUri: locator.logicalUri,
+            relativePath: locator.relativePath,
+            sha256,
+            mimeType: input.mimeType,
+            width: null,
+            height: null,
+            durationMs: null,
+            parentUid: null,
+            status: 'ready',
+            createdAt: new Date(createdAtEpochMs).toISOString(),
+          })]),
+          INSPECTION_KEYS,
+          'BGM_IMPORT_INVALID',
+        );
+        if (inspection.mimeType !== input.mimeType
+          || !Number.isSafeInteger(inspection.durationMs)
+          || inspection.durationMs < 1
+          || inspection.durationMs > 3_600_000) fail('BGM_IMPORT_INVALID');
         const persistedBytes = snapshotBytes(
-          await Reflect.apply(storageRead, options.storageProvider, [locator]),
+          await Reflect.apply(
+            storageReadBounded,
+            options.storageProvider,
+            [locator, bytes.byteLength],
+          ),
         );
         if (persistedBytes.byteLength !== bytes.byteLength
           || createHash('sha256').update(persistedBytes).digest('hex') !== sha256) {
@@ -147,7 +159,7 @@ function createLocalBgmProvider(value) {
             logicalUri: locator.logicalUri,
             relativePath: locator.relativePath,
             sha256,
-            mimeType: inspection.mimeType,
+            mimeType: input.mimeType,
             width: null,
             height: null,
             durationMs: inspection.durationMs,

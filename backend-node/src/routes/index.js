@@ -39,6 +39,7 @@ const mvpBenchmarkRoutes = require('./v2/mvpBenchmark');
 const audioModeIntentRoutes = require('./v2/audioModeIntents');
 const audioTtsExecutionRoutes = require('./v2/audioTtsExecution');
 const providerCredentialRoutes = require('./v2/providerCredentials');
+const bgmTrackRoutes = require('./v2/bgmTracks');
 
 function setupRouter(cfg, db, log, runtime = {}) {
   const r = express.Router();
@@ -99,6 +100,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   const audioModeIntents = audioModeIntentRoutes(log, runtime.audioModeIntents, db);
   const audioTtsExecutions = audioTtsExecutionRoutes(log, runtime.audioTts, db);
   const providerCredentials = providerCredentialRoutes(log, runtime.audioTts);
+  const bgmTracks = bgmTrackRoutes(log, runtime.bgm, db);
 
   r.use('/v2', sourceDocuments);
   r.use('/v2', narrativeReviews);
@@ -118,6 +120,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   r.use('/v2', audioModeIntents);
   r.use('/v2', audioTtsExecutions);
   r.use('/v2', providerCredentials);
+  r.use('/v2', bgmTracks);
 
   // ---------- dramas ----------
   r.get('/dramas', drama.listDramas);

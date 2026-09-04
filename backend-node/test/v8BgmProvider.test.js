@@ -66,6 +66,7 @@ function importRequest(overrides = {}) {
     assetUid: uid(85004),
     assetVersionUid: uid(85005),
     title: 'Opening theme',
+    mimeType: 'audio/mpeg',
     license: createLicense(),
     bytes: Buffer.from('ID3\x04\x00\x00synthetic-audio-fixture'),
     createdAtEpochMs: 101,

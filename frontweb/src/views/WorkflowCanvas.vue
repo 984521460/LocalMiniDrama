@@ -153,6 +153,16 @@
               @execute="executeNextMvpItem"
               @refresh="refreshMvpExecution"
             />
+            <BgmLibraryPanel
+              :drama-uid="canvas.activeWorkflow.value?.dramaUid || ''"
+              :tracks="bgmLibrary.tracks.value"
+              :selected-track-uid="bgmLibrary.selectedTrackUid.value"
+              :busy="bgmLibrary.busy.value"
+              :error="bgmLibrary.error.value || ''"
+              @refresh="refreshBgmLibrary"
+              @import="importBgmTrack"
+              @select="selectBgmTrack"
+            />
             <MvpBenchmarkAccountingStatusPanel
               :batch="mvpPreflight.batch.value"
               :status="mvpAccountingStatus.status.value"
@@ -206,6 +216,7 @@ import WorkflowPalette from '@/components/workflow/WorkflowPalette.vue'
 import WorkflowRunPanel from '@/components/workflow/WorkflowRunPanel.vue'
 import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
+import BgmLibraryPanel from '@/components/audio/BgmLibraryPanel.vue'
 import MvpBenchmarkAccountingStatusPanel from '@/components/benchmark/MvpBenchmarkAccountingStatusPanel.vue'
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
@@ -214,6 +225,7 @@ import MvpBenchmarkPreflightPanel from '@/components/benchmark/MvpBenchmarkPrefl
 import MvpBenchmarkResumePanel from '@/components/benchmark/MvpBenchmarkResumePanel.vue'
 import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSessionPanel.vue'
 import { useMediaExports } from '@/composables/useMediaExports'
+import { useBgmLibrary } from '@/composables/useBgmLibrary'
 import { useMvpBenchmarkAccountingStatus } from '@/composables/useMvpBenchmarkAccountingStatus'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
@@ -230,6 +242,7 @@ const dramaId = Number(route.params.id)
 const { isDark, toggle: toggleTheme } = useTheme()
 const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
+const bgmLibrary = useBgmLibrary()
 const mvpAccountingStatus = useMvpBenchmarkAccountingStatus()
 const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
@@ -567,6 +580,46 @@ async function refreshMvpAccountingStatus() {
   }
 }
 
+async function refreshBgmLibrary() {
+  const dramaUid = canvas.activeWorkflow.value?.dramaUid
+  if (!dramaUid || !(await bgmLibrary.load(dramaUid))) {
+    ElMessage.error('本地 BGM 素材库读取失败')
+  }
+}
+
+async function importBgmTrack(input) {
+  const dramaUid = canvas.activeWorkflow.value?.dramaUid
+  if (!dramaUid) {
+    ElMessage.error('请先选择当前剧集的工作流')
+    return
+  }
+  const rights = input.commercialUseAllowed && input.derivativesAllowed
+    ? '已声明允许商业使用和衍生编辑，验证通过后可作为成片候选'
+    : '未同时声明商业使用和衍生编辑，将仅导入但不可用于成片'
+  try {
+    await ElMessageBox.confirm(
+      `确认导入本地音频“${input.title}”？${rights}。此为你的权利声明，系统不会将其表述为法律审查结论；本操作只读取该本地文件并执行本机媒体验证，不会联网获取音乐。`,
+      '确认 BGM 权利声明',
+      { type: 'warning', confirmButtonText: '确认导入', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  if (await bgmLibrary.importTrack(dramaUid, input)) {
+    ElMessage.success('本地 BGM 已完成哈希、容器探测和全解码验证；未自动选择')
+  } else {
+    ElMessage.error('BGM 导入或本地媒体验证失败')
+  }
+}
+
+function selectBgmTrack(trackUid) {
+  if (bgmLibrary.select(trackUid)) {
+    ElMessage.success('已显式选择该 BGM；尚未创建成片导出计划')
+  } else {
+    ElMessage.error('该曲目权利声明不足，不能作为成片候选')
+  }
+}
+
 async function startMediaExport(nodeRunUid) {
   if (await mediaExports.start(nodeRunUid)) {
     ElMessage.success('成片导出已完成验证')
@@ -613,6 +666,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   mediaExports.invalidate()
+  bgmLibrary.invalidate()
   mvpReadiness.invalidate()
   mvpAuthorization.invalidate()
   mvpPreflight.invalidate()

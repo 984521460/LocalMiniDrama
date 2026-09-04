@@ -11,6 +11,7 @@ const { createProductionH3Runtime } = require('./h3/productionRuntime');
 const { createProductionMediaExportRuntime } = require('./media/productionRuntime');
 const { createProductionWorkflowRuntime } = require('./workflows/productionRuntime');
 const { createProductionAudioTtsRuntime } = require('./audio/productionRuntime');
+const { createProductionBgmRuntime } = require('./audio/bgmProductionRuntime');
 const { createProductionMvpBenchmarkRuntime } = require('./benchmark/productionRuntime');
 const {
   createProductionNarrativeExecutionRuntime,
@@ -95,7 +96,7 @@ function installApplicationCors(app, configuredOrigins) {
 function createApp({
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
   audioTtsDependencies = {}, benchmarkDependencies = {}, narrativeDependencies = {},
-  characterCandidateDependencies = {},
+  characterCandidateDependencies = {}, bgmDependencies = {},
 } = {}) {
   const config = loadConfig();
   const db = getDb(config.database);
@@ -139,6 +140,11 @@ function createApp({
     localRoot: storageRoot,
     dependencies: audioTtsDependencies,
   });
+  const bgmRuntime = createProductionBgmRuntime({
+    database: db,
+    localRoot: storageRoot,
+    dependencies: bgmDependencies,
+  });
   const mvpBenchmarkRuntime = createProductionMvpBenchmarkRuntime({
     database: db,
     sessionService: remoteRuntime.remoteConnections.remoteSessionService,
@@ -163,6 +169,7 @@ function createApp({
     ...mediaExportRuntime,
     ...workflowRuntime,
     ...audioTtsRuntime,
+    ...bgmRuntime,
     mvpBenchmark: mvpBenchmarkRuntime,
     ...narrativeRuntime,
     ...characterCandidateRuntime,
