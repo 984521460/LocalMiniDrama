@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -16,132 +15,20 @@ const {
   NarrativeFactEvidenceTraceError,
   createNarrativeFactEvidenceTrace,
 } = require('../src/narrative/reviews/evidenceTrace');
-const { createSourceDocumentService } = require('../src/narrative/sourceDocuments');
 const { createV2Repositories } = require('../src/repositories/v2');
 const narrativeReviewRoutes = require('../src/routes/v2/narrativeReviews');
 const {
-  validateMvpBenchmarkSourcePack,
-} = require('../../scripts/validate-mvp-benchmark-source');
-const {
-  createMigratedV2Database,
-  insertDrama,
   uid,
 } = require('./helpers/v2RepositoryDatabase');
-
-const PACK_ROOT = require('node:path').resolve(__dirname, '../../benchmarks/mvp-source');
-
-function sha256(value) {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
-function uidFactory(start) {
-  let next = start;
-  return () => uid(next++);
-}
-
-function selectionCoordinates(blocks, selection) {
-  const start = blocks.find((block) => (
-    block.charStart <= selection.startCodePoint && selection.startCodePoint < block.charEnd
-  ));
-  const end = blocks.find((block) => (
-    block.charStart < selection.endCodePoint && selection.endCodePoint <= block.charEnd
-  ));
-  assert.ok(start);
-  assert.ok(end);
-  return Object.freeze({
-    startBlockUid: start.uid,
-    endBlockUid: end.uid,
-    startOffset: selection.startCodePoint - start.charStart,
-    endOffset: selection.endCodePoint - end.charStart,
-  });
-}
-
-function evidence(blocks, quote) {
-  for (let index = 0; index < blocks.length; index += 1) {
-    const block = blocks[index];
-    const unitStart = block.text.indexOf(quote);
-    if (unitStart < 0) continue;
-    assert.equal(block.text.lastIndexOf(quote), unitStart);
-    const startOffset = Array.from(block.text.slice(0, unitStart)).length;
-    return Object.freeze({
-      blockUid: block.uid,
-      startOffset,
-      endOffset: startOffset + Array.from(quote).length,
-      quote,
-    });
-  }
-  throw new Error(`missing benchmark quote: ${quote}`);
-}
-
-function extractionOutput(blocks) {
-  const linChe = evidence(blocks, '林澈抱着一只银色证物箱冲进站内');
-  const xiaXian = evidence(blocks, '她在停摆的钟下看见调查员夏弦');
-  const station = evidence(blocks, '旧车站突然断电');
-  const caseEvidence = evidence(blocks, '一只银色证物箱');
-  const partnership = evidence(blocks, '夏弦低声提醒：广播来自站内旧线路，操作者一定还在楼里');
-  const power = evidence(blocks, '林澈接通备用电源，所有站台灯同时亮起');
-  const target = evidence(blocks, '真正目标是箱内那块记录事故真相的存储芯片');
-  return Object.freeze({
-    schemaVersion: 'novel-extraction.v1',
-    characters: [
-      { factId: 'character-lin-che', name: '林澈', description: '修复师，携带证物箱进入旧车站。', evidence: [linChe] },
-      { factId: 'character-xia-xian', name: '夏弦', description: '调查员，在车站内协助林澈。', evidence: [xiaXian] },
-    ],
-    scenes: [{
-      factId: 'scene-old-station', location: '海城旧车站', time: '暴雨夜',
-      description: '旧车站断电，应急灯亮起。', evidence: [station],
-    }],
-    props: [{
-      factId: 'prop-evidence-case', name: '银色证物箱',
-      description: '林澈带入车站的证物箱。', evidence: [caseEvidence],
-    }],
-    relationships: [{
-      factId: 'relationship-investigation-partners',
-      fromCharacterFactId: 'character-lin-che',
-      toCharacterFactId: 'character-xia-xian',
-      relationship: '两人在车站内协同行动并调查广播来源。',
-      evidence: [partnership],
-    }],
-    events: [{
-      factId: 'event-restore-power', summary: '林澈恢复备用电源并照亮站台。',
-      characterFactIds: ['character-lin-che'], sceneFactId: 'scene-old-station',
-      propFactIds: [], evidence: [power],
-    }],
-    dialogue: [{
-      factId: 'dialogue-real-target', speakerCharacterFactId: null,
-      content: '真正目标是记录事故真相的存储芯片。', evidence: [target],
-    }],
-  });
-}
-
-function setup(t) {
-  const pack = validateMvpBenchmarkSourcePack(PACK_ROOT);
-  const database = createMigratedV2Database(t);
-  const dramaUid = uid(180000);
-  insertDrama(database, dramaUid, '雨停之前事实追溯');
-  const dramaId = database.prepare('SELECT id FROM dramas WHERE uid=?').get(dramaUid).id;
-  const repositories = createV2Repositories(database);
-  const sourceService = createSourceDocumentService({
-    repositories,
-    createUid: uidFactory(180010),
-  });
-  const imported = sourceService.importDocument({
-    dramaId,
-    fileName: pack.manifest.sourceFile,
-    bytes: pack.sourceBytes,
-    encoding: pack.manifest.encoding,
-  });
-  const selection = sourceService.createSelection({
-    documentUid: imported.document.uid,
-    ...selectionCoordinates(imported.blocks, pack.manifest.selection),
-  });
-  return Object.freeze({
-    pack, database, dramaId, dramaUid, repositories, sourceService, imported, selection,
-  });
-}
+const {
+  createRainExtractionOutput,
+  setupRainBeforeClearSource,
+  sha256,
+  uidFactory,
+} = require('./fixtures/narrative/rainBeforeClearSource');
 
 test('source document reads fail closed when the full-text digest drifts', (t) => {
-  const current = setup(t);
+  const current = setupRainBeforeClearSource(t);
   current.database.exec('DROP TRIGGER v2_source_documents_immutable_evidence');
   current.database.prepare('UPDATE source_documents SET content_sha256=? WHERE uid=?')
     .run('f'.repeat(64), current.imported.document.uid);
@@ -152,8 +39,8 @@ test('source document reads fail closed when the full-text digest drifts', (t) =
 });
 
 test('the same benchmark extraction reopens one exact fact-to-source trace', async (t) => {
-  const current = setup(t);
-  const rawResponse = JSON.stringify(extractionOutput(current.imported.blocks));
+  const current = setupRainBeforeClearSource(t);
+  const rawResponse = JSON.stringify(createRainExtractionOutput(current.imported.blocks));
   const execution = createNarrativeExecutionService({
     repositories: current.repositories,
     provider: Object.freeze({

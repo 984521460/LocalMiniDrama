@@ -184,6 +184,7 @@ function createEpisodeAdaptationTask() {
 module.exports = {
   SCHEMA_VERSION,
   TASK_TYPE,
+  assertAdaptationSemantics,
   createEpisodeAdaptationInputHash,
   createEpisodeAdaptationTask,
   normalizeAdaptationDomain,

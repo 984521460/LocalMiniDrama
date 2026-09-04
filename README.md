@@ -331,6 +331,8 @@ npm run benchmark:source:check
 
 叙事审核页中的事实提取结果支持按事实显式“定位原文”；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/evidence/:factId` 会重新校验结果、原文全文摘要、选区、原文块哈希、Unicode 码点偏移与引文，再返回不含凭据的高亮上下文。
 
+改编结果支持显式打开“原著事实与改编决策”对照；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/adaptation-comparison` 会重新校验已批准事实来源、当前原文证据、改编输入与五段节拍，把原著事实、基于事实的推断和带理由的改编决策分栏展示，且原著事实可继续定位到原文。
+
 ## 📄 License
 
 [MIT](LICENSE)

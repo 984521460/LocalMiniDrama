@@ -62,6 +62,17 @@ function narrativeReviewRoutes(database, log, options = {}) {
     }
   });
 
+  router.get('/narrative-results/:resultUid/adaptation-comparison', (req, res) => {
+    try {
+      return response.success(
+        res,
+        service.getAdaptationComparison(req.params.resultUid),
+      );
+    } catch (error) {
+      return handleError(res, error, 'narrative-review-adaptation-comparison');
+    }
+  });
+
   router.post('/narrative-results/:resultUid/reviews', (req, res) => {
     try {
       const body = req.body || {};

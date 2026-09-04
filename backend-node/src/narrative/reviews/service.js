@@ -14,6 +14,10 @@ const {
   NarrativeFactEvidenceTraceError,
   createNarrativeFactEvidenceTrace,
 } = require('./evidenceTrace');
+const {
+  NarrativeAdaptationComparisonError,
+  createNarrativeAdaptationComparison,
+} = require('./adaptationComparison');
 const { narrativeReviewError } = require('./errors');
 
 const CANONICAL_UID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -340,6 +344,37 @@ function createNarrativeReviewService({ repositories, createUid = randomUUID } =
         if (error instanceof NarrativeFactEvidenceTraceError
           || error instanceof V2RepositoryNotFoundError
           || error instanceof V2RepositoryDataError) {
+          throw narrativeReviewError('NARRATIVE_REVIEW_DATA_INVALID');
+        }
+        throw error;
+      }
+    },
+
+    getAdaptationComparison(uid) {
+      assertUid(uid);
+      const record = getRecord(uid);
+      if (record.resultType !== 'adaptation' || !record.upstreamResultUid) {
+        throw narrativeReviewError('NARRATIVE_REVIEW_NOT_FOUND');
+      }
+      try {
+        const upstream = approvedChain(record.upstreamResultUid, 'extraction');
+        assertStoredAuditBinding(record, upstream);
+        const selection = sources.getSelection(record.sourceSelectionUid);
+        const document = sources.getDocument(selection.documentUid);
+        const blocks = sources.listBlocks(document.uid);
+        return createNarrativeAdaptationComparison({
+          adaptationRecord: record,
+          extractionRecord: upstream.record,
+          extractionApproval: upstream.approval,
+          document,
+          selection,
+          blocks,
+        });
+      } catch (error) {
+        if (error instanceof NarrativeAdaptationComparisonError
+          || error instanceof V2RepositoryNotFoundError
+          || error instanceof V2RepositoryDataError
+          || error?.code === 'NARRATIVE_REVIEW_NOT_APPROVED') {
           throw narrativeReviewError('NARRATIVE_REVIEW_DATA_INVALID');
         }
         throw error;
