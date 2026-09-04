@@ -306,6 +306,42 @@ function setupRainBeforeClearSource(t, start = 180000) {
   });
 }
 
+function insertRainMainCharacters(current, start = 180100) {
+  if (!current?.database || !Number.isSafeInteger(current.dramaId)) {
+    throw new TypeError('rain character fixture is invalid');
+  }
+  const characters = Object.freeze([
+    Object.freeze({
+      uid: uid(start),
+      name: '林澈',
+      description: '旧设备修复师，携带证物箱进入海城旧车站。',
+      personality: '冷静、果断，对事故真相执着。',
+      appearance: '二十多岁，黑色短发，深灰工作夹克，随身携带银色证物箱。',
+      factId: 'character-lin-che',
+    }),
+    Object.freeze({
+      uid: uid(start + 1),
+      name: '夏弦',
+      description: '调查员，在车站内协助林澈追查广播来源。',
+      personality: '敏锐、克制，擅长现场判断。',
+      appearance: '二十多岁，深棕长发束起，藏蓝调查员外套，佩戴便携照明灯。',
+      factId: 'character-xia-xian',
+    }),
+  ]);
+  const insert = current.database.prepare(`
+    INSERT INTO characters
+      (drama_id,name,description,personality,appearance,created_at,updated_at,uid)
+    VALUES (@dramaId,@name,@description,@personality,@appearance,
+      '2026-09-04T00:00:00.000Z','2026-09-04T00:00:00.000Z',@uid)
+  `);
+  current.database.transaction(() => {
+    for (let index = 0; index < characters.length; index += 1) {
+      insert.run({ dramaId: current.dramaId, ...characters[index] });
+    }
+  })();
+  return characters;
+}
+
 module.exports = Object.freeze({
   DURATION_BUDGET,
   STYLE,
@@ -313,6 +349,7 @@ module.exports = Object.freeze({
   createRainExtractionOutput,
   createRainScriptOutput,
   createRainShotOutput,
+  insertRainMainCharacters,
   setupRainBeforeClearSource,
   sha256,
   uidFactory,

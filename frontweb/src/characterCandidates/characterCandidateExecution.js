@@ -191,13 +191,13 @@ function batchView(value, execution) {
   const request = exact(input.request, BATCH_REQUEST_KEYS)
   if (input.schemaVersion !== '5.0' || input.batchUid !== execution.operationUid
     || input.characterUid !== execution.request.characterUid
-    || input.requestSha256 !== execution.requestSha256
     || request.schemaVersion !== '5.0' || request.batchUid !== input.batchUid
     || request.characterUid !== input.characterUid
     || request.promptSemanticUid !== execution.request.extractionResultUid
     || request.profileUid !== PROFILE_UID || request.manifestUid !== MANIFEST_UID
     || request.width !== execution.request.width || request.height !== execution.request.height
     || request.seed !== execution.request.seed || request.candidateCount !== 4) invalid()
+  hash(input.requestSha256)
   uid(request.profileUid); uid(request.manifestUid)
   const values = dense(input.candidates, 4)
   if (values.length !== 4) invalid()

@@ -35,7 +35,10 @@
 
     <div v-if="candidates.length" class="candidate-grid">
       <figure v-for="item in candidates" :key="item.assetVersionUid">
-        <img :src="`/static/${item.relativePath}`" :alt="`候选 ${item.ordinal + 1}`" />
+        <img
+          :src="`/static/${item.relativePath}`"
+          :alt="`${selected.characterName}候选 ${item.ordinal + 1}`"
+        />
         <figcaption>候选 {{ item.ordinal + 1 }} · {{ item.provider }} / {{ item.model }}</figcaption>
       </figure>
     </div>
@@ -65,11 +68,12 @@ const props = defineProps({
   results: { type: Array, default: () => [] },
 })
 const execution = useCharacterCandidateExecution()
-const { busy, error, last } = execution
+const { busy, error } = execution
 const selectedIdentity = ref('')
 const width = ref(512)
 const height = ref(512)
 const seed = ref(42)
+const completedByIdentity = ref([])
 const options = computed(() => {
   try {
     return approvedCharacterCandidateOptions({
@@ -88,10 +92,35 @@ const selected = computed(() => {
   }
   return null
 })
-const candidates = computed(() => last.value?.execution?.items || [])
+const candidates = computed(() => {
+  const identity = selected.value?.identity
+  if (!identity) return []
+  const values = completedByIdentity.value
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index].identity === identity) return values[index].response.execution.items
+  }
+  return []
+})
+
+function remember(identity, response) {
+  const current = completedByIdentity.value
+  const next = []
+  let replaced = false
+  for (let index = 0; index < current.length; index += 1) {
+    if (current[index].identity === identity) {
+      next[next.length] = Object.freeze({ identity, response })
+      replaced = true
+    } else {
+      next[next.length] = current[index]
+    }
+  }
+  if (!replaced) next[next.length] = Object.freeze({ identity, response })
+  completedByIdentity.value = Object.freeze(next)
+}
 
 async function run() {
   if (!selected.value) return
+  const selection = selected.value
   if (width.value * height.value > 4_194_304) {
     ElMessage.error('候选图片总像素不能超过 4194304')
     return
@@ -108,14 +137,17 @@ async function run() {
   const response = await execution.execute({
     dramaId: props.dramaId,
     dramaUid: props.dramaUid,
-    characterUid: selected.value.characterUid,
-    extractionResultUid: selected.value.extractionResultUid,
-    characterFactId: selected.value.characterFactId,
+    characterUid: selection.characterUid,
+    extractionResultUid: selection.extractionResultUid,
+    characterFactId: selection.characterFactId,
     width: width.value,
     height: height.value,
     seed: seed.value,
   })
-  if (response) ElMessage.success('四张角色候选已生成并保存')
+  if (response) {
+    remember(selection.identity, response)
+    ElMessage.success(`${selection.characterName}的四张角色候选已生成并保存`)
+  }
 }
 
 watch(options, (items) => {
@@ -130,6 +162,7 @@ watch(options, (items) => {
 
 watch(() => props.dramaUid, () => {
   execution.invalidate()
+  completedByIdentity.value = Object.freeze([])
   selectedIdentity.value = options.value[0]?.identity || ''
 })
 </script>

@@ -109,7 +109,7 @@ function response(requestValue = request()) {
       schemaVersion: '5.0',
       batchUid: requestValue.operationUid,
       characterUid: requestValue.characterUid,
-      requestSha256: sha('d'),
+      requestSha256: sha('f'),
       request: {
         schemaVersion: '5.0',
         batchUid: requestValue.operationUid,
@@ -157,13 +157,14 @@ test('request and response views bind four exact candidate records', () => {
   const parsed = characterCandidateExecutionResponseView(response())
   assert.equal(parsed.execution.items.length, 4)
   assert.equal(parsed.batch.candidates.length, 4)
+  assert.notEqual(parsed.batch.requestSha256, parsed.execution.requestSha256)
   assert.equal(Object.isFrozen(parsed.execution.items), true)
 
   const drifted = structuredClone(response())
   drifted.execution.items[2].relativePath = 'characters/elsewhere.png'
   assert.throws(() => characterCandidateExecutionResponseView(drifted))
   const batchHashDrift = structuredClone(response())
-  batchHashDrift.batch.requestSha256 = sha('9')
+  batchHashDrift.batch.requestSha256 = '9'.repeat(63)
   assert.throws(() => characterCandidateExecutionResponseView(batchHashDrift))
   const profileDrift = structuredClone(response())
   profileDrift.batch.request.profileUid = uid(7)
@@ -187,6 +188,25 @@ test('approved option projection only exposes current matching extraction facts'
   assert.deepEqual(approvedCharacterCandidateOptions({
     dramaUid: uid(2), characters: [{ uid: uid(3), name: '其他' }], results: [approvedExtraction()],
   }), [])
+})
+
+test('two approved protagonist facts remain distinct candidate-generation choices', () => {
+  const extracted = structuredClone(approvedExtraction())
+  extracted.result.output.characters.push({ factId: 'character-xia-xian', name: '夏弦' })
+  const options = approvedCharacterCandidateOptions({
+    dramaUid: uid(2),
+    characters: [{ uid: uid(3), name: '阿澜' }, { uid: uid(9), name: '夏弦' }],
+    results: [extracted],
+  })
+  assert.deepEqual(options.map((item) => ({
+    characterUid: item.characterUid,
+    characterName: item.characterName,
+    characterFactId: item.characterFactId,
+  })), [
+    { characterUid: uid(3), characterName: '阿澜', characterFactId: 'character-alan' },
+    { characterUid: uid(9), characterName: '夏弦', characterFactId: 'character-xia-xian' },
+  ])
+  assert.equal(new Set(options.map((item) => item.identity)).size, 2)
 })
 
 test('composable ignores stale completion and constructs an exact request', async () => {
@@ -240,6 +260,9 @@ test('UI and API expose an explicit paid four-call confirmation through strict J
   )
   assert.match(component, /独立提交 4 次生成请求/u)
   assert.match(component, /ElMessageBox\.confirm/u)
+  assert.match(component, /completedByIdentity/u)
+  assert.match(component, /remember\(selection\.identity, response\)/u)
+  assert.match(component, /selected\.characterName/u)
   assert.match(api, /parseStrictJson/u)
   assert.match(api, /workflowJsonTextRequest/u)
   assert.match(workspace, /CharacterCandidateExecutionPanel/u)

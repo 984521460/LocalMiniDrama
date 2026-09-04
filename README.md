@@ -337,6 +337,8 @@ npm run benchmark:source:check
 
 已批准的一分钟改编可继续生成 `script-formatting.v1` 结构化剧本和 `shot-planning.v1` 结构化分镜。两级输出都先通过公开 Draft 2020-12 Schema，再重验场次/条目/节拍/事实引用、总时长、镜头顺序、资产引用和轴线连续性；任何结构或跨链语义不一致都不会写入结果表。
 
+已批准的角色事实可在“角色四候选”面板中逐个生成。每个角色会显式确认并独立提交 4 次 configured-image 请求，保存为 4 个内容摘要互异、归属该角色的 PNG AssetVersion；在同一界面会话中切换角色时，各角色候选独立显示，不会把上一角色的结果误标为当前角色。
+
 ## 📄 License
 
 [MIT](LICENSE)
