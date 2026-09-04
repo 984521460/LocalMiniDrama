@@ -186,6 +186,13 @@
               :error="mvpAccountingStatus.error.value || ''"
               @refresh="refreshMvpAccountingStatus"
             />
+            <MvpBenchmarkCloseoutStatusPanel
+              :batch="mvpPreflight.batch.value"
+              :status="mvpCloseoutStatus.status.value"
+              :busy="mvpCloseoutStatus.busy.value"
+              :error="mvpCloseoutStatus.error.value || ''"
+              @refresh="refreshMvpCloseoutStatus"
+            />
             <MvpBenchmarkReadinessPanel
               :readiness="mvpReadiness.readiness.value"
               :busy="mvpReadiness.busy.value"
@@ -234,6 +241,7 @@ import WorkflowToolbar from '@/components/workflow/WorkflowToolbar.vue'
 import MediaExportRunPanel from '@/components/media/MediaExportRunPanel.vue'
 import BgmLibraryPanel from '@/components/audio/BgmLibraryPanel.vue'
 import MvpBenchmarkAccountingStatusPanel from '@/components/benchmark/MvpBenchmarkAccountingStatusPanel.vue'
+import MvpBenchmarkCloseoutStatusPanel from '@/components/benchmark/MvpBenchmarkCloseoutStatusPanel.vue'
 import MvpBenchmarkReadinessPanel from '@/components/benchmark/MvpBenchmarkReadinessPanel.vue'
 import MvpBenchmarkAuthorizationPanel from '@/components/benchmark/MvpBenchmarkAuthorizationPanel.vue'
 import MvpBenchmarkExecutionPanel from '@/components/benchmark/MvpBenchmarkExecutionPanel.vue'
@@ -245,6 +253,7 @@ import MvpBenchmarkSessionPanel from '@/components/benchmark/MvpBenchmarkSession
 import { useMediaExports } from '@/composables/useMediaExports'
 import { useBgmLibrary } from '@/composables/useBgmLibrary'
 import { useMvpBenchmarkAccountingStatus } from '@/composables/useMvpBenchmarkAccountingStatus'
+import { useMvpBenchmarkCloseoutStatus } from '@/composables/useMvpBenchmarkCloseoutStatus'
 import { useMvpBenchmarkReadiness } from '@/composables/useMvpBenchmarkReadiness'
 import { useMvpBenchmarkAuthorization } from '@/composables/useMvpBenchmarkAuthorization'
 import { useMvpBenchmarkExecution } from '@/composables/useMvpBenchmarkExecution'
@@ -264,6 +273,7 @@ const canvas = useWorkflowCanvas({ dramaId })
 const mediaExports = useMediaExports({ dramaId })
 const bgmLibrary = useBgmLibrary()
 const mvpAccountingStatus = useMvpBenchmarkAccountingStatus()
+const mvpCloseoutStatus = useMvpBenchmarkCloseoutStatus()
 const mvpReadiness = useMvpBenchmarkReadiness()
 const mvpAuthorization = useMvpBenchmarkAuthorization()
 const mvpExecution = useMvpBenchmarkExecution()
@@ -449,6 +459,7 @@ async function resumeMvpState() {
   mvpFinalization.invalidate()
   mvpHumanAvReview.invalidate()
   mvpAccountingStatus.invalidate()
+  mvpCloseoutStatus.invalidate()
   mvpSession.session.value = snapshot.session
   mvpAuthorization.authorization.value = snapshot.authorization
   mvpPreflight.batch.value = snapshot.batch
@@ -473,6 +484,7 @@ async function prepareMvpSession() {
   mvpFinalization.invalidate()
   mvpHumanAvReview.invalidate()
   mvpAccountingStatus.invalidate()
+  mvpCloseoutStatus.invalidate()
   await mvpAuthorization.refreshConnections()
   ElMessage.success('本地基准会话已冻结；尚未创建外部授权')
 }
@@ -503,6 +515,7 @@ async function authorizeMvpSession(seed) {
     mvpHumanAvReview.invalidate()
     mvpPreflight.invalidate()
     mvpAccountingStatus.invalidate()
+    mvpCloseoutStatus.invalidate()
     ElMessage.success('本地授权记录已创建；尚未执行预检或任何外部动作')
   } else {
     ElMessage.error('本地授权创建失败')
@@ -529,6 +542,7 @@ async function preflightMvpSession() {
   mvpFinalization.invalidate()
   mvpHumanAvReview.invalidate()
   mvpAccountingStatus.invalidate()
+  mvpCloseoutStatus.invalidate()
   if (await mvpPreflight.preflight(session, authorization)) {
     mvpResume.invalidate()
     ElMessage.success('live preflight 已完成；尚未执行任何生成任务')
@@ -568,6 +582,7 @@ async function executeNextMvpItem() {
     return
   }
   mvpAccountingStatus.invalidate()
+  mvpCloseoutStatus.invalidate()
   mvpFinalization.invalidate()
   mvpHumanAvReview.invalidate()
   if (await mvpExecution.executeNext(session, authorization, batch)) {
@@ -593,6 +608,7 @@ async function refreshMvpExecution() {
   if (await mvpExecution.refresh(session, authorization, batch)) {
     mvpResume.invalidate()
     mvpAccountingStatus.invalidate()
+    mvpCloseoutStatus.invalidate()
     ElMessage.success('已从本地持久成功证据重建进度；未提交任务、结算费用或归还实例')
   } else {
     ElMessage.error('可信进度刷新失败；不会自动重试')
@@ -619,6 +635,7 @@ async function finalizeMvpProduction() {
     return
   }
   mvpHumanAvReview.invalidate()
+  mvpCloseoutStatus.invalidate()
   if (await mvpFinalization.finalize(session, authorization, batch, bgmTrackUid)) {
     await Promise.allSettled([
       mediaExports.load(),
@@ -665,6 +682,7 @@ async function reviewMvpProduction(seed) {
   } catch {
     return
   }
+  mvpCloseoutStatus.invalidate()
   if (await mvpHumanAvReview.submit(session, authorization, batch, exportRun, seed)) {
     ElMessage.success('人工音画验收已与当前成片不可变绑定')
   } else {
@@ -688,6 +706,26 @@ async function refreshMvpAccountingStatus() {
     )
   } else {
     ElMessage.error('结算与归还状态读取失败；不会采用部分结果')
+  }
+}
+
+async function refreshMvpCloseoutStatus() {
+  const session = mvpSession.session.value
+  const authorization = mvpAuthorization.authorization.value
+  const batch = mvpPreflight.batch.value
+  if (!session || !authorization || !batch) {
+    ElMessage.error('请先恢复或完成有效的会话、授权与 live preflight')
+    return
+  }
+  if (await mvpCloseoutStatus.load(session, authorization, batch)) {
+    const status = mvpCloseoutStatus.status.value
+    ElMessage.success(
+      status.benchmarkEvidenceComplete
+        ? '本次基准收尾证据已闭环；项目 MVP 仍未完成'
+        : `已读取本地收尾证据：${status.completedGateCount}/5 项完整；未执行任何外部动作`,
+    )
+  } else {
+    ElMessage.error('MVP 收尾证据读取失败；不会采用部分结果')
   }
 }
 
@@ -762,6 +800,7 @@ watch(
     mvpHumanAvReview.invalidate()
     mvpResume.invalidate()
     mvpAccountingStatus.invalidate()
+    mvpCloseoutStatus.invalidate()
   },
 )
 
@@ -788,6 +827,7 @@ onBeforeUnmount(() => {
   mvpHumanAvReview.invalidate()
   mvpResume.invalidate()
   mvpAccountingStatus.invalidate()
+  mvpCloseoutStatus.invalidate()
   mvpSession.invalidate()
   window.removeEventListener('beforeunload', warnBeforeUnload)
 })

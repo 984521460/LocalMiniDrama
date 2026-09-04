@@ -37,6 +37,10 @@ const {
 const {
   MvpBenchmarkAccountingStatusError,
 } = require('../../benchmark/mvpBenchmarkAccountingStatusService');
+const {
+  MvpBenchmarkCloseoutStatusError,
+  REQUEST_SCHEMA_VERSION: CLOSEOUT_REQUEST_SCHEMA_VERSION,
+} = require('../../benchmark/mvpBenchmarkCloseoutStatus');
 const { MvpBenchmarkResumeError } = require('../../benchmark/mvpBenchmarkResumeService');
 const response = require('../../response');
 
@@ -278,6 +282,22 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     }
   }
 
+  function closeoutStatusService() {
+    try {
+      if (!runtime || typeof runtime !== 'object' || isProxy(runtime)) return null;
+      const benchmarkRuntime = Object.getOwnPropertyDescriptor(runtime, 'mvpBenchmark')?.value;
+      if (!benchmarkRuntime || typeof benchmarkRuntime !== 'object'
+        || isProxy(benchmarkRuntime)) return null;
+      const service = Object.getOwnPropertyDescriptor(benchmarkRuntime, 'closeoutStatus')?.value;
+      if (!service || typeof service !== 'object' || isProxy(service)) return null;
+      const read = Object.getOwnPropertyDescriptor(service, 'read')?.value;
+      if (typeof read !== 'function' || isProxy(read)) return null;
+      return Object.freeze({ read, service });
+    } catch {
+      return null;
+    }
+  }
+
   function sessionError(res, error) {
     if (error instanceof V2RepositoryNotFoundError) {
       return response.error(res, 404, 'MVP_BENCHMARK_SESSION_NOT_FOUND', 'MVP benchmark session was not found');
@@ -477,6 +497,33 @@ function mvpBenchmarkRoutes(log, runtime, database) {
     );
   }
 
+  function closeoutStatusError(res, error) {
+    if (error instanceof MvpBenchmarkCloseoutStatusError) {
+      const status = error.code === 'MVP_BENCHMARK_CLOSEOUT_STATUS_INPUT_INVALID'
+        ? 400 : 409;
+      return response.error(res, status, error.code, error.message);
+    }
+    if (error instanceof V2RepositoryNotFoundError) {
+      return response.error(
+        res, 404, 'MVP_BENCHMARK_CLOSEOUT_STATUS_NOT_FOUND',
+        'MVP benchmark closeout status was not found',
+      );
+    }
+    if (error instanceof V2RepositoryConflictError || error instanceof V2RepositoryDataError) {
+      return response.error(
+        res, 409, 'MVP_BENCHMARK_CLOSEOUT_STATUS_UNAVAILABLE',
+        'MVP benchmark closeout status is unavailable',
+      );
+    }
+    log?.error?.('mvp-benchmark-closeout-status-unexpected', {
+      code: 'MVP_BENCHMARK_CLOSEOUT_STATUS_UNEXPECTED',
+    });
+    return response.error(
+      res, 500, 'MVP_BENCHMARK_CLOSEOUT_STATUS_UNEXPECTED',
+      'MVP benchmark closeout status operation failed',
+    );
+  }
+
   function pathAuthorization(parameters) {
     const dramaUid = parseMvpBenchmarkExternalAuthorizationUid(parameters.dramaUid);
     const sessionUid = parseMvpBenchmarkExternalAuthorizationUid(parameters.sessionUid);
@@ -555,6 +602,34 @@ function mvpBenchmarkRoutes(log, runtime, database) {
         ));
       } catch (error) {
         return accountingStatusError(res, error);
+      }
+    },
+  );
+
+  router.get(
+    '/dramas/:dramaUid/mvp-benchmark/sessions/:sessionUid/authorizations/:authorizationUid/batches/:batchSha256/closeout-status',
+    (req, res) => {
+      try {
+        const configured = closeoutStatusService();
+        if (!configured) {
+          return response.error(
+            res, 503, 'MVP_BENCHMARK_CLOSEOUT_STATUS_UNAVAILABLE',
+            'MVP benchmark closeout status is unavailable',
+          );
+        }
+        return response.success(res, REFLECT_APPLY(
+          configured.read,
+          configured.service,
+          [{
+            schemaVersion: CLOSEOUT_REQUEST_SCHEMA_VERSION,
+            dramaUid: req.params.dramaUid,
+            sessionUid: req.params.sessionUid,
+            authorizationUid: req.params.authorizationUid,
+            batchSha256: req.params.batchSha256,
+          }],
+        ));
+      } catch (error) {
+        return closeoutStatusError(res, error);
       }
     },
   );

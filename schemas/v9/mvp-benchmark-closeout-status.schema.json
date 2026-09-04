@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-closeout-status.schema.json",
+  "title": "MVP Benchmark Closeout Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "dramaUid", "sessionUid", "authorizationUid", "batchSha256",
+    "benchmarkEvidenceComplete", "mvpComplete", "completedGateCount", "totalGateCount",
+    "gates", "remainingMvpEvidenceIds"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-closeout-status.v1" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "sessionUid": { "$ref": "#/$defs/uuid" },
+    "authorizationUid": { "$ref": "#/$defs/uuid" },
+    "batchSha256": { "$ref": "#/$defs/sha256" },
+    "benchmarkEvidenceComplete": { "type": "boolean" },
+    "mvpComplete": { "const": false },
+    "completedGateCount": { "type": "integer", "minimum": 0, "maximum": 5 },
+    "totalGateCount": { "const": 5 },
+    "gates": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/gate" }, { "type": "object", "properties": { "id": { "const": "production-execution" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/gate" }, { "type": "object", "properties": { "id": { "const": "final-export" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/gate" }, { "type": "object", "properties": { "id": { "const": "human-av-review" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/gate" }, { "type": "object", "properties": { "id": { "const": "accounting-settlement" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/gate" }, { "type": "object", "properties": { "id": { "const": "resource-release" } } }] }
+      ],
+      "items": false
+    },
+    "remainingMvpEvidenceIds": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 9,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "production-execution", "final-export", "human-av-review",
+          "accounting-settlement", "resource-release", "windows-release-lifecycle",
+          "section-19-project-evidence", "licenses-and-sources", "accepted-residual-risks"
+        ]
+      }
+    }
+  },
+  "$comment": "Runtime fixes gate order, recomputes completedGateCount/benchmarkEvidenceComplete/remainingMvpEvidenceIds, binds all evidence to one frozen session/authorization/preflight batch, and always keeps project-wide mvpComplete false. Reading performs no settlement, release, Vault, SSH, Provider, GPU, media, or database write.",
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "evidenceSha256", "blockerCode"],
+      "properties": {
+        "id": {
+          "enum": [
+            "production-execution", "final-export", "human-av-review",
+            "accounting-settlement", "resource-release"
+          ]
+        },
+        "status": { "enum": ["complete", "pending", "failed"] },
+        "evidenceSha256": {
+          "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        },
+        "blockerCode": {
+          "oneOf": [
+            {
+              "enum": [
+                "MVP_BENCHMARK_PRODUCTION_EXECUTION_PENDING",
+                "MVP_BENCHMARK_PRODUCTION_EXECUTION_FAILED",
+                "MVP_BENCHMARK_FINAL_EXPORT_PENDING",
+                "MVP_BENCHMARK_FINAL_EXPORT_FAILED",
+                "MVP_BENCHMARK_HUMAN_AV_REVIEW_PENDING",
+                "MVP_BENCHMARK_ACCOUNTING_SETTLEMENT_PENDING",
+                "MVP_BENCHMARK_RESOURCE_RELEASE_PENDING"
+              ]
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

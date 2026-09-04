@@ -11,6 +11,9 @@ const {
   createMvpBenchmarkAccountingStatusService,
 } = require('./mvpBenchmarkAccountingStatusService');
 const {
+  createMvpBenchmarkCloseoutStatusService,
+} = require('./mvpBenchmarkCloseoutStatusService');
+const {
   createMvpBenchmarkExecutionPreflightService,
 } = require('./mvpBenchmarkExecutionPreflightService');
 const {
@@ -107,6 +110,12 @@ function createProductionMvpBenchmarkRuntime({
     ...(configured.nowEpochMs !== undefined ? { nowEpochMs: configured.nowEpochMs } : {}),
   });
   const accountingStatus = createMvpBenchmarkAccountingStatusService({ repositories });
+  const closeoutStatus = createMvpBenchmarkCloseoutStatusService({
+    repositories,
+    h3LocalExecution,
+    audioTtsExecution,
+    accountingStatus,
+  });
   const humanAvReview = createMvpBenchmarkHumanAvReviewService({
     repositories,
     createUid: configured.createUid ?? randomUUID,
@@ -129,7 +138,7 @@ function createProductionMvpBenchmarkRuntime({
     });
   }
   return Object.freeze({
-    accountingStatus, execution, finalization, humanAvReview, preflight, resume,
+    accountingStatus, closeoutStatus, execution, finalization, humanAvReview, preflight, resume,
   });
 }
 
