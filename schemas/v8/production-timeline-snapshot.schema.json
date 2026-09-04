@@ -102,13 +102,14 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ordinal", "shotId", "plannedOrdinal", "generationHistory", "startMs",
+        "ordinal", "shotId", "plannedOrdinal", "h3ExecutionResult", "generationHistory", "startMs",
         "endMs", "durationMs", "asset", "assetVersion"
       ],
       "properties": {
         "ordinal": { "type": "integer", "minimum": 0, "maximum": 999 },
         "shotId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
         "plannedOrdinal": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "h3ExecutionResult": { "$ref": "#/$defs/h3ExecutionResult" },
         "generationHistory": { "$ref": "#/$defs/generationHistoryEvidence" },
         "startMs": { "type": "integer", "minimum": 0, "maximum": 3600000 },
         "endMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
@@ -131,6 +132,27 @@
             }
           ]
         }
+      }
+    },
+    "h3ExecutionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "taskUid", "taskStateVersion", "workflowRunUid",
+        "generationRunUid", "historyUid", "assetUid", "assetVersionUid",
+        "nodeRunUid", "status"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "h3-local-execution-result.v2" },
+        "taskUid": { "$ref": "#/$defs/uid" },
+        "taskStateVersion": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "workflowRunUid": { "$ref": "#/$defs/uid" },
+        "generationRunUid": { "$ref": "#/$defs/uid" },
+        "historyUid": { "$ref": "#/$defs/uid" },
+        "assetUid": { "$ref": "#/$defs/uid" },
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "nodeRunUid": { "$ref": "#/$defs/uid" },
+        "status": { "const": "succeeded" }
       }
     },
     "generationHistoryEvidence": {
@@ -208,5 +230,5 @@
       ]
     }
   },
-  "$comment": "Runtime requires trusted AudioTimeline and AudioMixPlan instances, freezes exact portable AssetVersion evidence for every ordered video clip and unique audio source, binds each shot to a trusted succeeded GenerationHistory output, binds the subtitle and export-eligible BGM records, checks same-drama ownership, cumulative integer-millisecond continuity, uniqueness and full cross-plan identities, and grants execution trust only after replaying an external immutable envelope keyed by the expected snapshot UID plus authoritative GenerationHistory loaders. Reordering therefore creates a distinct snapshot instead of mutating prior evidence."
+  "$comment": "Runtime requires trusted AudioTimeline and AudioMixPlan instances, freezes exact portable AssetVersion evidence for every ordered video clip and unique audio source, binds each shot to a trusted succeeded H3 local execution result and its distinct GenerationHistory run, binds the subtitle and export-eligible BGM records, checks same-drama ownership, cumulative integer-millisecond continuity, uniqueness and full cross-plan identities, and grants execution trust only after replaying an external immutable envelope keyed by the expected snapshot UID plus authoritative H3 execution and GenerationHistory loaders. Reordering therefore creates a distinct snapshot instead of mutating prior evidence."
 }

@@ -6,7 +6,7 @@ const { sha256Canonical } = require('./contract');
 const { fail, isH3ContractError } = require('./errors');
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const SCHEMA_VERSION = 'h3-local-execution-result.v1';
+const SCHEMA_VERSION = 'h3-local-execution-result.v2';
 const CONFLICT_CODE = 'H3_HISTORY_CONFLICT';
 const INPUT_CODE = 'H3_GENERATION_INPUT_INVALID';
 const NATIVE_PROMISE = Promise;
@@ -22,8 +22,8 @@ Object.defineProperty(SAFE_SPECIES_HOLDER, Symbol.species, {
 });
 Object.freeze(SAFE_SPECIES_HOLDER);
 const RESULT_FIELDS = Object.freeze([
-  'schemaVersion', 'taskUid', 'taskStateVersion', 'generationRunUid', 'historyUid',
-  'assetUid', 'assetVersionUid', 'nodeRunUid', 'status',
+  'schemaVersion', 'taskUid', 'taskStateVersion', 'workflowRunUid',
+  'generationRunUid', 'historyUid', 'assetUid', 'assetVersionUid', 'nodeRunUid', 'status',
 ]);
 
 function recordSnapshot(value, code) {
@@ -78,6 +78,7 @@ function parseH3LocalExecutionResult(value) {
     schemaVersion: SCHEMA_VERSION,
     taskUid: uid(input.taskUid, CONFLICT_CODE),
     taskStateVersion: input.taskStateVersion,
+    workflowRunUid: uid(input.workflowRunUid, CONFLICT_CODE),
     generationRunUid: uid(input.generationRunUid, CONFLICT_CODE),
     historyUid: uid(input.historyUid, CONFLICT_CODE),
     assetUid: uid(input.assetUid, CONFLICT_CODE),
@@ -259,6 +260,7 @@ function currentPersistedResult(configured, intent) {
     schemaVersion: SCHEMA_VERSION,
     taskUid: task.uid,
     taskStateVersion: task.stateVersion,
+    workflowRunUid: task.workflowRunUid,
     generationRunUid: generationRun.uid,
     historyUid: history.uid,
     assetUid: history.assetUid,

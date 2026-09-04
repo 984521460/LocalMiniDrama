@@ -19,6 +19,7 @@ const {
   createAssetVersionEvidence,
 } = require('../assets/assetVersionEvidence');
 const { createGenerationHistoryRecord } = require('../assets/generationHistory');
+const { parseH3LocalExecutionResult } = require('../h3/localExecutionService');
 const {
   parseAudioTimelineRecord,
   requireTrustedAudioTimeline,
@@ -52,11 +53,11 @@ const RECORD_KEYS = Object.freeze([
   'audioMixPlan', 'bgmTrack', 'snapshotSha256', 'createdAtEpochMs',
 ]);
 const SHOT_INPUT_KEYS = Object.freeze([
-  'shotId', 'plannedOrdinal', 'generationHistory', 'asset', 'assetVersion',
+  'shotId', 'plannedOrdinal', 'h3ExecutionResult', 'generationHistory', 'asset', 'assetVersion',
 ]);
 const SHOT_RECORD_KEYS = Object.freeze([
-  'ordinal', 'shotId', 'plannedOrdinal', 'generationHistory', 'startMs',
-  'endMs', 'durationMs', 'asset', 'assetVersion',
+  'ordinal', 'shotId', 'plannedOrdinal', 'h3ExecutionResult', 'generationHistory',
+  'startMs', 'endMs', 'durationMs', 'asset', 'assetVersion',
 ]);
 const GENERATION_HISTORY_RECORD_KEYS = Object.freeze([
   'schemaVersion', 'uid', 'runUid', 'dramaUid', 'assetUid', 'promptSemanticUid',
@@ -191,8 +192,27 @@ function fullGenerationHistory(value, code) {
   return record;
 }
 
+function safeH3ExecutionResult(value, code) {
+  try {
+    return parseH3LocalExecutionResult(value);
+  } catch {
+    return fail(code);
+  }
+}
+
+function generationHistoryShotId(history, code) {
+  const generationSpec = history.input?.generationSpec;
+  const prompt = generationSpec?.prompt;
+  if (history.provider !== 'local-comfy' || history.model !== 'MiniMax-H3'
+    || !generationSpec || typeof generationSpec !== 'object'
+    || !Object.hasOwn(generationSpec, 'prompt')
+    || !prompt || typeof prompt !== 'object'
+    || !Object.hasOwn(prompt, 'shotId')) fail(code);
+  return sourceId(prompt.shotId, code);
+}
+
 function generationHistoryEvidence(
-  value, asset, version, dramaUid, workflowRunUid, createdAtEpochMs, code,
+  value, asset, version, dramaUid, generationRunUid, createdAtEpochMs, code,
 ) {
   const input = exactObject(value, GENERATION_HISTORY_EVIDENCE_KEYS, code);
   if (input.schemaVersion !== 'generation-history-output-evidence.v1') fail(code);
@@ -211,7 +231,7 @@ function generationHistoryEvidence(
   });
   if (output.status !== 'succeeded'
     || output.dramaUid !== dramaUid
-    || output.runUid !== workflowRunUid
+    || output.runUid !== generationRunUid
     || output.assetUid !== version.assetUid
     || output.outputVersionUid !== version.uid
     || !assetVersionEvidenceMatches(output.outputVersionEvidence, version)
@@ -223,7 +243,7 @@ function generationHistoryEvidence(
 }
 
 function generationHistoryEvidenceFromRecord(
-  value, asset, version, dramaUid, workflowRunUid, createdAtEpochMs, code,
+  value, asset, version, dramaUid, generationRunUid, createdAtEpochMs, code,
 ) {
   const record = fullGenerationHistory(value, code);
   return generationHistoryEvidence({
@@ -237,7 +257,7 @@ function generationHistoryEvidenceFromRecord(
     outputVersionEvidence: record.outputVersionEvidence,
     createdAtEpochMs: record.createdAtEpochMs,
     completedAtEpochMs: record.completedAtEpochMs,
-  }, asset, version, dramaUid, workflowRunUid, createdAtEpochMs, code);
+  }, asset, version, dramaUid, generationRunUid, createdAtEpochMs, code);
 }
 
 function shotInput(
@@ -245,22 +265,32 @@ function shotInput(
 ) {
   const input = exactObject(value, SHOT_INPUT_KEYS, code);
   const evidence = videoEvidence(input, dramaUid, code);
+  const h3ExecutionResult = safeH3ExecutionResult(input.h3ExecutionResult, code);
   const history = generationHistoryEvidenceFromRecord(
     input.generationHistory,
     evidence.asset,
     evidence.assetVersion,
     dramaUid,
-    workflowRunUid,
+    h3ExecutionResult.generationRunUid,
     createdAtEpochMs,
     code,
   );
   const durationMs = evidence.assetVersion.durationMs;
   const endMs = startMs + durationMs;
-  if (endMs > MAX_DURATION_MS) fail(code);
+  const shotId = sourceId(input.shotId, code);
+  if (endMs > MAX_DURATION_MS
+    || h3ExecutionResult.workflowRunUid !== workflowRunUid
+    || h3ExecutionResult.historyUid !== history.uid
+    || h3ExecutionResult.assetUid !== evidence.asset.uid
+    || h3ExecutionResult.assetVersionUid !== evidence.assetVersion.uid
+    || generationHistoryShotId(fullGenerationHistory(input.generationHistory, code), code) !== shotId) {
+    fail(code);
+  }
   return Object.freeze({
     ordinal,
-    shotId: sourceId(input.shotId, code),
+    shotId,
     plannedOrdinal: boundedInteger(input.plannedOrdinal, 1, MAX_ITEMS, code),
+    h3ExecutionResult,
     generationHistory: history,
     startMs,
     endMs,
@@ -277,21 +307,27 @@ function shotRecord(value, dramaUid, workflowRunUid, durationMs, createdAtEpochM
   const endMs = boundedInteger(input.endMs, 1, durationMs, code);
   const clipDurationMs = boundedInteger(input.durationMs, 1, MAX_DURATION_MS, code);
   const evidence = videoEvidence(input, dramaUid, code);
+  const h3ExecutionResult = safeH3ExecutionResult(input.h3ExecutionResult, code);
   const history = generationHistoryEvidence(
     input.generationHistory,
     evidence.asset,
     evidence.assetVersion,
     dramaUid,
-    workflowRunUid,
+    h3ExecutionResult.generationRunUid,
     createdAtEpochMs,
     code,
   );
   if (endMs <= startMs || endMs - startMs !== clipDurationMs
-    || evidence.assetVersion.durationMs !== clipDurationMs) fail(code);
+    || evidence.assetVersion.durationMs !== clipDurationMs
+    || h3ExecutionResult.workflowRunUid !== workflowRunUid
+    || h3ExecutionResult.historyUid !== history.uid
+    || h3ExecutionResult.assetUid !== evidence.asset.uid
+    || h3ExecutionResult.assetVersionUid !== evidence.assetVersion.uid) fail(code);
   return Object.freeze({
     ordinal,
     shotId: sourceId(input.shotId, code),
     plannedOrdinal: boundedInteger(input.plannedOrdinal, 1, MAX_ITEMS, code),
+    h3ExecutionResult,
     generationHistory: history,
     startMs,
     endMs,
@@ -306,6 +342,9 @@ function assertUniqueShots(shots, durationMs, code) {
     shotId: new Set(),
     plannedOrdinal: new Set(),
     generationHistoryUid: new Set(),
+    h3TaskUid: new Set(),
+    h3NodeRunUid: new Set(),
+    generationRunUid: new Set(),
     assetUid: new Set(),
     assetVersionUid: new Set(),
   };
@@ -316,11 +355,17 @@ function assertUniqueShots(shots, durationMs, code) {
       || identities.shotId.has(shot.shotId)
       || identities.plannedOrdinal.has(shot.plannedOrdinal)
       || identities.generationHistoryUid.has(shot.generationHistory.uid)
+      || identities.h3TaskUid.has(shot.h3ExecutionResult.taskUid)
+      || identities.h3NodeRunUid.has(shot.h3ExecutionResult.nodeRunUid)
+      || identities.generationRunUid.has(shot.h3ExecutionResult.generationRunUid)
       || identities.assetUid.has(shot.asset.uid)
       || identities.assetVersionUid.has(shot.assetVersion.uid)) fail(code);
     identities.shotId.add(shot.shotId);
     identities.plannedOrdinal.add(shot.plannedOrdinal);
     identities.generationHistoryUid.add(shot.generationHistory.uid);
+    identities.h3TaskUid.add(shot.h3ExecutionResult.taskUid);
+    identities.h3NodeRunUid.add(shot.h3ExecutionResult.nodeRunUid);
+    identities.generationRunUid.add(shot.h3ExecutionResult.generationRunUid);
     identities.assetUid.add(shot.asset.uid);
     identities.assetVersionUid.add(shot.assetVersion.uid);
     cursor = shot.endMs;
@@ -479,6 +524,7 @@ function subtitleRecord(value, timeline, code) {
       durationMs: timeline.durationMs,
       maximumDurationMs: MAX_DURATION_MS,
       segments: timeline.segments,
+      timingAlgorithmVersion: timeline.timingAlgorithmVersion,
     }, code);
   } catch {
     return fail(code);
@@ -604,14 +650,17 @@ function parseProductionTimelineSnapshotRecord(value) {
 
 function createProductionTimelineSnapshotVerifier(value) {
   const dependencies = exactObject(
-    value, ['loadTrustedEnvelope', 'loadGenerationHistory'], INPUT_CODE,
+    value, ['loadTrustedEnvelope', 'loadGenerationHistory', 'loadH3ExecutionResult'], INPUT_CODE,
   );
   if (typeof dependencies.loadTrustedEnvelope !== 'function'
     || isProxy(dependencies.loadTrustedEnvelope)
     || typeof dependencies.loadGenerationHistory !== 'function'
-    || isProxy(dependencies.loadGenerationHistory)) fail(INPUT_CODE);
+    || isProxy(dependencies.loadGenerationHistory)
+    || typeof dependencies.loadH3ExecutionResult !== 'function'
+    || isProxy(dependencies.loadH3ExecutionResult)) fail(INPUT_CODE);
   const loadTrustedEnvelope = dependencies.loadTrustedEnvelope;
   const loadGenerationHistory = dependencies.loadGenerationHistory;
+  const loadH3ExecutionResult = dependencies.loadH3ExecutionResult;
   return Object.freeze({
     verify(snapshotValue, expectedSnapshotUid) {
       try {
@@ -621,12 +670,18 @@ function createProductionTimelineSnapshotVerifier(value) {
         if (envelope.uid !== uid) fail(DATA_CODE);
         const expected = createProductionTimelineSnapshot(envelope);
         for (const shot of expected.shots) {
+          const trustedH3Result = safeH3ExecutionResult(
+            loadH3ExecutionResult(shot.h3ExecutionResult.taskUid), DATA_CODE,
+          );
+          if (JSON.stringify(trustedH3Result) !== JSON.stringify(shot.h3ExecutionResult)) {
+            fail(DATA_CODE);
+          }
           const trustedHistory = generationHistoryEvidenceFromRecord(
             loadGenerationHistory(shot.generationHistory.uid),
             shot.asset,
             shot.assetVersion,
             expected.dramaUid,
-            expected.workflowRunUid,
+            shot.h3ExecutionResult.generationRunUid,
             expected.createdAtEpochMs,
             DATA_CODE,
           );

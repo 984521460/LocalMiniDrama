@@ -8,6 +8,7 @@
     "schemaVersion",
     "taskUid",
     "taskStateVersion",
+    "workflowRunUid",
     "generationRunUid",
     "historyUid",
     "assetUid",
@@ -16,13 +17,14 @@
     "status"
   ],
   "properties": {
-    "schemaVersion": { "const": "h3-local-execution-result.v1" },
+    "schemaVersion": { "const": "h3-local-execution-result.v2" },
     "taskUid": { "$ref": "#/$defs/uuidV4" },
     "taskStateVersion": {
       "type": "integer",
       "minimum": 0,
       "maximum": 2147483647
     },
+    "workflowRunUid": { "$ref": "#/$defs/uuidV4" },
     "generationRunUid": { "$ref": "#/$defs/uuidV4" },
     "historyUid": { "$ref": "#/$defs/uuidV4" },
     "assetUid": { "$ref": "#/$defs/uuidV4" },

@@ -456,19 +456,25 @@ function timelineShots(durationMs, dramaUid, workflowRunUid) {
     });
     const promptSemanticUid = uid(1240 + index);
     const manifestUid = uid(1250 + index);
+    const generationRunUid = uid(1260 + index);
+    const historyUid = uid(1220 + index);
     const generationHistory = createGenerationHistoryRecord({
-      uid: uid(1220 + index),
-      runUid: workflowRunUid,
+      uid: historyUid,
+      runUid: generationRunUid,
       dramaUid,
       assetUid: asset.uid,
       promptSemanticUid,
       manifestUid,
       manifestSha256: String(index + 6).repeat(64),
-      provider: 'local',
-      model: 'synthetic-video-v1',
+      provider: 'local-comfy',
+      model: 'MiniMax-H3',
       seed: index + 1,
       parameters: { width: 608, height: 352 },
-      input: { promptSemanticUid, manifestUid },
+      input: {
+        promptSemanticUid,
+        manifestUid,
+        generationSpec: { prompt: { shotId: `shot-${index + 1}` } },
+      },
       status: 'succeeded',
       outputVersionUid: assetVersion.uid,
       outputVersionEvidence: assetVersion,
@@ -482,6 +488,18 @@ function timelineShots(durationMs, dramaUid, workflowRunUid) {
     return {
       shotId: `shot-${index + 1}`,
       plannedOrdinal: index + 1,
+      h3ExecutionResult: {
+        schemaVersion: 'h3-local-execution-result.v2',
+        taskUid: uid(1270 + index),
+        taskStateVersion: 9,
+        workflowRunUid,
+        generationRunUid,
+        historyUid,
+        assetUid: asset.uid,
+        assetVersionUid: assetVersion.uid,
+        nodeRunUid: uid(1280 + index),
+        status: 'succeeded',
+      },
       generationHistory,
       asset,
       assetVersion,
@@ -515,6 +533,11 @@ function createProductionTimelineFixture(mode = 'independent_tts') {
       const shot = input.shots.find((entry) => entry.generationHistory.uid === expectedUid);
       if (!shot) throw new Error('synthetic-history-anchor-mismatch');
       return shot.generationHistory;
+    },
+    loadH3ExecutionResult(expectedUid) {
+      const shot = input.shots.find((entry) => entry.h3ExecutionResult.taskUid === expectedUid);
+      if (!shot) throw new Error('synthetic-h3-execution-anchor-mismatch');
+      return shot.h3ExecutionResult;
     },
   });
   return Object.freeze({

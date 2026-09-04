@@ -100,9 +100,9 @@ test('ASS quantization rejects cues that cannot occupy one centisecond', () => {
 
 test('builds deterministic bounded FFmpeg composition graphs for every audio mode', () => {
   const expectedForeground = {
-    independent_tts: ['dialogue', 'bgm'],
+    independent_tts: ['dialogue', 'dialogue', 'bgm'],
     h3_native: ['native', 'bgm'],
-    hybrid: ['dialogue', 'native', 'bgm'],
+    hybrid: ['dialogue', 'dialogue', 'native', 'bgm'],
   };
   for (const mode of Object.keys(expectedForeground)) {
     const { input } = executionInput(mode);
@@ -114,6 +114,10 @@ test('builds deterministic bounded FFmpeg composition graphs for every audio mod
     assert.deepEqual(composition.audioInputs.map((entry) => entry.kind), expectedForeground[mode]);
     assert.match(composition.audioFilterScript, /amix=inputs=/u);
     assert.match(composition.audioFilterScript, /volume=/u);
+    if (mode !== 'h3_native') {
+      assert.match(composition.audioFilterScript, /adelay=[0-9]+\|[0-9]+/u);
+      assert.equal(composition.dialogueConcatDocument, null);
+    }
     assert.match(composition.videoFilterScript, /ass=filename=subtitles\.ass/u);
     assert.doesNotMatch(composition.audioFilterScript, /projects\//u);
     assert.match(composition.compositionSha256, /^[0-9a-f]{64}$/u);

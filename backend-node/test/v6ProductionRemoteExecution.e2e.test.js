@@ -620,9 +620,10 @@ test('the actual application production runtime executes and phase-fails Mock Co
       ).get(h3Intent.generationRunUid).count,
     }));
     assert.deepEqual(h3Executed.body.data, {
-      schemaVersion: 'h3-local-execution-result.v1',
+      schemaVersion: 'h3-local-execution-result.v2',
       taskUid: h3Intent.taskUid,
       taskStateVersion: repositories.remote.getFormalTask(h3Intent.taskUid).stateVersion,
+      workflowRunUid: h3Execution.run.run.uid,
       generationRunUid: h3Intent.generationRunUid,
       historyUid: h3Intent.historyUid,
       assetUid: h3Intent.assetUid,

@@ -12,7 +12,9 @@ const {
   textHash,
 } = require('./audioContract');
 
-const ALGORITHM_VERSION = 'audio-timeline-ms.v1';
+const ALGORITHM_VERSIONS = Object.freeze(new Set([
+  'audio-timeline-ms.v1', 'audio-timeline-ms.v2',
+]));
 const MAX_SEGMENTS = 1000;
 const TRACK_KEYS = Object.freeze([
   'schemaVersion', 'timingAlgorithmVersion', 'timelineUid', 'planUid',
@@ -29,7 +31,7 @@ const FORBIDDEN_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f\u061c\u200e\u200f\u202
 function trackRecord(input) {
   const base = Object.freeze({
     schemaVersion: '8.0',
-    timingAlgorithmVersion: ALGORITHM_VERSION,
+    timingAlgorithmVersion: input.timingAlgorithmVersion,
     timelineUid: input.timelineUid,
     planUid: input.planUid,
     executionUid: input.executionUid,
@@ -62,6 +64,7 @@ function buildSubtitleTrack(input) {
   )));
   return trackRecord({
     timelineUid: input.timelineUid,
+    timingAlgorithmVersion: input.timingAlgorithmVersion,
     planUid: input.planUid,
     executionUid: input.executionUid,
     durationMs: input.durationMs,
@@ -106,7 +109,9 @@ function parseCue(value, durationMs, code) {
 
 function parseSubtitleTrack(value, expected, code) {
   const input = exactObject(value, TRACK_KEYS, code);
-  if (input.schemaVersion !== '8.0' || input.timingAlgorithmVersion !== ALGORITHM_VERSION) fail(code);
+  if (input.schemaVersion !== '8.0'
+    || !ALGORITHM_VERSIONS.has(input.timingAlgorithmVersion)
+    || input.timingAlgorithmVersion !== expected.timingAlgorithmVersion) fail(code);
   const durationMs = boundedInteger(input.durationMs, 1, expected.maximumDurationMs, code);
   const cues = denseArray(input.cues, MAX_SEGMENTS, code)
     .map((cue) => parseCue(cue, durationMs, code));
@@ -125,6 +130,7 @@ function parseSubtitleTrack(value, expected, code) {
   }
   const canonical = trackRecord({
     timelineUid: canonicalUid(input.timelineUid, code),
+    timingAlgorithmVersion: input.timingAlgorithmVersion,
     planUid: canonicalUid(input.planUid, code),
     executionUid: canonicalUid(input.executionUid, code),
     durationMs,

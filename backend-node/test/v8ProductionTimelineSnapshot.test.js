@@ -55,6 +55,11 @@ function verifierFor(input) {
       if (!shot) throw new Error('synthetic-history-anchor-mismatch');
       return shot.generationHistory;
     },
+    loadH3ExecutionResult(expectedUid) {
+      const shot = input.shots.find((entry) => entry.h3ExecutionResult.taskUid === expectedUid);
+      if (!shot) throw new Error('synthetic-h3-execution-anchor-mismatch');
+      return shot.h3ExecutionResult;
+    },
   });
 }
 
@@ -220,6 +225,12 @@ test('media identities stay globally consistent across video, audio and BGM trac
     shots: [{
       shotId: 'shot-1',
       plannedOrdinal: 1,
+      h3ExecutionResult: {
+        ...native.input.shots[0].h3ExecutionResult,
+        historyUid: generationHistory.uid,
+        assetUid: nativeSource.asset.uid,
+        assetVersionUid: nativeSource.assetVersion.uid,
+      },
       generationHistory,
       asset: nativeSource.asset,
       assetVersion: nativeSource.assetVersion,
@@ -292,6 +303,19 @@ test('every shot is bound to trusted succeeded generation history output evidenc
     }), expectCode('PRODUCTION_TIMELINE_INPUT_INVALID'));
   }
 
+  const invalidH3Results = [
+    { ...shot.h3ExecutionResult, workflowRunUid: uid(1415) },
+    { ...shot.h3ExecutionResult, generationRunUid: uid(1416) },
+    { ...shot.h3ExecutionResult, historyUid: uid(1417) },
+    { ...shot.h3ExecutionResult, assetVersionUid: uid(1418) },
+  ];
+  for (const h3ExecutionResult of invalidH3Results) {
+    assert.throws(() => createProductionTimelineSnapshot({
+      ...fixture.input,
+      shots: [{ ...shot, h3ExecutionResult }, ...remainingShots],
+    }), expectCode('PRODUCTION_TIMELINE_INPUT_INVALID'));
+  }
+
   const createdAfterCompletion = new Date(history.completedAtEpochMs + 1000).toISOString();
   assert.ok(Date.parse(createdAfterCompletion) < fixture.input.createdAtEpochMs);
   assert.throws(() => createProductionTimelineSnapshot({
@@ -315,18 +339,41 @@ test('every shot is bound to trusted succeeded generation history output evidenc
   }), expectCode('PRODUCTION_TIMELINE_INPUT_INVALID'));
 
   const reboundHistory = { ...history, uid: uid(1413) };
+  const reboundH3Result = { ...shot.h3ExecutionResult, historyUid: reboundHistory.uid };
   const reboundInput = {
     ...fixture.input,
     uid: uid(1414),
-    shots: [{ ...shot, generationHistory: reboundHistory }, ...remainingShots],
+    shots: [{
+      ...shot,
+      h3ExecutionResult: reboundH3Result,
+      generationHistory: reboundHistory,
+    }, ...remainingShots],
     createdAtEpochMs: fixture.input.createdAtEpochMs + 1,
   };
   const candidate = createProductionTimelineSnapshot(reboundInput);
   const verifier = createProductionTimelineSnapshotVerifier({
     loadTrustedEnvelope() { return reboundInput; },
     loadGenerationHistory() { return history; },
+    loadH3ExecutionResult() { return reboundInput.shots[0].h3ExecutionResult; },
   });
   assert.throws(() => verifier.verify(candidate, reboundInput.uid),
+    expectCode('PRODUCTION_TIMELINE_DATA_INVALID'));
+
+  const authoritativeResultDrift = createProductionTimelineSnapshotVerifier({
+    loadTrustedEnvelope() { return fixture.input; },
+    loadGenerationHistory(expectedUid) {
+      return fixture.input.shots.find((entry) => (
+        entry.generationHistory.uid === expectedUid
+      )).generationHistory;
+    },
+    loadH3ExecutionResult(expectedUid) {
+      const result = fixture.input.shots.find((entry) => (
+        entry.h3ExecutionResult.taskUid === expectedUid
+      )).h3ExecutionResult;
+      return { ...result, taskStateVersion: result.taskStateVersion + 1 };
+    },
+  });
+  assert.throws(() => authoritativeResultDrift.verify(fixture.candidate, fixture.input.uid),
     expectCode('PRODUCTION_TIMELINE_DATA_INVALID'));
 });
 
@@ -382,6 +429,7 @@ test('hostile records and loader proxies are rejected without executing traps or
   assert.throws(() => createProductionTimelineSnapshotVerifier({
     loadTrustedEnvelope() { return fixture.input; },
     loadGenerationHistory: loaderProxy,
+    loadH3ExecutionResult() { return fixture.input.shots[0].h3ExecutionResult; },
   }),
     expectCode('PRODUCTION_TIMELINE_INPUT_INVALID'));
   assert.equal(applyReads, 0);

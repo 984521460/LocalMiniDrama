@@ -145,9 +145,10 @@ test('local H3 execution returns a minimal receipt only after durable evidence m
   const result = await service.execute(current.ids.task, Object.freeze({ request: 'opaque' }));
 
   assert.deepEqual({ ...result }, {
-    schemaVersion: 'h3-local-execution-result.v1',
+    schemaVersion: 'h3-local-execution-result.v2',
     taskUid: current.ids.task,
     taskStateVersion: 9,
+    workflowRunUid: uid(10),
     generationRunUid: current.ids.run,
     historyUid: current.ids.history,
     assetUid: current.ids.asset,
@@ -320,9 +321,10 @@ test('local H3 execution rejects post-execution durable history drift', async ()
 test('local H3 execution result parser is exact and accessor safe', () => {
   const current = fixture();
   const valid = {
-    schemaVersion: 'h3-local-execution-result.v1',
+    schemaVersion: 'h3-local-execution-result.v2',
     taskUid: current.ids.task,
     taskStateVersion: 1,
+    workflowRunUid: uid(10),
     generationRunUid: current.ids.run,
     historyUid: current.ids.history,
     assetUid: current.ids.asset,

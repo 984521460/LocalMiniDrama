@@ -197,13 +197,6 @@ async function normalizeDialogue(config, workspace, composition, records, plan) 
       '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', job.outputFile,
     ]);
   }
-  if (composition.dialogueJobs.length > 0) {
-    await execute(config, workspace.workspacePath, [
-      '-v', 'error', '-xerror', '-nostdin', '-y', '-f', 'concat', '-safe', '1',
-      '-i', 'dialogue-concat.txt', '-map', '0:a:0', '-c:a', 'pcm_s16le',
-      '-ar', '48000', '-ac', '2', 'dialogue-track.wav',
-    ]);
-  }
 }
 
 async function normalizeNative(config, workspace, composition, records, plan) {
@@ -270,11 +263,6 @@ function createLocalMediaExporter(value) {
         const records = await resolveSources(config, plan);
         await writeArtifact(workspace.workspacePath, 'subtitles.ass', plan.subtitleDocument.content);
         await writeArtifact(workspace.workspacePath, 'video-concat.txt', composition.videoConcatDocument);
-        if (composition.dialogueConcatDocument !== null) {
-          await writeArtifact(
-            workspace.workspacePath, 'dialogue-concat.txt', composition.dialogueConcatDocument,
-          );
-        }
         await writeArtifact(workspace.workspacePath, 'audio-filter.txt', composition.audioFilterScript);
         await writeArtifact(workspace.workspacePath, 'video-filter.txt', composition.videoFilterScript);
         await normalizeVideos(config, workspace, composition, records, plan);

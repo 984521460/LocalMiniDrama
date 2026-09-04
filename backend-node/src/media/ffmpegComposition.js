@@ -11,7 +11,7 @@ const {
 
 const INPUT_CODE = 'MEDIA_EXPORT_INPUT_INVALID';
 const COMPOSITION_SCHEMA_VERSION = 'ffmpeg-composition.v1';
-const COMPOSITION_ALGORITHM_VERSION = 'ffmpeg-filter-graph.v1';
+const COMPOSITION_ALGORITHM_VERSION = 'ffmpeg-filter-graph.v2';
 
 function invalid() {
   fail(INPUT_CODE);
@@ -51,18 +51,22 @@ function videoJobs(plan) {
 
 function dialogueJobs(plan) {
   const sources = plan.audioSources.filter((source) => source.role === 'dialogue');
-  return frozenArray(sources.map((source, ordinal) => {
-    if (source.placements.length !== 1
-      || source.placements[0].endMs - source.placements[0].startMs !== source.durationMs) {
-      invalid();
+  const jobs = [];
+  for (const source of sources) {
+    for (const placement of source.placements) {
+      if (placement.endMs - placement.startMs !== source.durationMs) invalid();
+      const ordinal = jobs.length;
+      jobs.push(Object.freeze({
+        ordinal,
+        sourceOrdinal: source.ordinal,
+        outputFile: fileName('dialogue', ordinal, 'wav'),
+        durationSeconds: seconds(source.durationMs),
+        startMs: placement.startMs,
+        endMs: placement.endMs,
+      }));
     }
-    return Object.freeze({
-      ordinal,
-      sourceOrdinal: source.ordinal,
-      outputFile: fileName('dialogue', ordinal, 'wav'),
-      durationSeconds: seconds(source.durationMs),
-    });
-  }));
+  }
+  return frozenArray(jobs);
 }
 
 function bgmVolumeFilter(mix) {
@@ -92,11 +96,12 @@ function audioMix(plan, dialogue, nativeSource, bgmSource) {
   const inputs = [];
   const filters = [];
   const foregroundLabels = [];
-  if (dialogue.length > 0) {
+  for (const job of dialogue) {
     const inputIndex = inputs.length;
-    inputs.push(Object.freeze({ kind: 'dialogue', file: 'dialogue-track.wav' }));
-    filters.push(`[${inputIndex}:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=${gainScalar(plan.audioMixPlan.dialogueGainMilliDb)},apad=whole_dur=${seconds(plan.durationMs)},atrim=duration=${seconds(plan.durationMs)}[dialogue]`);
-    foregroundLabels.push('[dialogue]');
+    const label = `dialogue${job.ordinal}`;
+    inputs.push(Object.freeze({ kind: 'dialogue', file: job.outputFile }));
+    filters.push(`[${inputIndex}:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=${gainScalar(plan.audioMixPlan.dialogueGainMilliDb)},adelay=${job.startMs}|${job.startMs},apad=whole_dur=${seconds(plan.durationMs)},atrim=duration=${seconds(plan.durationMs)}[${label}]`);
+    foregroundLabels.push(`[${label}]`);
   }
   if (nativeSource !== null) {
     const inputIndex = inputs.length;
@@ -104,9 +109,10 @@ function audioMix(plan, dialogue, nativeSource, bgmSource) {
     filters.push(`[${inputIndex}:a:0]aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=${gainScalar(plan.audioMixPlan.nativeGainMilliDb)},atrim=duration=${seconds(plan.durationMs)}[native]`);
     foregroundLabels.push('[native]');
   }
-  if ((plan.mode === 'independent_tts' && foregroundLabels.length !== 1)
+  if ((plan.mode === 'independent_tts' && dialogue.length < 1)
     || (plan.mode === 'h3_native' && foregroundLabels.length !== 1)
-    || (plan.mode === 'hybrid' && foregroundLabels.length !== 2)) invalid();
+    || (plan.mode === 'hybrid' && (dialogue.length < 1
+      || foregroundLabels.length !== dialogue.length + 1))) invalid();
   const bgmInputIndex = inputs.length;
   inputs.push(Object.freeze({
     kind: 'bgm',
@@ -138,9 +144,7 @@ function createFfmpegComposition(value) {
       videoJobs: videos,
       videoConcatDocument: concatDocument(videos.map((job) => job.outputFile)),
       dialogueJobs: dialogue,
-      dialogueConcatDocument: dialogue.length > 0
-        ? concatDocument(dialogue.map((job) => job.outputFile))
-        : null,
+      dialogueConcatDocument: null,
       nativeSourceOrdinal: nativeSource?.ordinal ?? null,
       bgmSourceOrdinal: bgmSource.ordinal,
       bgmLoopCount: plan.audioMixPlan.bgm.loopCount,

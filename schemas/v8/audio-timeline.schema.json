@@ -12,7 +12,9 @@
   ],
   "properties": {
     "schemaVersion": { "const": "8.0" },
-    "timingAlgorithmVersion": { "const": "audio-timeline-ms.v1" },
+    "timingAlgorithmVersion": {
+      "enum": ["audio-timeline-ms.v1", "audio-timeline-ms.v2"]
+    },
     "uid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
     "dramaUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
     "workflowRunUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
@@ -39,6 +41,10 @@
     "createdAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 253402300799999 }
   },
   "allOf": [
+    {
+      "if": { "properties": { "timingAlgorithmVersion": { "const": "audio-timeline-ms.v2" } }, "required": ["timingAlgorithmVersion"] },
+      "then": { "properties": { "mode": { "const": "independent_tts" } } }
+    },
     {
       "if": { "properties": { "mode": { "const": "independent_tts" } }, "required": ["mode"] },
       "then": {

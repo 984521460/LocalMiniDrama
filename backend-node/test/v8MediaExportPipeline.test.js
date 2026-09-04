@@ -75,8 +75,8 @@ async function realFixture(t, executionNumber = 1500) {
   };
   generateVideo(ffmpegPath, paths.video1, 'red');
   generateVideo(ffmpegPath, paths.video2, 'blue');
-  generateAudio(ffmpegPath, paths.dialogue1, 440, 0.75);
-  generateAudio(ffmpegPath, paths.dialogue2, 660, 0.75);
+  generateAudio(ffmpegPath, paths.dialogue1, 440, 0.4);
+  generateAudio(ffmpegPath, paths.dialogue2, 660, 0.5);
   generateAudio(ffmpegPath, paths.bgm, 220, 1);
   const sources = {
     video: [
@@ -84,8 +84,8 @@ async function realFixture(t, executionNumber = 1500) {
       mediaSource(root, 'videos/shot-2.mp4', 750, 608, 352),
     ],
     dialogue: [
-      mediaSource(root, 'audio/dialogue-1.flac', 750),
-      mediaSource(root, 'audio/dialogue-2.flac', 750),
+      mediaSource(root, 'audio/dialogue-1.flac', 400),
+      mediaSource(root, 'audio/dialogue-2.flac', 500),
     ],
     bgm: mediaSource(
       root, `projects/${uid(1)}/assets/bgm/${uid(1001)}/${uid(1002)}.flac`, 1000,
@@ -118,6 +118,13 @@ test('exports a real 1080p faststart MP4 with mixed audio and burned ASS subtitl
   });
   const output = path.join(value.root, ...receipt.output.relativePath.split('/'));
 
+  assert.equal(value.fixture.snapshot.audioTimeline.timingAlgorithmVersion,
+    'audio-timeline-ms.v2');
+  assert.deepEqual(value.fixture.executionPlan.audioSources
+    .filter((source) => source.role === 'dialogue')
+    .flatMap((source) => source.placements.map((placement) => [
+      placement.startMs, placement.endMs,
+    ])), [[0, 400], [750, 1250]]);
   assert.equal(fs.existsSync(output), true);
   assert.equal(receipt.output.bytes, fs.statSync(output).size);
   assert.equal(receipt.output.video.width, 1920);

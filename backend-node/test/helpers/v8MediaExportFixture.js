@@ -160,6 +160,11 @@ function trustedTimeline(sources) {
     uid: uid(950),
     plan,
     executionEvidence,
+    targetDurationMs: sources.video.reduce((sum, source) => sum + source.durationMs, 0),
+    placements: plan.dialogueBindings.map((binding, index) => ({
+      dialogueDeliveryUid: binding.dialogueDeliveryUid,
+      startMs: sources.video.slice(0, index).reduce((sum, source) => sum + source.durationMs, 0),
+    })),
     createdAtEpochMs: 1_800_000_300_000,
   };
   const timeline = createAudioTimelineVerifier({
@@ -234,22 +239,40 @@ function shotRecord(source, index) {
   });
   const promptSemanticUid = uid(1240 + index);
   const manifestUid = uid(1250 + index);
+  const generationRunUid = uid(1260 + index);
+  const historyUid = uid(1220 + index);
   return Object.freeze({
     shotId: `shot-${index + 1}`,
     plannedOrdinal: index + 1,
+    h3ExecutionResult: {
+      schemaVersion: 'h3-local-execution-result.v2',
+      taskUid: uid(1270 + index),
+      taskStateVersion: 9,
+      workflowRunUid: WORKFLOW_RUN_UID,
+      generationRunUid,
+      historyUid,
+      assetUid: assetRecord.uid,
+      assetVersionUid: versionRecord.uid,
+      nodeRunUid: uid(1280 + index),
+      status: 'succeeded',
+    },
     generationHistory: createGenerationHistoryRecord({
-      uid: uid(1220 + index),
-      runUid: WORKFLOW_RUN_UID,
+      uid: historyUid,
+      runUid: generationRunUid,
       dramaUid: DRAMA_UID,
       assetUid: assetRecord.uid,
       promptSemanticUid,
       manifestUid,
       manifestSha256: String(index + 6).repeat(64),
-      provider: 'local',
-      model: 'synthetic-video-v1',
+      provider: 'local-comfy',
+      model: 'MiniMax-H3',
       seed: index + 1,
       parameters: { width: source.width, height: source.height },
-      input: { promptSemanticUid, manifestUid },
+      input: {
+        promptSemanticUid,
+        manifestUid,
+        generationSpec: { prompt: { shotId: `shot-${index + 1}` } },
+      },
       status: 'succeeded',
       outputVersionUid: versionRecord.uid,
       outputVersionEvidence: versionRecord,
@@ -293,6 +316,11 @@ function trustedProductionSnapshot(sources) {
       const shot = input.shots.find((entry) => entry.generationHistory.uid === expectedUid);
       if (!shot) throw new Error('fixture-history-anchor');
       return shot.generationHistory;
+    },
+    loadH3ExecutionResult(expectedUid) {
+      const shot = input.shots.find((entry) => entry.h3ExecutionResult.taskUid === expectedUid);
+      if (!shot) throw new Error('fixture-h3-execution-anchor');
+      return shot.h3ExecutionResult;
     },
   });
   return verifier.verify(candidate, input.uid);

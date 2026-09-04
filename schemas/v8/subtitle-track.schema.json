@@ -10,7 +10,9 @@
   ],
   "properties": {
     "schemaVersion": { "const": "8.0" },
-    "timingAlgorithmVersion": { "const": "audio-timeline-ms.v1" },
+    "timingAlgorithmVersion": {
+      "enum": ["audio-timeline-ms.v1", "audio-timeline-ms.v2"]
+    },
     "timelineUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
     "planUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },
     "executionUid": { "$ref": "dialogue-delivery.schema.json#/$defs/uid" },

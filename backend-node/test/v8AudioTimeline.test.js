@@ -277,6 +277,70 @@ test('all audio modes produce exact integer-millisecond segments and source-boun
   }
 });
 
+test('independent TTS can be placed on the full video axis with deterministic silence gaps', () => {
+  const rawPlan = planInput('independent_tts');
+  const plan = verifiedPlan(rawPlan);
+  const execution = executionEvidence(plan, [700, 800]);
+  const envelope = {
+    schemaVersion: '8.0',
+    uid: uid(951),
+    plan,
+    executionEvidence: execution,
+    targetDurationMs: 6500,
+    placements: [
+      { dialogueDeliveryUid: plan.dialogueBindings[0].dialogueDeliveryUid, startMs: 250 },
+      { dialogueDeliveryUid: plan.dialogueBindings[1].dialogueDeliveryUid, startMs: 4000 },
+    ],
+    createdAtEpochMs: 1_800_000_300_000,
+  };
+  const candidate = createAudioTimeline(envelope);
+  const timeline = createAudioTimelineVerifier({
+    loadTrustedEnvelope(expectedUid) {
+      if (expectedUid !== envelope.uid) throw new Error('synthetic-placed-timeline-anchor');
+      return envelope;
+    },
+  }).verify(candidate, envelope.uid);
+
+  assert.equal(timeline.timingAlgorithmVersion, 'audio-timeline-ms.v2');
+  assert.equal(timeline.durationMs, 6500);
+  assert.deepEqual(timeline.segments.map((entry) => [entry.startMs, entry.endMs]), [
+    [250, 950], [4000, 4800],
+  ]);
+  assert.deepEqual(timeline.subtitleTrack.cues.map((entry) => [entry.startMs, entry.endMs]), [
+    [250, 950], [4000, 4800],
+  ]);
+  assert.equal(validateTimelineSchema(timeline), true, JSON.stringify(validateTimelineSchema.errors));
+
+  const invalidPlacements = [
+    [
+      envelope.placements[0],
+      { ...envelope.placements[1], startMs: 900 },
+    ],
+    [
+      { ...envelope.placements[0], dialogueDeliveryUid: uid(999) },
+      envelope.placements[1],
+    ],
+  ];
+  for (const placements of invalidPlacements) {
+    assert.throws(() => createAudioTimeline({ ...envelope, placements }),
+      expectCode('AUDIO_TIMELINE_INPUT_INVALID'));
+  }
+  assert.throws(() => createAudioTimeline({ ...envelope, targetDurationMs: 4500 }),
+    expectCode('AUDIO_TIMELINE_INPUT_INVALID'));
+
+  const downgraded = resignTimeline({
+    ...timeline,
+    timingAlgorithmVersion: 'audio-timeline-ms.v1',
+    subtitleTrack: {
+      ...timeline.subtitleTrack,
+      timingAlgorithmVersion: 'audio-timeline-ms.v1',
+    },
+  });
+  assert.throws(() => createAudioTimelineVerifier({
+    loadTrustedEnvelope() { return envelope; },
+  }).verify(downgraded, envelope.uid), expectCode('AUDIO_TIMELINE_DATA_INVALID'));
+});
+
 test('H3-native proportional allocation is deterministic, contiguous and exact at every boundary', () => {
   const first = timelineFixture('h3_native').timeline;
   const second = timelineFixture('h3_native').timeline;

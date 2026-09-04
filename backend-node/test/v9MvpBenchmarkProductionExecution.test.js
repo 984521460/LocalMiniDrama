@@ -101,9 +101,10 @@ async function preparedBatch(current) {
 
 function h3Result(taskUid, offset) {
   return Object.freeze({
-    schemaVersion: 'h3-local-execution-result.v1',
+    schemaVersion: 'h3-local-execution-result.v2',
     taskUid,
     taskStateVersion: 7,
+    workflowRunUid: uid(99100 + offset),
     generationRunUid: uid(99600 + offset),
     historyUid: uid(99500 + offset),
     assetUid: uid(99400 + offset),

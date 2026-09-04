@@ -17,6 +17,7 @@ const { requireTrustedAudioModePlan } = require('./audioMode');
 const { buildSubtitleTrack, parseSubtitleTrack } = require('./subtitleTrack');
 
 const AUDIO_TIMELINE_ALGORITHM_VERSION = 'audio-timeline-ms.v1';
+const PLACED_AUDIO_TIMELINE_ALGORITHM_VERSION = 'audio-timeline-ms.v2';
 const INPUT_CODE = 'AUDIO_TIMELINE_INPUT_INVALID';
 const DATA_CODE = 'AUDIO_TIMELINE_DATA_INVALID';
 const MAX_SEGMENTS = 1000;
@@ -25,6 +26,11 @@ const TRUSTED_TIMELINES = new WeakSet();
 const INPUT_KEYS = Object.freeze([
   'schemaVersion', 'uid', 'plan', 'executionEvidence', 'createdAtEpochMs',
 ]);
+const PLACED_INPUT_KEYS = Object.freeze([
+  'schemaVersion', 'uid', 'plan', 'executionEvidence', 'targetDurationMs',
+  'placements', 'createdAtEpochMs',
+]);
+const PLACEMENT_KEYS = Object.freeze(['dialogueDeliveryUid', 'startMs']);
 const RECORD_KEYS = Object.freeze([
   'schemaVersion', 'timingAlgorithmVersion', 'uid', 'dramaUid', 'workflowRunUid',
   'planUid', 'planSha256', 'executionUid', 'executionSha256', 'mode',
@@ -131,7 +137,39 @@ function proportionalDurations(bindings, totalDurationMs) {
   return durations;
 }
 
-function buildSegments(plan, execution) {
+function placedSegments(plan, execution, targetDurationMs, placementValues) {
+  if (plan.mode !== 'independent_tts') fail(INPUT_CODE);
+  const durationMs = boundedInteger(targetDurationMs, 1, MAX_TIMELINE_MS, INPUT_CODE);
+  const placements = denseArray(placementValues, MAX_SEGMENTS, INPUT_CODE);
+  if (placements.length !== plan.dialogueBindings.length) fail(INPUT_CODE);
+  const segments = [];
+  let previousEndMs = 0;
+  for (let index = 0; index < placements.length; index += 1) {
+    const placement = exactObject(placements[index], PLACEMENT_KEYS, INPUT_CODE);
+    const binding = plan.dialogueBindings[index];
+    const output = execution.ttsOutputs[index];
+    const startMs = boundedInteger(placement.startMs, 0, durationMs, INPUT_CODE);
+    const sourceDurationMs = output.audioVersionEvidence.durationMs;
+    if (placement.dialogueDeliveryUid !== binding.dialogueDeliveryUid
+      || startMs < previousEndMs || startMs + sourceDurationMs > durationMs) fail(INPUT_CODE);
+    const current = segment(binding, index, startMs, sourceDurationMs, mediaSource(output));
+    segments.push(current);
+    previousEndMs = current.endMs;
+  }
+  return Object.freeze({
+    durationMs,
+    nativeTrack: null,
+    segments: frozenArray(segments),
+    timingAlgorithmVersion: PLACED_AUDIO_TIMELINE_ALGORITHM_VERSION,
+  });
+}
+
+function buildSegments(plan, execution, placementInput = null) {
+  if (placementInput !== null) {
+    return placedSegments(
+      plan, execution, placementInput.targetDurationMs, placementInput.placements,
+    );
+  }
   if (plan.mode === 'h3_native') {
     const source = nativeTrack(execution.h3NativeSource);
     const durations = proportionalDurations(plan.dialogueBindings, source.durationMs);
@@ -145,6 +183,7 @@ function buildSegments(plan, execution) {
       durationMs: source.durationMs,
       nativeTrack: source,
       segments: frozenArray(segments),
+      timingAlgorithmVersion: AUDIO_TIMELINE_ALGORITHM_VERSION,
     });
   }
 
@@ -163,6 +202,7 @@ function buildSegments(plan, execution) {
     durationMs: plan.mode === 'hybrid' ? source.durationMs : cursor,
     nativeTrack: source,
     segments: frozenArray(segments),
+    timingAlgorithmVersion: AUDIO_TIMELINE_ALGORITHM_VERSION,
   });
 }
 
@@ -172,12 +212,13 @@ function timelineRecord(input) {
     planUid: input.plan.uid,
     executionUid: input.execution.uid,
     durationMs: input.durationMs,
+    timingAlgorithmVersion: input.timingAlgorithmVersion,
     bindings: input.plan.dialogueBindings,
     segments: input.segments,
   });
   const base = Object.freeze({
     schemaVersion: '8.0',
-    timingAlgorithmVersion: AUDIO_TIMELINE_ALGORITHM_VERSION,
+    timingAlgorithmVersion: input.timingAlgorithmVersion,
     uid: input.uid,
     dramaUid: input.plan.dramaUid,
     workflowRunUid: input.plan.workflowRunUid,
@@ -214,7 +255,17 @@ function timelineRecord(input) {
 
 function createAudioTimeline(value) {
   try {
-    const input = exactObject(value, INPUT_KEYS, INPUT_CODE);
+    let input;
+    let placementInput = null;
+    try {
+      input = exactObject(value, PLACED_INPUT_KEYS, INPUT_CODE);
+      placementInput = Object.freeze({
+        targetDurationMs: input.targetDurationMs,
+        placements: input.placements,
+      });
+    } catch {
+      input = exactObject(value, INPUT_KEYS, INPUT_CODE);
+    }
     if (input.schemaVersion !== '8.0') fail(INPUT_CODE);
     const plan = safePlan(input.plan, INPUT_CODE);
     const execution = safeExecution(input.executionEvidence, plan, INPUT_CODE);
@@ -223,7 +274,7 @@ function createAudioTimeline(value) {
     if (uid === plan.uid || uid === execution.uid
       || createdAtEpochMs < plan.createdAtEpochMs
       || createdAtEpochMs < execution.createdAtEpochMs) fail(INPUT_CODE);
-    const built = buildSegments(plan, execution);
+    const built = buildSegments(plan, execution, placementInput);
     return timelineRecord({ uid, plan, execution, createdAtEpochMs, ...built });
   } catch (error) {
     if (isAudioModeContractError(error) && error.code === INPUT_CODE) throw error;
@@ -278,7 +329,8 @@ function parseAudioTimelineRecord(value) {
   try {
     const input = exactObject(value, RECORD_KEYS, DATA_CODE);
     if (input.schemaVersion !== '8.0'
-      || input.timingAlgorithmVersion !== AUDIO_TIMELINE_ALGORITHM_VERSION
+      || ![AUDIO_TIMELINE_ALGORITHM_VERSION, PLACED_AUDIO_TIMELINE_ALGORITHM_VERSION]
+        .includes(input.timingAlgorithmVersion)
       || !['independent_tts', 'h3_native', 'hybrid'].includes(input.mode)) fail(DATA_CODE);
     const durationMs = boundedInteger(input.durationMs, 1, MAX_TIMELINE_MS, DATA_CODE);
     const native = parseNativeTrack(input.nativeTrack, DATA_CODE);
@@ -288,11 +340,20 @@ function parseAudioTimelineRecord(value) {
     for (let index = 0; index < segments.length; index += 1) {
       const current = segments[index];
       if (current.ordinal !== index
-        || (index === 0 && current.startMs !== 0)
-        || (index > 0 && current.startMs !== segments[index - 1].endMs)) fail(DATA_CODE);
+        || (input.timingAlgorithmVersion === AUDIO_TIMELINE_ALGORITHM_VERSION && (
+          (index === 0 && current.startMs !== 0)
+          || (index > 0 && current.startMs !== segments[index - 1].endMs)
+        ))
+        || (input.timingAlgorithmVersion === PLACED_AUDIO_TIMELINE_ALGORITHM_VERSION && (
+          input.mode !== 'independent_tts'
+          || (index > 0 && current.startMs < segments[index - 1].endMs)
+        ))) fail(DATA_CODE);
     }
     const lastEndMs = segments[segments.length - 1].endMs;
-    if ((input.mode === 'independent_tts' && (native !== null || lastEndMs !== durationMs))
+    if ((input.mode === 'independent_tts' && (native !== null
+      || segments.some((entry) => entry.sourceKind !== 'tts_asset')
+      || (input.timingAlgorithmVersion === AUDIO_TIMELINE_ALGORITHM_VERSION
+        && lastEndMs !== durationMs)))
       || (input.mode === 'h3_native' && (native === null || lastEndMs !== durationMs
         || segments.some((entry) => entry.sourceKind !== 'h3_native')))
       || (input.mode === 'hybrid' && (native === null || lastEndMs > durationMs
@@ -311,11 +372,12 @@ function parseAudioTimelineRecord(value) {
       durationMs,
       maximumDurationMs: MAX_TIMELINE_MS,
       segments,
+      timingAlgorithmVersion: input.timingAlgorithmVersion,
     });
     const subtitleTrack = parseSubtitleTrack(input.subtitleTrack, metadata, DATA_CODE);
     const base = Object.freeze({
       schemaVersion: '8.0',
-      timingAlgorithmVersion: AUDIO_TIMELINE_ALGORITHM_VERSION,
+      timingAlgorithmVersion: input.timingAlgorithmVersion,
       uid: metadata.timelineUid,
       dramaUid: canonicalUid(input.dramaUid, DATA_CODE),
       workflowRunUid: canonicalUid(input.workflowRunUid, DATA_CODE),
@@ -365,9 +427,8 @@ function createAudioTimelineVerifier(value) {
       try {
         const anchorUid = canonicalUid(expectedTimelineUid, DATA_CODE);
         const stored = parseAudioTimelineRecord(timelineValue);
-        const envelope = exactObject(loadTrustedEnvelope(anchorUid), INPUT_KEYS, DATA_CODE);
-        if (envelope.uid !== anchorUid) fail(DATA_CODE);
-        const expected = createAudioTimeline(envelope);
+        const expected = createAudioTimeline(loadTrustedEnvelope(anchorUid));
+        if (expected.uid !== anchorUid) fail(DATA_CODE);
         if (canonicalHash(stored) !== canonicalHash(expected)) fail(DATA_CODE);
         TRUSTED_TIMELINES.add(expected);
         return expected;
@@ -386,6 +447,7 @@ function requireTrustedAudioTimeline(value) {
 
 module.exports = Object.freeze({
   AUDIO_TIMELINE_ALGORITHM_VERSION,
+  PLACED_AUDIO_TIMELINE_ALGORITHM_VERSION,
   createAudioTimeline,
   createAudioTimelineVerifier,
   parseAudioTimelineRecord,
