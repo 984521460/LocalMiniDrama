@@ -57,6 +57,72 @@ function translate(error, fallback) {
   return createError(fallback);
 }
 
+function isWellFormedSecretString(value) {
+  if (value.length < 1 || value.length > 2560) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit === 0) return false;
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      if (index + 1 >= value.length) return false;
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return false;
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isValidUtf8SecretBuffer(value) {
+  if (value.length < 1 || value.length > 2560) return false;
+  for (let index = 0; index < value.length;) {
+    const first = value[index];
+    if (first >= 0x01 && first <= 0x7f) {
+      index += 1;
+      continue;
+    }
+    let continuationCount;
+    let secondMinimum = 0x80;
+    let secondMaximum = 0xbf;
+    if (first >= 0xc2 && first <= 0xdf) {
+      continuationCount = 1;
+    } else if (first >= 0xe0 && first <= 0xef) {
+      continuationCount = 2;
+      if (first === 0xe0) secondMinimum = 0xa0;
+      if (first === 0xed) secondMaximum = 0x9f;
+    } else if (first >= 0xf0 && first <= 0xf4) {
+      continuationCount = 3;
+      if (first === 0xf0) secondMinimum = 0x90;
+      if (first === 0xf4) secondMaximum = 0x8f;
+    } else {
+      return false;
+    }
+    if (index + continuationCount >= value.length) return false;
+    const second = value[index + 1];
+    if (second < secondMinimum || second > secondMaximum) return false;
+    for (let offset = 2; offset <= continuationCount; offset += 1) {
+      const continuation = value[index + offset];
+      if (continuation < 0x80 || continuation > 0xbf) return false;
+    }
+    index += continuationCount + 1;
+  }
+  return true;
+}
+
+function credentialBuffer(value) {
+  if (Buffer.isBuffer(value)) {
+    if (isValidUtf8SecretBuffer(value)) return value;
+    value.fill(0);
+    return null;
+  }
+  if (typeof value !== 'string' || !isWellFormedSecretString(value)) return null;
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.length <= 2560) return bytes;
+  bytes.fill(0);
+  return null;
+}
+
 function createRemoteSessionService({ repository, vault, sshTransport, tunnelManager } = {}) {
   if (!repository || typeof repository !== 'object' || typeof repository.getConnection !== 'function'
     || !vault || typeof vault !== 'object' || typeof vault.read !== 'function'
@@ -79,11 +145,11 @@ function createRemoteSessionService({ repository, vault, sshTransport, tunnelMan
         throw createError('REMOTE_SESSION_NOT_READY');
       }
       try {
-        secret = await vault.read(record.credentialRef);
-      } catch (error) {
-        throw translate(error, 'REMOTE_SESSION_CREDENTIAL_FAILED');
+        secret = credentialBuffer(await vault.read(record.credentialRef));
+      } catch {
+        throw createError('REMOTE_SESSION_CREDENTIAL_FAILED');
       }
-      if (!Buffer.isBuffer(secret) || secret.length < 1 || secret.length > 2560) {
+      if (secret === null) {
         throw createError('REMOTE_SESSION_CREDENTIAL_FAILED');
       }
       let session;

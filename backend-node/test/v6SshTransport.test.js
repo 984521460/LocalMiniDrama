@@ -146,6 +146,7 @@ test('credential-backed sessions open only for confirmed profiles and never expo
     stateVersion: 1,
   };
   let consumedSecret;
+  let consumedSecretSnapshot;
   let openedTunnel;
   const session = { async close() {} };
   const service = createRemoteSessionService({
@@ -153,12 +154,13 @@ test('credential-backed sessions open only for confirmed profiles and never expo
     vault: {
       async read(ref) {
         assert.equal(ref, credentialRef);
-        return Buffer.from('vault-password-value');
+        return 'vault-password-value';
       },
     },
     sshTransport: {
       async connect(input) {
         consumedSecret = input.secret;
+        consumedSecretSnapshot = Buffer.from(input.secret);
         assert.equal(input.expectedFingerprint, FINGERPRINT);
         assert.deepEqual(input.endpoint, {
           host: record.host,
@@ -178,6 +180,7 @@ test('credential-backed sessions open only for confirmed profiles and never expo
     },
   });
   const tunnel = await service.openComfyTunnel(record.uid);
+  assert.deepEqual(consumedSecretSnapshot, Buffer.from('vault-password-value'));
   assert.equal(consumedSecret.every((value) => value === 0), true);
   assert.deepEqual(openedTunnel, { session, remotePort: 8188 });
   assert.equal(tunnel.origin, 'http://127.0.0.1:49152');
@@ -212,5 +215,83 @@ test('credential-backed sessions open only for confirmed profiles and never expo
   });
   await assert.rejects(blocked.openComfyTunnel(record.uid), {
     code: 'REMOTE_SESSION_NOT_READY',
+  });
+
+  const compatibleBuffer = Buffer.from('buffer-password-value');
+  let compatibleSnapshot;
+  const compatible = createRemoteSessionService({
+    repository: { getConnection() { return record; } },
+    vault: { async read() { return compatibleBuffer; } },
+    sshTransport: {
+      async connect(input) {
+        compatibleSnapshot = Buffer.from(input.secret);
+        return session;
+      },
+    },
+    tunnelManager: { async open() { throw new Error('must not open'); } },
+  });
+  await compatible.openSession(record.uid);
+  assert.deepEqual(compatibleSnapshot, Buffer.from('buffer-password-value'));
+  assert.equal(compatibleBuffer.every((value) => value === 0), true);
+
+  const maxUtf8Secret = `${'a'.repeat(2557)}界`;
+  let maxUtf8Consumed;
+  let maxUtf8Snapshot;
+  const maxUtf8 = createRemoteSessionService({
+    repository: { getConnection() { return record; } },
+    vault: { async read() { return maxUtf8Secret; } },
+    sshTransport: {
+      async connect(input) {
+        maxUtf8Consumed = input.secret;
+        maxUtf8Snapshot = Buffer.from(input.secret);
+        return session;
+      },
+    },
+    tunnelManager: { async open() { throw new Error('must not open'); } },
+  });
+  await maxUtf8.openSession(record.uid);
+  assert.equal(maxUtf8Snapshot.length, 2560);
+  assert.deepEqual(maxUtf8Snapshot, Buffer.from(maxUtf8Secret));
+  assert.equal(maxUtf8Consumed.every((value) => value === 0), true);
+
+  const oversizedBuffer = Buffer.alloc(2561, 7);
+  const nulBuffer = Buffer.from([0x61, 0x00, 0x62]);
+  const invalidUtf8Buffer = Buffer.from([0xff]);
+  const invalidSecrets = [
+    '',
+    'nul\0value',
+    '\ud800',
+    'x'.repeat(2561),
+    `${'a'.repeat(2558)}界`,
+    oversizedBuffer,
+    nulBuffer,
+    invalidUtf8Buffer,
+    null,
+  ];
+  for (const invalidSecret of invalidSecrets) {
+    let invalidConnects = 0;
+    const invalid = createRemoteSessionService({
+      repository: { getConnection() { return record; } },
+      vault: { async read() { return invalidSecret; } },
+      sshTransport: { async connect() { invalidConnects += 1; return session; } },
+      tunnelManager: { async open() { throw new Error('must not open'); } },
+    });
+    await assert.rejects(invalid.openSession(record.uid), {
+      code: 'REMOTE_SESSION_CREDENTIAL_FAILED',
+    });
+    assert.equal(invalidConnects, 0);
+  }
+  for (const invalidBuffer of [oversizedBuffer, nulBuffer, invalidUtf8Buffer]) {
+    assert.equal(invalidBuffer.every((value) => value === 0), true);
+  }
+
+  const failingVault = createRemoteSessionService({
+    repository: { getConnection() { return record; } },
+    vault: { async read() { throw new TypeError('synthetic vault failure'); } },
+    sshTransport: { async connect() { throw new Error('must not connect'); } },
+    tunnelManager: { async open() { throw new Error('must not open'); } },
+  });
+  await assert.rejects(failingVault.openSession(record.uid), {
+    code: 'REMOTE_SESSION_CREDENTIAL_FAILED',
   });
 });
