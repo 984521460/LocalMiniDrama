@@ -10,6 +10,7 @@
     "build:log-directory-lease": "node scripts/build-log-directory-lease.mjs",
     "licenses:check": "node --test licenses/*.test.mjs && node licenses/collect-direct-npm-licenses.mjs",
     "benchmark:source:check": "node scripts/validate-mvp-benchmark-source.js",
+    "benchmark:workspace": "node scripts/mvp-benchmark-workspace.js",
     "install:workspace": "npm ci --ignore-scripts",
     "install:backend": "npm --prefix backend-node ci",
     "install:frontend": "npm --prefix frontweb ci",

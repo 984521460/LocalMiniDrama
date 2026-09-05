@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-workspace-receipt.schema.json",
+  "title": "MVP Benchmark Workspace Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "workspaceName",
+    "status",
+    "sourceId",
+    "contentSha256",
+    "licenseSha256",
+    "selectedTextSha256",
+    "targetNarrativeDurationSeconds",
+    "dramaId",
+    "dramaUid",
+    "sourceDocumentUid",
+    "sourceSelectionUid",
+    "databaseMigrationVersion",
+    "contractsReady",
+    "readyConnectionAtPreparation",
+    "configSha256",
+    "preparedAtEpochMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "mvp-benchmark-workspace-receipt.v1"
+    },
+    "workspaceName": {
+      "const": "mvp-benchmark-rain-before-clear-v1"
+    },
+    "status": {
+      "const": "source-selected"
+    },
+    "sourceId": {
+      "const": "rain-before-clear-v1"
+    },
+    "contentSha256": {
+      "const": "323a780347d995b3883fe6bf5da972765f40a1ebb05d9dc3ba802571e319875e"
+    },
+    "licenseSha256": {
+      "const": "d95c5a9dffc7c33c0c7ca157c39a300d9bc3b6465a15310f68356be93ec3a7e1"
+    },
+    "selectedTextSha256": {
+      "const": "20b8570f2899bbd86ad22281b742a90e05a3c04cc9ca8796e1fd411c4f351439"
+    },
+    "targetNarrativeDurationSeconds": {
+      "const": 60
+    },
+    "dramaId": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "dramaUid": {
+      "$ref": "#/$defs/uuidV4"
+    },
+    "sourceDocumentUid": {
+      "$ref": "#/$defs/uuidV4"
+    },
+    "sourceSelectionUid": {
+      "$ref": "#/$defs/uuidV4"
+    },
+    "databaseMigrationVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "contractsReady": {
+      "const": true
+    },
+    "readyConnectionAtPreparation": {
+      "const": false
+    },
+    "configSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "preparedAtEpochMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}
