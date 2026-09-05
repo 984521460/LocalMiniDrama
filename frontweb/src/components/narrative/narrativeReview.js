@@ -63,3 +63,23 @@ export function groupNarrativeResults(results) {
     result: chain.get(definition.type) || null,
   })))
 }
+
+export function groupNarrativeHistory(results) {
+  if (!Array.isArray(results)) throw new TypeError('Narrative results must be an array')
+  const currentUids = new Set(
+    groupNarrativeResults(results).flatMap((group) => (group.result ? [group.result.uid] : [])),
+  )
+  const definitions = new Map(DEFINITIONS.map((definition) => [definition.type, definition]))
+  const history = []
+  for (const result of results) {
+    const definition = definitions.get(result?.resultType)
+    if (!definition || typeof result.uid !== 'string' || currentUids.has(result.uid)) continue
+    history.push(Object.freeze({ ...definition, result }))
+  }
+  history.sort((left, right) => {
+    const leftKey = `${left.result.createdAt || ''}\0${left.result.uid}`
+    const rightKey = `${right.result.createdAt || ''}\0${right.result.uid}`
+    return leftKey === rightKey ? 0 : leftKey > rightKey ? -1 : 1
+  })
+  return Object.freeze(history)
+}

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   createLatestRequestGuard,
+  groupNarrativeHistory,
   groupNarrativeResults,
   reviewStatusMeta,
 } from '../src/components/narrative/narrativeReview.js'
@@ -50,6 +51,32 @@ test('traces a latest shot through its exact approved upstream identities', () =
   ])
 })
 
+test('lists every result outside the current chain as immutable history in newest-first order', () => {
+  const oldExtraction = {
+    uid: 'old-extraction', resultType: 'extraction', status: 'stale',
+    createdAt: '2026-01-01T00:00:00.000Z', resultHash: 'a'.repeat(64),
+  }
+  const oldAdaptation = {
+    uid: 'old-adaptation', resultType: 'adaptation', status: 'stale',
+    upstreamResultUid: oldExtraction.uid, createdAt: '2026-01-02T00:00:00.000Z',
+    resultHash: 'b'.repeat(64),
+  }
+  const currentExtraction = {
+    uid: 'current-extraction', resultType: 'extraction', status: 'pending_review',
+    createdAt: '2026-01-03T00:00:00.000Z', resultHash: 'c'.repeat(64),
+  }
+  const history = groupNarrativeHistory([
+    currentExtraction, oldExtraction, oldAdaptation,
+  ])
+
+  assert.deepEqual(history.map((item) => [item.type, item.result.uid]), [
+    ['adaptation', 'old-adaptation'],
+    ['extraction', 'old-extraction'],
+  ])
+  assert.equal(Object.isFrozen(history), true)
+  assert.equal(Object.isFrozen(history[0]), true)
+})
+
 test('maps review states to stable user-facing labels and tones', () => {
   assert.deepEqual(reviewStatusMeta('pending_review'), { label: '待审核', tone: 'warning' })
   assert.deepEqual(reviewStatusMeta('approved'), { label: '已批准', tone: 'success' })
@@ -81,6 +108,15 @@ test('keeps review API and workflow UI behind thin modules', () => {
   assert.match(api, /listForDrama/)
   assert.match(api, /review/)
   assert.match(workspace, /groupNarrativeResults/)
+  assert.match(workspace, /groupNarrativeHistory/)
+  assert.match(workspace, /历史测试作品/)
+  assert.match(workspace, /查看旧版证据与完整结果/)
+  const historyMarkup = workspace.match(
+    /<section v-if="history\.length"[\s\S]*?<\/section>/u,
+  )?.[0]
+  assert.ok(historyMarkup)
+  assert.match(historyMarkup, /viewEvidence\(entry\.result\.uid\)/u)
+  assert.doesNotMatch(historyMarkup, /@click="submit\(|>批准<|>驳回<|supersede/u)
   assert.match(workspace, /审核数据加载失败/)
   assert.match(workspace, /createLatestRequestGuard/)
   assert.match(workspace, /results\.value = \[\]/)

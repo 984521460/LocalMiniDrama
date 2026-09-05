@@ -82,6 +82,48 @@
       </article>
     </div>
 
+    <section v-if="history.length" class="version-history" aria-labelledby="narrative-history-title">
+      <div class="version-history-heading">
+        <div>
+          <h3 id="narrative-history-title">历史测试作品</h3>
+          <p>错误、驳回或被新版替代的结果只读保留；可重开原证据和完整结构，不会参与当前生成链。</p>
+        </div>
+        <el-tag type="info" effect="plain">{{ history.length }} 个旧版本</el-tag>
+      </div>
+      <div class="version-history-grid">
+        <article
+          v-for="entry in history"
+          :key="entry.result.uid"
+          class="version-history-card"
+        >
+          <header>
+            <div>
+              <el-tag size="small" effect="plain">{{ entry.title }}</el-tag>
+              <el-tag
+                size="small"
+                :type="statusMeta(entry.result.status).tone"
+                effect="plain"
+              >{{ statusMeta(entry.result.status).label }}</el-tag>
+            </div>
+            <time>{{ entry.result.createdAt }}</time>
+          </header>
+          <dl class="version-history-meta">
+            <div><dt>结果 UID</dt><dd><code>{{ entry.result.uid }}</code></dd></div>
+            <div><dt>结果哈希</dt><dd>{{ shortHash(entry.result.resultHash) }}</dd></div>
+            <div><dt>完整封装</dt><dd>{{ shortHash(entry.result.envelopeHash) }}</dd></div>
+            <div><dt>来源选区</dt><dd>{{ shortHash(entry.result.sourceSelectionUid) }}</dd></div>
+          </dl>
+          <div class="version-history-actions">
+            <span v-if="entry.result.status === 'stale'">只读保留 · {{ entry.result.updatedAt }}</span>
+            <span v-else>历史只读版本</span>
+            <el-button text type="primary" @click="viewEvidence(entry.result.uid)">
+              查看旧版证据与完整结果
+            </el-button>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <el-dialog
       v-model="evidenceVisible"
       class="evidence-dialog"
@@ -254,6 +296,7 @@ import CharacterCandidateExecutionPanel from '@/components/assets/CharacterCandi
 import NarrativeExecutionPanel from './NarrativeExecutionPanel.vue'
 import {
   createLatestRequestGuard,
+  groupNarrativeHistory,
   groupNarrativeResults,
   reviewStatusMeta,
 } from './narrativeReview.js'
@@ -283,6 +326,7 @@ const evidenceGuard = createLatestRequestGuard()
 const traceGuard = createLatestRequestGuard()
 const comparisonGuard = createLatestRequestGuard()
 const groups = computed(() => groupNarrativeResults(results.value))
+const history = computed(() => groupNarrativeHistory(results.value))
 const prettyOutput = computed(() => JSON.stringify(activeDetail.value?.result?.result?.output || {}, null, 2))
 const FACT_GROUPS = Object.freeze([
   Object.freeze({ key: 'characters', type: 'character' }),
@@ -534,7 +578,20 @@ button.comparison-item { width: 100%; cursor: pointer; }
 .review-history h4 { margin: 18px 0 8px; }
 .history-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); font-size: 12px; }
 .history-row time { color: var(--el-text-color-secondary); }
-@media (max-width: 900px) { .review-grid, .fact-list, .trace-meta, .comparison-columns { grid-template-columns: 1fr; } .history-row { grid-template-columns: 48px 1fr; } .history-row time { grid-column: 2; } .beat-comparison-item { grid-template-columns: 72px minmax(0, 1fr); } .beat-comparison-item > em { grid-column: 2; } }
+.version-history { margin-top: 20px; padding: 18px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: var(--el-fill-color-extra-light); }
+.version-history-heading, .version-history-card header, .version-history-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.version-history-heading h3 { margin: 0; }
+.version-history-heading p { margin: 5px 0 0; color: var(--el-text-color-secondary); font-size: 12px; }
+.version-history-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.version-history-card { min-width: 0; padding: 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color); }
+.version-history-card header > div { display: flex; gap: 6px; }
+.version-history-card time, .version-history-actions > span { color: var(--el-text-color-secondary); font-size: 11px; }
+.version-history-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; margin: 13px 0; }
+.version-history-meta div { min-width: 0; }
+.version-history-meta dt { color: var(--el-text-color-secondary); font-size: 11px; }
+.version-history-meta dd { margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.version-history-actions { padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); }
+@media (max-width: 900px) { .review-grid, .fact-list, .trace-meta, .comparison-columns, .version-history-grid, .version-history-meta { grid-template-columns: 1fr; } .version-history-heading, .version-history-card header, .version-history-actions { align-items: flex-start; flex-direction: column; } .history-row { grid-template-columns: 48px 1fr; } .history-row time { grid-column: 2; } .beat-comparison-item { grid-template-columns: 72px minmax(0, 1fr); } .beat-comparison-item > em { grid-column: 2; } }
 </style>
 
 <style>
