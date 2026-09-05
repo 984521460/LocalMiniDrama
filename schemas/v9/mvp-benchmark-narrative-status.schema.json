@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://localminidrama.invalid/schemas/v9/mvp-benchmark-narrative-status.schema.json",
+  "title": "MVP benchmark narrative preparation status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "workspaceName",
+    "sourceId",
+    "dramaUid",
+    "sourceSelectionUid",
+    "status",
+    "nextStage",
+    "stages"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-narrative-status.v1" },
+    "workspaceName": { "const": "mvp-benchmark-rain-before-clear-v1" },
+    "sourceId": { "const": "rain-before-clear-v1" },
+    "dramaUid": { "$ref": "#/$defs/uuid" },
+    "sourceSelectionUid": { "$ref": "#/$defs/uuid" },
+    "status": {
+      "enum": [
+        "not_started",
+        "awaiting_review",
+        "rejected",
+        "ready_for_next_stage",
+        "approved_complete"
+      ]
+    },
+    "nextStage": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/stageName" }
+      ]
+    },
+    "stages": {
+      "type": "array",
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/stage" }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "stageName": {
+      "type": "string",
+      "enum": ["extraction", "adaptation", "script", "shot"]
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "status",
+        "resultUid",
+        "resultHash",
+        "envelopeHash",
+        "approvalRef",
+        "output"
+      ],
+      "properties": {
+        "stage": { "$ref": "#/$defs/stageName" },
+        "status": { "enum": ["pending_review", "approved", "rejected"] },
+        "resultUid": { "$ref": "#/$defs/uuid" },
+        "resultHash": { "$ref": "#/$defs/sha256" },
+        "envelopeHash": { "$ref": "#/$defs/sha256" },
+        "approvalRef": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^review:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            }
+          ]
+        },
+        "output": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "approved" } } },
+          "then": { "properties": { "approvalRef": { "type": "string" } } },
+          "else": { "properties": { "approvalRef": { "type": "null" } } }
+        }
+      ]
+    }
+  }
+}

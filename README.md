@@ -329,6 +329,8 @@ npm run benchmark:source:check
 
 源文本、选择范围、编码选择探针和许可声明位于 [`benchmarks/mvp-source`](benchmarks/mvp-source)。该内容包不含模型、声音、图片、音乐、凭据或生成媒体。
 
+隔离工作区建立后，可用 `npm run benchmark:narrative -- status` 查看固定叙事链；`stage <extraction|adaptation|script|shot>` 只把下一阶段的仓库自有计划写成 `pending_review`，不会联网。人工审阅后必须把命令输出中的阶段、结果 UID、结果摘要和信封摘要原样带回 `approve <stage> <resultUid> <resultHash> <envelopeHash>`，工具才会批准该阶段；不存在自动批量批准。
+
 叙事审核页中的事实提取结果支持按事实显式“定位原文”；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/evidence/:factId` 会重新校验结果、原文全文摘要、选区、原文块哈希、Unicode 码点偏移与引文，再返回不含凭据的高亮上下文。
 
 改编结果支持显式打开“原著事实与改编决策”对照；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/adaptation-comparison` 会重新校验已批准事实来源、当前原文证据、改编输入与五段节拍，把原著事实、基于事实的推断和带理由的改编决策分栏展示，且原著事实可继续定位到原文。

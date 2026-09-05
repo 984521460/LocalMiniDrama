@@ -4,6 +4,7 @@
   "description": "Node.js backend for LocalMiniDrama",
   "main": "src/server.js",
   "scripts": {
+    "benchmark:narrative": "node scripts/mvp-benchmark-narrative.js",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "h3:validation": "node ../scripts/h3-real-validation.cjs",
