@@ -610,3 +610,156 @@ test('startup recovery seals an interrupted reference reservation as unknown wit
     { recoveredCount: 0 },
   );
 });
+
+test('reference package execution history exposes preserved failures after refresh', async (t) => {
+  const current = await fixture(t, 251000, { duplicateReference: true });
+  const generated = await executeCandidates(
+    current, current.characters[0], uid(251501), 42,
+  );
+  assert.equal(generated.result.response.status, 200);
+  const candidate = generated.result.body.data.execution.items[0];
+  const packaged = await executeReferencePackage(
+    current,
+    current.characters[0],
+    generated.result.body.data.execution,
+    candidate.candidateUid,
+    uid(251502),
+  );
+  assert.equal(packaged.response.status, 422);
+
+  const history = await requestJson(
+    `${current.baseUrl}/dramas/${current.current.dramaId}`
+      + `/characters/${current.characters[0].uid}/reference-package-executions/history`,
+    'GET',
+  );
+  assert.equal(history.response.status, 200, JSON.stringify(history.body));
+  assert.equal(history.body.data.entries.length, 1);
+  assert.equal(history.body.data.entries[0].state, 'failed');
+  assert.equal(history.body.data.entries[0].package, null);
+});
+
+test('reference package execution history preserves ten original images after assets advance', async (t) => {
+  const current = await fixture(t, 252000);
+  const generated = await executeCandidates(
+    current, current.characters[0], uid(252501), 42,
+  );
+  assert.equal(generated.result.response.status, 200, JSON.stringify(generated.result.body));
+  const candidate = generated.result.body.data.execution.items[0];
+  const packaged = await executeReferencePackage(
+    current,
+    current.characters[0],
+    generated.result.body.data.execution,
+    candidate.candidateUid,
+    uid(252502),
+  );
+  assert.equal(packaged.response.status, 200, JSON.stringify(packaged.body));
+
+  const first = await requestJson(
+    `${current.baseUrl}/dramas/${current.current.dramaId}`
+      + `/characters/${current.characters[0].uid}/reference-package-executions/history`,
+    'GET',
+  );
+  assert.equal(first.response.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.data.entries.length, 1);
+  assert.equal(first.body.data.entries[0].state, 'succeeded');
+  assert.equal(first.body.data.entries[0].package.items.length, 10);
+  assert.equal(first.body.data.entries[0].packageCurrent, true);
+  assert.equal(first.body.data.entries[0].candidateSourceCurrent, true);
+
+  const original = current.current.repositories.assets.getVersion(
+    packaged.body.data.package.items[0].assetVersionUid,
+  );
+  const replacement = {
+    uid: uid(252900),
+    assetUid: original.assetUid,
+    storageProvider: original.storageProvider,
+    logicalUri: `${original.logicalUri}/revision-two`,
+    relativePath: `${original.relativePath}.revision-two.png`,
+    sha256: 'f'.repeat(64),
+    mimeType: original.mimeType,
+    width: original.width,
+    height: original.height,
+    durationMs: original.durationMs,
+    parentUid: original.uid,
+    status: 'ready',
+  };
+  current.current.database.prepare(`
+    INSERT INTO asset_versions
+      (uid,asset_uid,storage_provider,logical_uri,relative_path,sha256,mime_type,
+       width,height,duration_ms,parent_uid,status)
+    VALUES
+      (@uid,@assetUid,@storageProvider,@logicalUri,@relativePath,@sha256,@mimeType,
+       @width,@height,@durationMs,@parentUid,@status)
+  `).run(replacement);
+  current.current.database.exec('DROP TRIGGER v2_asset_version_selection_pointer_guard');
+  current.current.database.exec('DROP TRIGGER v2_character_reference_assets_frozen');
+  current.current.database.prepare(`
+    UPDATE assets SET current_version_uid=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE uid=?
+  `).run(replacement.uid, original.assetUid);
+  assert.throws(
+    () => current.current.repositories.characterReferencePackages.get(uid(252502)),
+    { name: 'V2RepositoryDataError' },
+  );
+
+  const reopened = await requestJson(
+    `${current.baseUrl}/dramas/${current.current.dramaId}`
+      + `/characters/${current.characters[0].uid}/reference-package-executions/history`,
+    'GET',
+  );
+  assert.equal(reopened.response.status, 200, JSON.stringify(reopened.body));
+  assert.equal(reopened.body.data.entries[0].packageCurrent, false);
+  assert.equal(reopened.body.data.entries[0].package.items.length, 10);
+  assert.equal(
+    reopened.body.data.entries[0].package.items[0].assetVersionUid,
+    original.uid,
+  );
+});
+
+test('reference package execution history is bounded and cursor paginated', async (t) => {
+  const current = await fixture(t, 253000);
+  const generated = await executeCandidates(
+    current, current.characters[0], uid(253501), 42,
+  );
+  assert.equal(generated.result.response.status, 200, JSON.stringify(generated.result.body));
+  const execution = current.current.repositories.characterCandidateExecutions.get(uid(253501));
+  const candidate = current.current.repositories.characterCandidates
+    .getBatch(uid(253501)).candidates[0];
+  for (let index = 0; index < 17; index += 1) {
+    const operationUid = uid(253600 + index);
+    current.current.repositories.characterReferencePackageExecutions.reserve({
+      request: {
+        schemaVersion: 'character-reference-package-execution-request.v1',
+        operationUid,
+        dramaUid: current.current.dramaUid,
+        characterUid: current.characters[0].uid,
+        candidateExecutionUid: execution.operationUid,
+        candidateUid: candidate.uid,
+        width: 256,
+        height: 256,
+        seed: index,
+      },
+      candidateExecution: execution,
+      candidate,
+    });
+    current.current.repositories.characterReferencePackageExecutions.fail(
+      operationUid,
+      'CHARACTER_REFERENCE_PACKAGE_EXECUTION_OUTPUT_INVALID',
+    );
+  }
+  const pathPrefix = `${current.baseUrl}/dramas/${current.current.dramaId}`
+    + `/characters/${current.characters[0].uid}/reference-package-executions/history`;
+  const first = await requestJson(pathPrefix, 'GET');
+  assert.equal(first.response.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.data.entries.length, 16);
+  assert.match(first.body.data.nextCursor, /^[0-9]+:[0-9a-f-]+$/u);
+  const second = await requestJson(
+    `${pathPrefix}?cursor=${encodeURIComponent(first.body.data.nextCursor)}`,
+    'GET',
+  );
+  assert.equal(second.response.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.data.entries.length, 1);
+  assert.equal(second.body.data.nextCursor, null);
+  const all = [...first.body.data.entries, ...second.body.data.entries];
+  assert.equal(new Set(all.map((entry) => entry.operationUid)).size, 17);
+});

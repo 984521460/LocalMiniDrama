@@ -121,10 +121,10 @@ function createCharacterReferencePackageRepository(database) {
           AND asset.owner_type = 'character'
           AND asset.owner_uid = @characterUid
           AND asset.asset_type = 'character_reference'
-          AND asset.current_version_uid = version.uid
+          AND (@historical = 1 OR asset.current_version_uid = version.uid)
           AND asset.status = 'ready'
           AND asset.created_at = item.asset_created_at
-          AND asset.updated_at = item.asset_updated_at
+          AND (@historical = 1 OR asset.updated_at = item.asset_updated_at)
           AND typeof(asset.created_at) = 'text' AND typeof(asset.updated_at) = 'text'
           AND length(CAST(asset.created_at AS BLOB)) = 24
           AND length(CAST(asset.updated_at AS BLOB)) = 24
@@ -225,12 +225,13 @@ function createCharacterReferencePackageRepository(database) {
     });
   });
 
-  function mapPackage(row) {
+  function mapPackage(row, historical = false) {
     try {
       const prepared = getStatements();
       if (prepared.validItemCount.get({
         packageUid: row.uid,
         characterUid: row.character_uid,
+        historical: historical ? 1 : 0,
       }) !== 10) throw new TypeError();
       const lock = prepared.getLock.get(row.lock_event_uid);
       const appearanceRow = prepared.getAppearance.get(row.appearance_version_uid);
@@ -302,6 +303,22 @@ function createCharacterReferencePackageRepository(database) {
     return mapPackage(row);
   }
 
+  function getHistory(packageUid) {
+    const canonicalPackageUid = validation.canonicalUid(packageUid);
+    const row = requiredRow(
+      getStatements().getPackage.get(canonicalPackageUid),
+      'character reference package',
+      canonicalPackageUid,
+    );
+    const packageRecord = mapPackage(row, true);
+    const current = getStatements().validItemCount.get({
+      packageUid: row.uid,
+      characterUid: row.character_uid,
+      historical: 0,
+    }) === 10;
+    return Object.freeze({ package: packageRecord, current });
+  }
+
   return Object.freeze({
     create(value) {
       const input = createCharacterReferencePackageInput(value);
@@ -310,6 +327,7 @@ function createCharacterReferencePackageRepository(database) {
     },
 
     get,
+    getHistory,
 
     list(characterUid) {
       const canonicalCharacterUid = validation.canonicalUid(characterUid);

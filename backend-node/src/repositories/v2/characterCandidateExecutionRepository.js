@@ -400,6 +400,10 @@ function createCharacterCandidateExecutionRepository(database) {
     return map(select.get(operationUid));
   }
 
+  function getHistory(operationUid) {
+    return map(select.get(operationUid), true);
+  }
+
   function historyCursor(value) {
     if (value === null) return null;
     if (typeof value !== 'string' || value.length > 64) dataError('history cursor');
@@ -554,6 +558,7 @@ function createCharacterCandidateExecutionRepository(database) {
     },
 
     get,
+    getHistory,
     getCharacterSource,
     listHistory,
 

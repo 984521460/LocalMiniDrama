@@ -87,6 +87,12 @@
       :drama-uid="dramaUid"
       :characters="characters"
     />
+    <CharacterReferencePackageHistory
+      ref="referenceHistoryPanel"
+      :drama-id="dramaId"
+      :drama-uid="dramaUid"
+      :characters="characters"
+    />
   </section>
 </template>
 
@@ -96,6 +102,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import CharacterReferencePackageCard from './CharacterReferencePackageCard.vue'
 import CharacterCandidateHistory from './CharacterCandidateHistory.vue'
+import CharacterReferencePackageHistory from './CharacterReferencePackageHistory.vue'
 import { useCharacterCandidateExecution } from '@/composables/useCharacterCandidateExecution.js'
 import {
   useCharacterReferencePackageExecution,
@@ -122,6 +129,7 @@ const packagesByIdentity = ref([])
 const selectedCandidateUid = ref('')
 const paidActionBusy = ref(false)
 const historyPanel = ref(null)
+const referenceHistoryPanel = ref(null)
 const options = computed(() => {
   try {
     return approvedCharacterCandidateOptions({
@@ -245,6 +253,7 @@ async function lockAndGenerateReferencePackage() {
       height: height.value,
       seed: seed.value,
     })
+    await referenceHistoryPanel.value?.refresh(selection.characterUid)
     if (!result) return
     const next = []
     for (let index = 0; index < packagesByIdentity.value.length; index += 1) {

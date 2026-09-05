@@ -53,10 +53,12 @@ function createProductionCharacterCandidateExecutionRuntime({
     characterCandidates: Object.freeze({
       execute: service.execute,
       get: service.get,
+      listHistory: service.listHistory,
       isAvailable: provider.isAvailable,
     }),
     characterReferencePackages: Object.freeze({
       execute: referencePackageService.execute,
+      listHistory: referencePackageService.listHistory,
     }),
   });
 }

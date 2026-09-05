@@ -21,12 +21,15 @@ const ERROR_CODES = new Set([
 ]);
 const SHA256 = /^[0-9a-f]{64}$/u;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const HISTORY_PAGE_SIZE = 16;
 
 function createCharacterReferencePackageExecutionRepository(database, dependencies = {}) {
   const candidateExecutions = dependencies.characterCandidateExecutions;
   const referencePackages = dependencies.characterReferencePackages;
   if (!candidateExecutions || typeof candidateExecutions.get !== 'function'
-    || !referencePackages || typeof referencePackages.get !== 'function') {
+    || typeof candidateExecutions.getHistory !== 'function'
+    || !referencePackages || typeof referencePackages.get !== 'function'
+    || typeof referencePackages.getHistory !== 'function') {
     throw new TypeError('Character reference package execution dependencies are invalid');
   }
   const insert = database.prepare(`
@@ -42,6 +45,22 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
   const select = database.prepare(
     'SELECT * FROM character_reference_package_executions WHERE operation_uid=?',
   );
+  const listHistoryFirst = database.prepare(`
+    SELECT operation_uid,created_at_epoch_ms
+    FROM character_reference_package_executions
+    WHERE drama_uid=@dramaUid AND character_uid=@characterUid
+    ORDER BY created_at_epoch_ms DESC,operation_uid DESC
+    LIMIT 17
+  `);
+  const listHistoryAfter = database.prepare(`
+    SELECT operation_uid,created_at_epoch_ms
+    FROM character_reference_package_executions
+    WHERE drama_uid=@dramaUid AND character_uid=@characterUid
+      AND (created_at_epoch_ms < @cursorEpochMs
+        OR (created_at_epoch_ms = @cursorEpochMs AND operation_uid < @cursorOperationUid))
+    ORDER BY created_at_epoch_ms DESC,operation_uid DESC
+    LIMIT 17
+  `);
   const transition = database.prepare(`
     UPDATE character_reference_package_executions
     SET state=@state,package_uid=@packageUid,error_code=@errorCode,
@@ -60,9 +79,13 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
     throw new V2RepositoryDataError(ENTITY, 'persisted record');
   }
 
-  function currentCandidate(row, request) {
+  function currentCandidate(row, request, historical = false) {
     let execution;
-    try { execution = candidateExecutions.get(row.candidate_execution_uid); } catch {
+    try {
+      execution = historical
+        ? candidateExecutions.getHistory(row.candidate_execution_uid)
+        : candidateExecutions.get(row.candidate_execution_uid);
+    } catch {
       return dataError();
     }
     if (execution.state !== 'succeeded' || execution.operationUid !== request.candidateExecutionUid
@@ -80,7 +103,7 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
     return Object.freeze({ execution, candidate });
   }
 
-  function map(row) {
+  function map(row, historical = false) {
     if (!row) throw new V2RepositoryNotFoundError(ENTITY);
     let request;
     try {
@@ -102,16 +125,31 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
       || !Number.isSafeInteger(row.created_at_epoch_ms)
       || !Number.isSafeInteger(row.updated_at_epoch_ms)
       || row.updated_at_epoch_ms < row.created_at_epoch_ms) dataError();
-    currentCandidate(row, request);
+    const source = currentCandidate(row, request, historical);
+    const candidateSourceCurrent = historical
+      ? source.execution.sourceCurrent === true && source.candidate.currentVersion === true
+      : true;
+    let packageRecord = null;
+    let packageCurrent = null;
     if (row.state === 'reserved') {
       if (row.package_uid !== null || row.error_code !== null) dataError();
     } else if (row.state === 'succeeded') {
       if (row.package_uid !== row.operation_uid || row.error_code !== null) dataError();
-      let packageRecord;
-      try { packageRecord = referencePackages.get(row.package_uid); } catch { return dataError(); }
+      try {
+        if (historical) {
+          const history = referencePackages.getHistory(row.package_uid);
+          packageRecord = history.package;
+          packageCurrent = history.current;
+        } else packageRecord = referencePackages.get(row.package_uid);
+      } catch { return dataError(); }
       if (packageRecord.packageUid !== row.operation_uid
         || packageRecord.characterUid !== row.character_uid
         || packageRecord.candidateUid !== row.candidate_uid) dataError();
+      if (historical) {
+        for (let index = 0; index < packageRecord.items.length; index += 1) {
+          if (packageRecord.items[index].mediaType !== 'image/png') dataError();
+        }
+      }
     } else if (row.state === 'failed') {
       if (row.package_uid !== null || !ERROR_CODES.has(row.error_code)) dataError();
     } else if (row.state === 'submission_unknown') {
@@ -120,8 +158,10 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
         dataError();
       }
     } else dataError();
-    return Object.freeze({
-      schemaVersion: 'character-reference-package-execution.v1',
+    const execution = {
+      schemaVersion: historical
+        ? 'character-reference-package-execution-history-entry.v1'
+        : 'character-reference-package-execution.v1',
       operationUid: row.operation_uid,
       request,
       requestSha256,
@@ -133,7 +173,13 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
       errorCode: row.error_code,
       createdAtEpochMs: row.created_at_epoch_ms,
       updatedAtEpochMs: row.updated_at_epoch_ms,
-    });
+    };
+    if (historical) {
+      execution.candidateSourceCurrent = candidateSourceCurrent;
+      execution.packageCurrent = packageCurrent;
+      execution.package = packageRecord;
+    }
+    return Object.freeze(execution);
   }
 
   function get(operationUid) {
@@ -141,6 +187,49 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
       throw new TypeError('Character reference package execution UID is invalid');
     }
     return map(select.get(operationUid));
+  }
+
+  function getHistory(operationUid) {
+    if (typeof operationUid !== 'string' || !UUID_V4.test(operationUid)) {
+      throw new TypeError('Character reference package execution UID is invalid');
+    }
+    return map(select.get(operationUid), true);
+  }
+
+  function historyCursor(value) {
+    if (value === null) return null;
+    if (typeof value !== 'string' || value.length > 64) dataError();
+    const match = /^([0-9]{1,15}):([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u.exec(value);
+    if (!match) dataError();
+    const cursorEpochMs = Number(match[1]);
+    if (!Number.isSafeInteger(cursorEpochMs) || cursorEpochMs < 0
+      || cursorEpochMs > 253_402_300_799_999) dataError();
+    return Object.freeze({ cursorEpochMs, cursorOperationUid: match[2] });
+  }
+
+  function listHistory({ dramaUid, characterUid, cursor }) {
+    if (typeof dramaUid !== 'string' || !UUID_V4.test(dramaUid)
+      || typeof characterUid !== 'string' || !UUID_V4.test(characterUid)) dataError();
+    const parsedCursor = historyCursor(cursor);
+    const rows = parsedCursor === null
+      ? listHistoryFirst.all({ dramaUid, characterUid })
+      : listHistoryAfter.all({ dramaUid, characterUid, ...parsedCursor });
+    const entries = [];
+    const count = Math.min(rows.length, HISTORY_PAGE_SIZE);
+    for (let index = 0; index < count; index += 1) {
+      entries[index] = map(select.get(rows[index].operation_uid), true);
+    }
+    const last = entries[entries.length - 1];
+    const nextCursor = rows.length > HISTORY_PAGE_SIZE
+      ? `${last.createdAtEpochMs}:${last.operationUid}`
+      : null;
+    return Object.freeze({
+      schemaVersion: 'character-reference-package-execution-history-page.v1',
+      dramaUid,
+      characterUid,
+      entries: Object.freeze(entries),
+      nextCursor,
+    });
   }
 
   function requireTransition(operationUid, state, packageUid, errorCode) {
@@ -221,6 +310,8 @@ function createCharacterReferencePackageExecutionRepository(database, dependenci
     },
 
     get,
+    getHistory,
+    listHistory,
 
     markUnknown(operationUid) {
       return requireTransition(

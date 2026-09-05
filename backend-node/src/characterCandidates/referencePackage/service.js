@@ -36,6 +36,9 @@ const SET_HAS = Set.prototype.has;
 const PROVIDER_KEYS = Object.freeze(['scope', 'isAvailable', 'generate']);
 const TRUSTED_ERRORS = new WeakSet();
 const TOKEN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
+const HISTORY_QUERY_KEYS = Object.freeze(['dramaUid', 'characterUid', 'cursor']);
+const HISTORY_CURSOR = /^[0-9]{1,15}:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 class CharacterReferencePackageExecutionError extends Error {
   constructor(code) {
@@ -53,6 +56,33 @@ function isCharacterReferencePackageExecutionError(value) {
 
 function fail(code) {
   throw new CharacterReferencePackageExecutionError(code);
+}
+
+function historyQuery(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || isProxy(value)
+    || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
+    fail('CHARACTER_REFERENCE_PACKAGE_EXECUTION_INPUT_INVALID');
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (Reflect.ownKeys(descriptors).length !== HISTORY_QUERY_KEYS.length) {
+    fail('CHARACTER_REFERENCE_PACKAGE_EXECUTION_INPUT_INVALID');
+  }
+  const output = Object.create(null);
+  for (let index = 0; index < HISTORY_QUERY_KEYS.length; index += 1) {
+    const key = HISTORY_QUERY_KEYS[index];
+    if (!Object.hasOwn(descriptors, key)
+      || !descriptors[key].enumerable || !Object.hasOwn(descriptors[key], 'value')) {
+      fail('CHARACTER_REFERENCE_PACKAGE_EXECUTION_INPUT_INVALID');
+    }
+    output[key] = descriptors[key].value;
+  }
+  if (typeof output.dramaUid !== 'string' || !UUID_V4.test(output.dramaUid)
+    || typeof output.characterUid !== 'string' || !UUID_V4.test(output.characterUid)
+    || (output.cursor !== null && (typeof output.cursor !== 'string'
+      || output.cursor.length > 64 || !HISTORY_CURSOR.test(output.cursor)))) {
+    fail('CHARACTER_REFERENCE_PACKAGE_EXECUTION_INPUT_INVALID');
+  }
+  return Object.freeze(output);
 }
 
 function exactProvider(value) {
@@ -708,6 +738,16 @@ function createCharacterReferencePackageExecutionService({
         finish(rejectExecution, error);
       }
       return promise;
+    },
+
+    listHistory(value) {
+      const query = historyQuery(value);
+      try { return repositories.characterReferencePackageExecutions.listHistory(query); } catch (error) {
+        if (error instanceof V2RepositoryDataError) {
+          fail('CHARACTER_REFERENCE_PACKAGE_EXECUTION_DATA_INVALID');
+        }
+        throw error;
+      }
     },
   });
 }

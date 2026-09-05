@@ -14,6 +14,24 @@ const {
   V2RepositoryConflictError,
   V2RepositoryNotFoundError,
 } = require('../../repositories/v2');
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const HISTORY_CURSOR = /^[0-9]{1,15}:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function legacyDramaId(value) {
+  if (typeof value !== 'string' || !/^[1-9]\d*$/u.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function historyCursor(value) {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || value.length > 64 || !HISTORY_CURSOR.test(value)) {
+    throw new CharacterReferencePackageExecutionError(
+      'CHARACTER_REFERENCE_PACKAGE_EXECUTION_INPUT_INVALID',
+    );
+  }
+  return value;
+}
 
 function characterReferencePackageRoutes(log, runtime = {}, database) {
   const router = express.Router();
@@ -91,6 +109,41 @@ function characterReferencePackageRoutes(log, runtime = {}, database) {
           return response.error(res, executionStatus(error.code), error.code, error.message);
         }
         log?.error?.('character-reference-package-execution-unexpected', {
+          code: 'CHARACTER_REFERENCE_PACKAGE_EXECUTION_UNEXPECTED',
+        });
+        return response.error(
+          res,
+          500,
+          'CHARACTER_REFERENCE_PACKAGE_EXECUTION_UNEXPECTED',
+          'Character reference package execution failed',
+        );
+      }
+    },
+  );
+
+  router.get(
+    '/dramas/:dramaId/characters/:characterUid/reference-package-executions/history',
+    async (req, res) => {
+      if (!execution || typeof execution.listHistory !== 'function') return unavailable(res);
+      try {
+        const dramaId = legacyDramaId(req.params.dramaId);
+        const sources = createV2Repositories(database).sources;
+        const drama = dramaId === null ? null : sources.findDramaByLegacyId(dramaId);
+        if (!drama || !UUID_V4.test(req.params.characterUid)) {
+          throw new CharacterReferencePackageExecutionError(
+            'CHARACTER_REFERENCE_PACKAGE_EXECUTION_INPUT_INVALID',
+          );
+        }
+        return response.success(res, await execution.listHistory({
+          dramaUid: drama.uid,
+          characterUid: req.params.characterUid,
+          cursor: historyCursor(req.query.cursor),
+        }));
+      } catch (error) {
+        if (isCharacterReferencePackageExecutionError(error)) {
+          return response.error(res, executionStatus(error.code), error.code, error.message);
+        }
+        log?.error?.('character-reference-package-execution-history-unexpected', {
           code: 'CHARACTER_REFERENCE_PACKAGE_EXECUTION_UNEXPECTED',
         });
         return response.error(
