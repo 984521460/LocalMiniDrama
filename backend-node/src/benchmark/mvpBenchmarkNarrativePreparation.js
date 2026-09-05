@@ -228,7 +228,7 @@ function createMvpBenchmarkNarrativePreparation({
         || record.dramaUid !== identity.dramaUid
         || record.sourceSelectionUid !== identity.sourceSelectionUid
         || (index === 0 ? record.upstreamResultUid !== null
-          : record.upstreamResultUid !== records[index - 1].uid)
+          : record.upstreamResultUid !== active[index - 1].uid)
         || !UUID_V4.test(record.uid) || !SHA256.test(record.resultHash)
         || !SHA256.test(record.envelopeHash)
         || !['pending_review', 'approved', 'rejected'].includes(record.status)) fail();

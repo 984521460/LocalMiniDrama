@@ -209,6 +209,32 @@ test('explicit supersession preserves the old work and stages a separately revie
   assert.equal(current.database.prepare('SELECT count(*) FROM narrative_stale_events').pluck().get(), 1);
 });
 
+test('approved corrected extraction can stage adaptation while stale work remains visible', async (t) => {
+  const current = fixture(t);
+  const preparation = createPreparation(current, 311800);
+  const first = await preparation.stage('extraction');
+  const corrected = await preparation.supersede(approvalFor(first));
+  const approved = preparation.approve(approvalFor(corrected));
+
+  assert.equal(approved.status, 'ready_for_next_stage');
+  assert.equal(approved.nextStage, 'adaptation');
+  assert.equal(approved.history.length, 1);
+  assert.equal(approved.history[0].resultUid, first.stages[0].resultUid);
+
+  const adaptation = await preparation.stage('adaptation');
+  assert.equal(validateStatus(adaptation), true, JSON.stringify(validateStatus.errors));
+  assert.equal(adaptation.status, 'awaiting_review');
+  assert.equal(adaptation.nextStage, null);
+  assert.deepEqual(adaptation.stages.map((item) => item.stage), ['extraction', 'adaptation']);
+  assert.equal(adaptation.stages[1].status, 'pending_review');
+  assert.equal(adaptation.stages[1].output.durationSummary.totalSeconds, 60);
+  assert.equal(adaptation.history.length, 1);
+  assert.equal(adaptation.history[0].resultUid, first.stages[0].resultUid);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_results').pluck().get(), 3);
+  assert.equal(current.database.prepare("SELECT count(*) FROM narrative_results WHERE status='stale'")
+    .pluck().get(), 1);
+});
+
 test('rejected fixed stage cannot be approved or silently replaced', async (t) => {
   const current = fixture(t);
   const preparation = createPreparation(current, 312000);
