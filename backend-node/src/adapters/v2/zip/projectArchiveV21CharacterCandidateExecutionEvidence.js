@@ -38,6 +38,7 @@ const MAP_GET = Map.prototype.get;
 const MAP_HAS = Map.prototype.has;
 const MAP_SET = Map.prototype.set;
 const NUMBER_IS_SAFE_INTEGER = Number.isSafeInteger;
+const NUMBER_IS_FINITE = Number.isFinite;
 const OBJECT_FREEZE = Object.freeze;
 const OBJECT_GET_DESCRIPTORS = Object.getOwnPropertyDescriptors;
 const OBJECT_GET_PROTOTYPE = Object.getPrototypeOf;
@@ -49,6 +50,7 @@ const SET_HAS = Set.prototype.has;
 const STRING_INCLUDES = String.prototype.includes;
 const STRING_TRIM = String.prototype.trim;
 const SHA256 = /^[0-9a-f]{64}$/u;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const PROVIDER = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
 const FAILURE_CODES = new Set([
   'CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID',
@@ -115,7 +117,16 @@ function parametersJson(value, width, height, seed, ordinal, invalid) {
     || apply(OBJECT_GET_PROTOTYPE, Object, [parsed]) !== Object.prototype) fail(invalid);
   const descriptors = apply(OBJECT_GET_DESCRIPTORS, Object, [parsed]);
   const keys = apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
-  const expectedKeys = ['adapter', 'size', 'requestedSeed', 'ordinal'];
+  const configuredKeys = ['adapter', 'size', 'requestedSeed', 'ordinal'];
+  const remoteKeys = [
+    ...configuredKeys, 'connectionUid', 'connectionEvidenceSha256', 'samplerName',
+    'scheduler', 'steps', 'cfg', 'negativePromptSha256',
+  ];
+  const adapter = descriptors.adapter?.value;
+  const expectedKeys = adapter === 'configured-image.v1'
+    ? configuredKeys
+    : adapter === 'remote-comfyui.v1' ? remoteKeys : null;
+  if (expectedKeys === null) fail(invalid);
   if (keys.length !== expectedKeys.length) fail(invalid);
   for (let index = 0; index < expectedKeys.length; index += 1) {
     const key = expectedKeys[index];
@@ -123,15 +134,20 @@ function parametersJson(value, width, height, seed, ordinal, invalid) {
     if (keys[index] !== key || !descriptor?.enumerable
       || !apply(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) fail(invalid);
   }
-  if (descriptors.adapter.value !== 'configured-image.v1'
-    || descriptors.size.value !== `${width}x${height}`
+  if (descriptors.size.value !== `${width}x${height}`
     || descriptors.requestedSeed.value !== seed
     || descriptors.ordinal.value !== ordinal) fail(invalid);
-  const expected = `{"adapter":"configured-image.v1","size":${apply(
-    JSON_STRINGIFY,
-    JSON,
-    [descriptors.size.value],
-  )},"requestedSeed":${seed},"ordinal":${ordinal}}`;
+  if (adapter === 'remote-comfyui.v1'
+    && (!regexTest(UUID_V4, descriptors.connectionUid.value)
+      || !regexTest(SHA256, descriptors.connectionEvidenceSha256.value)
+      || !regexTest(PROVIDER, descriptors.samplerName.value)
+      || !regexTest(PROVIDER, descriptors.scheduler.value)
+      || !apply(NUMBER_IS_SAFE_INTEGER, Number, [descriptors.steps.value])
+      || descriptors.steps.value < 1 || descriptors.steps.value > 100
+      || !apply(NUMBER_IS_FINITE, Number, [descriptors.cfg.value])
+      || descriptors.cfg.value < 0 || descriptors.cfg.value > 30
+      || !regexTest(SHA256, descriptors.negativePromptSha256.value))) fail(invalid);
+  const expected = apply(JSON_STRINGIFY, JSON, [parsed]);
   if (expected !== value) fail(invalid);
   return parsed;
 }

@@ -3,10 +3,21 @@
 const { LocalStorageProvider } = require('../../adapters/v2/storage/localStorageProvider');
 const { createV2Repositories } = require('../../repositories/v2');
 const { createConfiguredCharacterCandidateImageProvider } = require('./configuredImageProvider');
+const {
+  createRemoteComfyCharacterCandidateImageProvider,
+} = require('./remoteComfyImageProvider');
 const { createCharacterCandidateExecutionService } = require('./service');
 const {
   createCharacterReferencePackageExecutionService,
 } = require('../referencePackage');
+
+const UNAVAILABLE_REFERENCE_PROVIDER = Object.freeze({
+  scope: 'configured-image',
+  isAvailable: () => false,
+  async generate() {
+    throw new TypeError('Remote ComfyUI character reference generation is unavailable');
+  },
+});
 
 function createProductionCharacterCandidateExecutionRuntime({
   database,
@@ -17,10 +28,23 @@ function createProductionCharacterCandidateExecutionRuntime({
     || typeof localRoot !== 'string' || localRoot.length < 1) {
     throw new TypeError('Production character candidate dependencies are invalid');
   }
-  const provider = dependencies.provider || createConfiguredCharacterCandidateImageProvider({
-    database,
-    dependencies: dependencies.providerDependencies || {},
-  });
+  let configuredProvider;
+  function getConfiguredProvider() {
+    if (!configuredProvider) {
+      configuredProvider = createConfiguredCharacterCandidateImageProvider({
+        database,
+        dependencies: dependencies.providerDependencies || {},
+      });
+    }
+    return configuredProvider;
+  }
+  const provider = dependencies.provider
+    || (dependencies.remoteComfyUi
+      ? createRemoteComfyCharacterCandidateImageProvider(dependencies.remoteComfyUi)
+      : getConfiguredProvider());
+  const referenceProvider = dependencies.referenceProvider
+    || dependencies.provider
+    || (dependencies.remoteComfyUi ? UNAVAILABLE_REFERENCE_PROVIDER : getConfiguredProvider());
   const storage = dependencies.storage || new LocalStorageProvider({ projectRoot: localRoot });
   const repositories = createV2Repositories(database);
   const service = createCharacterCandidateExecutionService({
@@ -34,7 +58,7 @@ function createProductionCharacterCandidateExecutionRuntime({
   const referencePackageService = createCharacterReferencePackageExecutionService({
     repositories,
     candidateExecution: service,
-    provider,
+    provider: referenceProvider,
     storage,
     ...(dependencies.createReferenceUid
       ? { createUid: dependencies.createReferenceUid }

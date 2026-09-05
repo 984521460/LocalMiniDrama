@@ -388,6 +388,101 @@ test('production candidate execution makes four independent calls and seals one 
   }
 });
 
+test('remote ComfyUI evidence survives candidate persistence and strict repository reopen', async (t) => {
+  const database = createMigratedV2Database(t);
+  const { ids, repositories } = await seedApprovedCharacterSource(database);
+  const { root, storage } = tempStorage(t);
+  const connectionUid = uid(31880);
+  const connectionEvidenceSha256 = 'a'.repeat(64);
+  const negativePromptSha256 = 'b'.repeat(64);
+  const service = createCharacterCandidateExecutionService({
+    repositories,
+    provider: Object.freeze({
+      scope: 'configured-image',
+      isAvailable: () => true,
+      async generate(command) {
+        return Object.freeze({
+          provider: 'comfyui',
+          model: 'checkpoints/portrait.safetensors',
+          parameters: Object.freeze({
+            adapter: 'remote-comfyui.v1',
+            size: `${command.width}x${command.height}`,
+            requestedSeed: command.seed,
+            ordinal: command.ordinal,
+            connectionUid,
+            connectionEvidenceSha256,
+            samplerName: 'euler_ancestral',
+            scheduler: 'normal',
+            steps: 28,
+            cfg: 6.5,
+            negativePromptSha256,
+          }),
+          bytes: await png(command.ordinal),
+        });
+      },
+    }),
+    storage,
+  });
+  const request = executionRequest(ids, uid(31881));
+  const completed = await service.execute(request);
+  const reopened = repositories.characterCandidateExecutions.get(request.operationUid);
+
+  assert.equal(completed.execution.state, 'succeeded');
+  assert.equal(reopened.items.length, 4);
+  for (const item of reopened.items) {
+    assert.deepEqual(item.parameters, {
+      adapter: 'remote-comfyui.v1',
+      size: '256x256',
+      requestedSeed: item.seed,
+      ordinal: item.ordinal,
+      connectionUid,
+      connectionEvidenceSha256,
+      samplerName: 'euler_ancestral',
+      scheduler: 'normal',
+      steps: 28,
+      cfg: 6.5,
+      negativePromptSha256,
+    });
+  }
+  const row = database.prepare(`
+    SELECT parameters_json, parameters_sha256
+    FROM character_candidate_execution_items
+    WHERE operation_uid=? AND ordinal=0
+  `).get(request.operationUid);
+  assert.equal(createHash('sha256').update(row.parameters_json, 'utf8').digest('hex'), row.parameters_sha256);
+
+  assertProjectArchiveV21CharacterCandidateExecutionStructured(
+    repositories.projectArchives.exportStructuredV21(ids.drama),
+    () => { throw new Error('remote archive evidence invalid'); },
+  );
+
+  runMigrationsAndEnsure(database);
+  const exported = projectZipService.exportDrama(
+    database,
+    { storage: { local_path: root } },
+    Object.freeze({ info() {}, error() {} }),
+    1,
+  );
+  const archive = readProjectArchive(exported.buffer);
+  assert.equal(
+    JSON.parse(archive.manifestData.structuredRecords
+      .characterCandidateExecutionItems[0].parameters_json).adapter,
+    'remote-comfyui.v1',
+  );
+  const restoredDatabase = createMigratedV2Database(t);
+  runMigrationsAndEnsure(restoredDatabase);
+  const restoredStorage = tempStorage(t).root;
+  projectZipService.importDrama(
+    restoredDatabase,
+    { storage: { local_path: restoredStorage } },
+    Object.freeze({ info() {}, error() {} }),
+    exported.buffer,
+  );
+  const restored = createV2Repositories(restoredDatabase)
+    .characterCandidateExecutions.get(request.operationUid);
+  assert.equal(restored.items[0].parameters.connectionEvidenceSha256, connectionEvidenceSha256);
+});
+
 test('structured execution evidence indexes high-cardinality narrative sources once', async (t) => {
   const database = createMigratedV2Database(t);
   const { ids, repositories } = await seedApprovedCharacterSource(database);

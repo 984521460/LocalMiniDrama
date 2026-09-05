@@ -21,6 +21,9 @@ const {
 } = require('./characterCandidates/execution/productionRuntime');
 const { createH3ApiSubmissionStore } = require('./h3/apiSubmissionStore');
 const { createV2Repositories } = require('./repositories/v2');
+const {
+  remoteComfyProfileFromConfig,
+} = require('./characterCandidates/execution/remoteComfyConfig');
 const { createWorkflowRunService } = require('./workflows');
 const { createStartupRecoveryCoordinator } = require('./recovery/startupRecovery');
 const response = require('./response');
@@ -159,10 +162,23 @@ function createApp({
     log,
     dependencies: narrativeDependencies,
   });
+  const remoteComfyProfile = remoteComfyProfileFromConfig(config);
+  const resolvedCharacterCandidateDependencies = remoteComfyProfile === null
+    || characterCandidateDependencies.provider
+    || characterCandidateDependencies.remoteComfyUi
+    ? characterCandidateDependencies
+    : Object.freeze({
+      ...characterCandidateDependencies,
+      remoteComfyUi: Object.freeze({
+        repository: createV2Repositories(db).remote,
+        gateway: remoteRuntime.remoteExecution.comfyGateway,
+        profile: remoteComfyProfile,
+      }),
+    });
   const characterCandidateRuntime = createProductionCharacterCandidateExecutionRuntime({
     database: db,
     localRoot: storageRoot,
-    dependencies: characterCandidateDependencies,
+    dependencies: resolvedCharacterCandidateDependencies,
   });
   const runtime = Object.freeze({
     ...remoteRuntime,

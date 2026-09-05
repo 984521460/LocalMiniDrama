@@ -343,6 +343,24 @@ npm run benchmark:source:check
 
 已批准的角色事实可在“角色四候选”面板中逐个生成。每个角色会显式确认并独立提交 4 次 configured-image 请求，保存为 4 个内容摘要互异、归属该角色的 PNG AssetVersion；在同一界面会话中切换角色时，各角色候选独立显示，不会把上一角色的结果误标为当前角色。
 
+角色四候选也可改用项目内置的远程 ComfyUI 通道。先在“远程连接”中保存 SSH 凭据、探测并确认主机指纹，确保 ComfyUI 只监听远端 `127.0.0.1`；再把 `backend-node/configs/config.yaml` 的角色图片配置改为：
+
+```yaml
+character_candidates:
+  image_provider: remote-comfyui
+  remote_comfyui:
+    enabled: true
+    connection_uid: 00000000-0000-4000-8000-000000000000
+    checkpoint_name: checkpoints/portrait.safetensors
+    sampler_name: euler_ancestral
+    scheduler: normal
+    steps: 28
+    cfg: 6.5
+    negative_prompt: text, watermark, duplicate person
+```
+
+`connection_uid` 与 `checkpoint_name` 必须替换为本机项目中已确认的连接和远端实际模型。生产链会通过 SSH loopback 隧道核验 ComfyUI 节点与 checkpoint，提交每张独立工作流，只下载唯一 PNG，并在候选证据中保存 connection evidence、采样器、步数、CFG 与负面提示词摘要。缺项、连接漂移、模型不存在或输出多义都会失败关闭，不会回退到其他图片 API。当前远程通道只覆盖四张角色候选；十项参考包仍保持不可用，直至独立的远程参考图工作流完成，避免在已选择 ComfyUI 时偷偷切换 Provider。
+
 候选四格生成后可选择其中一张执行“锁定并生成 10 项参考包”。该操作会建立不可变 Identity、Appearance、Costume 版本和锁事件，再生成正面/侧面/全身及五种表情参考图；只有 10 张媒体均验证并完成同一数据库事务后才返回成功。
 
 已批准的分镜可在“资产版本与连续性”工作台显式建立全部镜头引用。后端会在一个 SQLite 立即事务中重验完整批准链，将台本事实映射到同剧唯一的场景、角色和道具，选择最新 ready 场景/道具版本与当前锁定角色参考包，再一次性封账每个镜头的不可变连续性快照。重复请求只回读同一组结果；任何缺失、歧义、部分旧快照或来源漂移都会整体回滚。该入口仅写本地版本证据，不调用 Provider、Vault、SSH 或 GPU。

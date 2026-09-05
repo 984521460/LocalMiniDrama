@@ -135,15 +135,31 @@ function createManagedComfyGateway(options) {
       failed = true;
       throw error;
     } finally {
+      let cleanupFailed = false;
       try {
         await boundedClose(tunnel.target, tunnel.close, configured.timeoutMs);
       } catch {
-        if (!failed) throw new TypeError('Managed ComfyUI tunnel cleanup failed');
+        cleanupFailed = true;
       }
+      try {
+        await boundedClose(opened.session, opened.close, configured.timeoutMs);
+      } catch {
+        cleanupFailed = true;
+      }
+      if (!failed && cleanupFailed) throw new TypeError('Managed ComfyUI cleanup failed');
     }
   }
 
   return Object.freeze({
+    run(connectionUid, connectionEvidenceSha256, operation) {
+      if (typeof operation !== 'function' || isProxy(operation)) {
+        throw new TypeError('Managed ComfyUI operation is invalid');
+      }
+      return withClient(connectionUid, connectionEvidenceSha256, operation);
+    },
+    objectInfo(connectionUid, connectionEvidenceSha256) {
+      return withClient(connectionUid, connectionEvidenceSha256, (client) => client.objectInfo());
+    },
     requireReady(connectionUid, connectionEvidenceSha256, manifest) {
       return withClient(connectionUid, connectionEvidenceSha256, (client) => createComfyDependencyChecker({
         client,
@@ -168,6 +184,13 @@ function createManagedComfyGateway(options) {
         connectionUid,
         connectionEvidenceSha256,
         (client) => client.waitForPrompt(promptId, waitOptions),
+      );
+    },
+    downloadOutput(connectionUid, connectionEvidenceSha256, output) {
+      return withClient(
+        connectionUid,
+        connectionEvidenceSha256,
+        (client) => client.downloadOutput(output),
       );
     },
   });

@@ -228,13 +228,34 @@ function characterCandidateParametersSha256Sql(value) {
   if (parsed === null || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   try {
     const keys = Object.keys(parsed);
-    if (keys.length !== 4 || keys[0] !== 'adapter' || keys[1] !== 'size'
-      || keys[2] !== 'requestedSeed' || keys[3] !== 'ordinal'
-      || parsed.adapter !== 'configured-image.v1'
+    const configuredKeys = ['adapter', 'size', 'requestedSeed', 'ordinal'];
+    const remoteKeys = [
+      ...configuredKeys, 'connectionUid', 'connectionEvidenceSha256', 'samplerName',
+      'scheduler', 'steps', 'cfg', 'negativePromptSha256',
+    ];
+    const expectedKeys = parsed.adapter === 'configured-image.v1'
+      ? configuredKeys
+      : parsed.adapter === 'remote-comfyui.v1' ? remoteKeys : null;
+    if (expectedKeys === null || keys.length !== expectedKeys.length
+      || keys.some((key, index) => key !== expectedKeys[index])
       || typeof parsed.size !== 'string' || !/^\d{3,4}x\d{3,4}$/u.test(parsed.size)
       || !Number.isSafeInteger(parsed.requestedSeed)
       || parsed.requestedSeed < 0 || parsed.requestedSeed > 4_294_967_295
       || !Number.isSafeInteger(parsed.ordinal) || parsed.ordinal < 0 || parsed.ordinal > 3) return null;
+    if (parsed.adapter === 'remote-comfyui.v1'
+      && (typeof parsed.connectionUid !== 'string'
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(parsed.connectionUid)
+        || typeof parsed.connectionEvidenceSha256 !== 'string'
+        || !/^[0-9a-f]{64}$/u.test(parsed.connectionEvidenceSha256)
+        || typeof parsed.samplerName !== 'string'
+        || !/^[a-z0-9][a-z0-9._-]{0,127}$/u.test(parsed.samplerName)
+        || typeof parsed.scheduler !== 'string'
+        || !/^[a-z0-9][a-z0-9._-]{0,127}$/u.test(parsed.scheduler)
+        || !Number.isSafeInteger(parsed.steps) || parsed.steps < 1 || parsed.steps > 100
+        || typeof parsed.cfg !== 'number' || !Number.isFinite(parsed.cfg)
+        || parsed.cfg < 0 || parsed.cfg > 30
+        || typeof parsed.negativePromptSha256 !== 'string'
+        || !/^[0-9a-f]{64}$/u.test(parsed.negativePromptSha256))) return null;
     return createHash('sha256').update(value, 'utf8').digest('hex');
   } catch {
     return null;

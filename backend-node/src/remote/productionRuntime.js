@@ -123,6 +123,7 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
       tunnelManager,
     }),
     remoteExecution: Object.freeze({
+      comfyGateway: remoteClient,
       remoteCoordinator,
       remoteEnvironment,
       remoteTasks,

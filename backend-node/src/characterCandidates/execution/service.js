@@ -48,6 +48,15 @@ const HISTORY_QUERY_KEYS = Object.freeze(['dramaUid', 'characterUid', 'cursor'])
 const HISTORY_CURSOR = /^[0-9]{1,15}:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const TOKEN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
+const CONFIGURED_PARAMETER_KEYS = Object.freeze([
+  'adapter', 'size', 'requestedSeed', 'ordinal',
+]);
+const REMOTE_COMFY_PARAMETER_KEYS = Object.freeze([
+  'adapter', 'size', 'requestedSeed', 'ordinal', 'connectionUid',
+  'connectionEvidenceSha256', 'samplerName', 'scheduler', 'steps', 'cfg',
+  'negativePromptSha256',
+]);
 const TRUSTED_ERRORS = new WeakSet();
 
 class CharacterCandidateExecutionError extends Error {
@@ -180,34 +189,78 @@ function providerOutput(value, ordinal, seed, width, height) {
   }
   const parameters = Object.getOwnPropertyDescriptors(output.parameters);
   if (Object.getPrototypeOf(output.parameters) !== Object.prototype
-    || Reflect.ownKeys(parameters).length !== 4
-    || parameters.adapter?.value !== 'configured-image.v1'
     || parameters.size?.value !== `${width}x${height}`
     || parameters.requestedSeed?.value !== seed
     || parameters.ordinal?.value !== ordinal) fail('CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID');
-  const parameterKeys = ['adapter', 'size', 'requestedSeed', 'ordinal'];
+  const adapter = parameters.adapter?.value;
+  const parameterKeys = adapter === 'configured-image.v1'
+    ? CONFIGURED_PARAMETER_KEYS
+    : adapter === 'remote-comfyui.v1' ? REMOTE_COMFY_PARAMETER_KEYS : null;
+  if (!parameterKeys || Reflect.ownKeys(parameters).length !== parameterKeys.length) {
+    fail('CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID');
+  }
   for (let index = 0; index < parameterKeys.length; index += 1) {
     const descriptor = parameters[parameterKeys[index]];
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
       fail('CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID');
     }
   }
-  return Object.freeze({
-    provider: output.provider,
-    model: output.model,
-    parameters: Object.freeze({
-      adapter: 'configured-image.v1',
+  let normalizedParameters;
+  if (adapter === 'remote-comfyui.v1') {
+    if (!UUID_V4.test(parameters.connectionUid.value)
+      || typeof parameters.connectionEvidenceSha256.value !== 'string'
+      || !SHA256.test(parameters.connectionEvidenceSha256.value)
+      || typeof parameters.samplerName.value !== 'string'
+      || !TOKEN.test(parameters.samplerName.value)
+      || typeof parameters.scheduler.value !== 'string'
+      || !TOKEN.test(parameters.scheduler.value)
+      || !Number.isSafeInteger(parameters.steps.value)
+      || parameters.steps.value < 1 || parameters.steps.value > 100
+      || typeof parameters.cfg.value !== 'number' || !Number.isFinite(parameters.cfg.value)
+      || parameters.cfg.value < 0 || parameters.cfg.value > 30
+      || typeof parameters.negativePromptSha256.value !== 'string'
+      || !SHA256.test(parameters.negativePromptSha256.value)) {
+      fail('CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID');
+    }
+    normalizedParameters = Object.freeze({
+      adapter,
       size: parameters.size.value,
       requestedSeed: seed,
       ordinal,
-    }),
+      connectionUid: parameters.connectionUid.value,
+      connectionEvidenceSha256: parameters.connectionEvidenceSha256.value,
+      samplerName: parameters.samplerName.value,
+      scheduler: parameters.scheduler.value,
+      steps: parameters.steps.value,
+      cfg: parameters.cfg.value,
+      negativePromptSha256: parameters.negativePromptSha256.value,
+    });
+  } else {
+    normalizedParameters = Object.freeze({
+      adapter,
+      size: parameters.size.value,
+      requestedSeed: seed,
+      ordinal,
+    });
+  }
+  return Object.freeze({
+    provider: output.provider,
+    model: output.model,
+    parameters: normalizedParameters,
     bytes: output.bytes,
   });
 }
 
 function parameterJson(parameters) {
-  return `{"adapter":"configured-image.v1","size":${JSON.stringify(parameters.size)}`
-    + `,"requestedSeed":${parameters.requestedSeed},"ordinal":${parameters.ordinal}}`;
+  const base = `{"adapter":${JSON.stringify(parameters.adapter)},"size":${JSON.stringify(parameters.size)}`
+    + `,"requestedSeed":${parameters.requestedSeed},"ordinal":${parameters.ordinal}`;
+  if (parameters.adapter === 'configured-image.v1') return `${base}}`;
+  return `${base},"connectionUid":${JSON.stringify(parameters.connectionUid)}`
+    + `,"connectionEvidenceSha256":${JSON.stringify(parameters.connectionEvidenceSha256)}`
+    + `,"samplerName":${JSON.stringify(parameters.samplerName)}`
+    + `,"scheduler":${JSON.stringify(parameters.scheduler)}`
+    + `,"steps":${parameters.steps},"cfg":${JSON.stringify(parameters.cfg)}`
+    + `,"negativePromptSha256":${JSON.stringify(parameters.negativePromptSha256)}}`;
 }
 
 function derivedSeed(seed, ordinal) {

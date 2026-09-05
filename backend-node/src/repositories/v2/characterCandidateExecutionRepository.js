@@ -36,6 +36,7 @@ const { assertDatabase, executeWrite } = require('./repositorySupport');
 const ENTITY = 'character candidate execution';
 const SHA256 = /^[0-9a-f]{64}$/u;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const TOKEN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
 const STATES = new Set(['reserved', 'succeeded', 'failed', 'submission_unknown']);
 const ERROR_CODES = new Set([
   'CHARACTER_CANDIDATE_EXECUTION_OUTPUT_INVALID',
@@ -59,6 +60,36 @@ function epoch(value) {
 
 function nullable(value) {
   return value === null || value === '' ? null : value;
+}
+
+function exactKeys(value, expected) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length === expected.length && keys.every((key, index) => key === expected[index]);
+}
+
+function validItemParameters(parameters, operation, row) {
+  if (parameters.size !== `${operation.request.width}x${operation.request.height}`
+    || parameters.requestedSeed !== row.seed || parameters.ordinal !== row.ordinal) return false;
+  if (parameters.adapter === 'configured-image.v1') {
+    return exactKeys(parameters, ['adapter', 'size', 'requestedSeed', 'ordinal']);
+  }
+  return parameters.adapter === 'remote-comfyui.v1'
+    && exactKeys(parameters, [
+      'adapter', 'size', 'requestedSeed', 'ordinal', 'connectionUid',
+      'connectionEvidenceSha256', 'samplerName', 'scheduler', 'steps', 'cfg',
+      'negativePromptSha256',
+    ])
+    && typeof parameters.connectionUid === 'string' && UUID_V4.test(parameters.connectionUid)
+    && typeof parameters.connectionEvidenceSha256 === 'string'
+    && SHA256.test(parameters.connectionEvidenceSha256)
+    && typeof parameters.samplerName === 'string' && TOKEN.test(parameters.samplerName)
+    && typeof parameters.scheduler === 'string' && TOKEN.test(parameters.scheduler)
+    && Number.isSafeInteger(parameters.steps) && parameters.steps >= 1 && parameters.steps <= 100
+    && typeof parameters.cfg === 'number' && Number.isFinite(parameters.cfg)
+    && parameters.cfg >= 0 && parameters.cfg <= 30
+    && typeof parameters.negativePromptSha256 === 'string'
+    && SHA256.test(parameters.negativePromptSha256);
 }
 
 function createCharacterCandidateExecutionRepository(database) {
@@ -222,9 +253,7 @@ function createCharacterCandidateExecutionRepository(database) {
         || Reflect.apply(STRING_INCLUDES, row.model, ['\0'])
         || JSON.stringify(parameters) !== row.parameters_json
         || parametersSha256 !== row.parameters_sha256
-        || parameters.adapter !== 'configured-image.v1'
-        || parameters.size !== `${operation.request.width}x${operation.request.height}`
-        || parameters.requestedSeed !== row.seed || parameters.ordinal !== row.ordinal
+        || !validItemParameters(parameters, operation, row)
         || !UUID_V4.test(row.candidate_uid) || !UUID_V4.test(row.asset_uid)
         || !UUID_V4.test(row.asset_version_uid)
         || row.logical_uri !== `asset://characters/${operation.request.characterUid}/candidate-batches/${operation.operationUid}/${index}`

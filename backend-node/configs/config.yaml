@@ -27,6 +27,11 @@ ai:
   default_text_provider: openai
   default_image_provider: openai
   default_video_provider: doubao
+character_candidates:
+  # 改为 remote-comfyui 并填入经主机指纹确认的 connection UID 与远端实际模型后再启用。
+  image_provider: configured-image
+  remote_comfyui:
+    enabled: false
 style:
   default_style: ''
   default_role_style: full body and face clearly visible, character centered, consistent facial features, high detail, masterpiece, best quality

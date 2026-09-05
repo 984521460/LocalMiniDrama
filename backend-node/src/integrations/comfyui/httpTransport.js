@@ -140,6 +140,38 @@ async function boundedResponsePayload(response, maxResponseBytes, signal) {
   throw createComfyUiClientError('COMFY_RESPONSE_INVALID');
 }
 
+async function boundedResponseBytes(response, maxResponseBytes, signal) {
+  if (response.body === null || response.body === undefined) throw invalidResponse();
+  const reader = openBodyReader(response.body);
+  const chunks = [];
+  let total = 0;
+  let completed = false;
+  try {
+    while (true) {
+      const { done, value } = await raceNativePromise(reader.read(), { signal });
+      if (done) {
+        completed = true;
+        break;
+      }
+      const remaining = maxResponseBytes - total;
+      let chunk;
+      try { chunk = snapshotUint8Array(value, remaining, invalidResponse); } catch {
+        try { ignoreNativePromise(reader.cancel()); } catch { /* bounded cancellation */ }
+        throw invalidResponse();
+      }
+      total += chunk.length;
+      chunks.push(chunk);
+    }
+  } finally {
+    if (!completed) {
+      try { ignoreNativePromise(reader.cancel()); } catch { /* bounded cancellation */ }
+    }
+    try { reader.releaseLock(); } catch { /* pending readers remain observed */ }
+  }
+  if (total < 1) throw invalidResponse();
+  return Buffer.concat(chunks, total);
+}
+
 function createComfyHttpTransport({ baseUrl, fetchImpl, requestTimeoutMs }) {
   const origin = normalizeBaseUrl(baseUrl);
   if (typeof fetchImpl !== 'function' || !Number.isSafeInteger(requestTimeoutMs)
@@ -202,7 +234,50 @@ function createComfyHttpTransport({ baseUrl, fetchImpl, requestTimeoutMs }) {
     }
   }
 
-  return Object.freeze({ origin, requestJson });
+  async function requestBytes(pathname, {
+    signal,
+    maxResponseBytes = 16 * 1024 * 1024,
+  } = {}) {
+    if (typeof pathname !== 'string' || !pathname.startsWith('/') || pathname.startsWith('//')
+      || pathname.includes('\\') || !Number.isSafeInteger(maxResponseBytes)
+      || maxResponseBytes < 1 || maxResponseBytes > 32 * 1024 * 1024) {
+      throw new TypeError('ComfyUI transport request is invalid');
+    }
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    if (signal) {
+      if (abortedGetter.call(signal)) controller.abort();
+      else addEventListener.call(signal, 'abort', abortFromCaller, { once: true });
+    }
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      if (controller.signal.aborted) {
+        throw createComfyUiClientError('COMFY_REQUEST_ABORTED');
+      }
+      const response = adaptResponse(await raceNativePromise(fetchImpl(
+        new URL(pathname, `${origin}/`).toString(),
+        {
+          method: 'GET',
+          redirect: 'error',
+          headers: { Accept: 'application/octet-stream' },
+          signal: controller.signal,
+        },
+      ), { signal: controller.signal }));
+      if (!response.ok) {
+        throw createComfyUiClientError('COMFY_HTTP_ERROR', { status: response.status });
+      }
+      return await boundedResponseBytes(response, maxResponseBytes, controller.signal);
+    } catch (error) {
+      if (isComfyUiClientError(error)) throw error;
+      if (controller.signal.aborted) throw createComfyUiClientError('COMFY_REQUEST_ABORTED');
+      throw createComfyUiClientError('COMFY_CONNECTION_FAILED');
+    } finally {
+      clearTimeout(timer);
+      if (signal) removeEventListener.call(signal, 'abort', abortFromCaller);
+    }
+  }
+
+  return Object.freeze({ origin, requestBytes, requestJson });
 }
 
 module.exports = { createComfyHttpTransport };

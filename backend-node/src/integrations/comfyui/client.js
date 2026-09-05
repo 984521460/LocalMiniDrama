@@ -3,6 +3,7 @@
 const {
   clientConfiguration,
   normalizeBaseUrl,
+  outputDownload,
   parsePromptState,
   parseSubmissionResponse,
   parseUploadResponse,
@@ -185,8 +186,26 @@ function createComfyUiClient(value = {}) {
     });
   }
 
+  function downloadOutput(value) {
+    const output = outputDownload(value);
+    const query = new URLSearchParams({
+      filename: output.fileName,
+      subfolder: output.subfolder,
+      type: output.storageType,
+    });
+    return transport.requestBytes(`/view?${query.toString()}`, {
+      maxResponseBytes: 16 * 1024 * 1024,
+    }).catch((error) => {
+      if (isComfyUiClientError(error) && error.code === 'COMFY_HTTP_ERROR') {
+        throw createComfyUiClientError('COMFY_DOWNLOAD_FAILED', { status: error.status });
+      }
+      throw error;
+    });
+  }
+
   return Object.freeze({
     baseUrl: transport.origin,
+    downloadOutput,
     getPromptState,
     health: systemStats,
     history,

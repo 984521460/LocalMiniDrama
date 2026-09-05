@@ -4,6 +4,9 @@ const {
   createConfiguredCharacterCandidateImageProvider,
 } = require('./configuredImageProvider');
 const {
+  createRemoteComfyCharacterCandidateImageProvider,
+} = require('./remoteComfyImageProvider');
+const {
   CharacterCandidateExecutionError,
   createCharacterCandidateExecutionService,
   isCharacterCandidateExecutionError,
@@ -13,5 +16,6 @@ module.exports = Object.freeze({
   CharacterCandidateExecutionError,
   createCharacterCandidateExecutionService,
   createConfiguredCharacterCandidateImageProvider,
+  createRemoteComfyCharacterCandidateImageProvider,
   isCharacterCandidateExecutionError,
 });

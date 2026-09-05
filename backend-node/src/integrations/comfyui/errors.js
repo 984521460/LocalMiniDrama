@@ -9,6 +9,7 @@ const MESSAGES = Object.freeze({
   COMFY_EXECUTION_FAILED: 'ComfyUI execution failed',
   COMFY_PROMPT_TIMEOUT: 'ComfyUI prompt wait timed out',
   COMFY_UPLOAD_FAILED: 'ComfyUI input upload failed',
+  COMFY_DOWNLOAD_FAILED: 'ComfyUI output download failed',
 });
 const RETRYABLE = new Set([
   'COMFY_CONNECTION_FAILED',
@@ -16,6 +17,7 @@ const RETRYABLE = new Set([
   'COMFY_REQUEST_ABORTED',
   'COMFY_PROMPT_TIMEOUT',
   'COMFY_UPLOAD_FAILED',
+  'COMFY_DOWNLOAD_FAILED',
 ]);
 const trustedErrors = new WeakSet();
 

@@ -288,10 +288,20 @@ function parseUploadResponse(value) {
   return Object.freeze({ fileName, subfolder, storageType: 'input' });
 }
 
+function outputDownload(value) {
+  const input = exactObject(value, ['fileName', 'subfolder', 'storageType']);
+  let fileName;
+  try { fileName = safeFileName(input.fileName); } catch { throw invalidInput(); }
+  const subfolder = safeSubfolder(input.subfolder, invalidInput);
+  if (input.storageType !== 'output') throw invalidInput();
+  return Object.freeze({ fileName, subfolder, storageType: 'output' });
+}
+
 module.exports = {
   clientConfiguration,
   clientId,
   normalizeBaseUrl,
+  outputDownload,
   parsePromptState,
   parseSubmissionResponse,
   parseUploadResponse,
