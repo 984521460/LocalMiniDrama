@@ -80,6 +80,13 @@
         生成四候选
       </el-button>
     </div>
+
+    <CharacterCandidateHistory
+      ref="historyPanel"
+      :drama-id="dramaId"
+      :drama-uid="dramaUid"
+      :characters="characters"
+    />
   </section>
 </template>
 
@@ -88,6 +95,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import CharacterReferencePackageCard from './CharacterReferencePackageCard.vue'
+import CharacterCandidateHistory from './CharacterCandidateHistory.vue'
 import { useCharacterCandidateExecution } from '@/composables/useCharacterCandidateExecution.js'
 import {
   useCharacterReferencePackageExecution,
@@ -113,6 +121,7 @@ const completedByIdentity = ref([])
 const packagesByIdentity = ref([])
 const selectedCandidateUid = ref('')
 const paidActionBusy = ref(false)
+const historyPanel = ref(null)
 const options = computed(() => {
   try {
     return approvedCharacterCandidateOptions({
@@ -196,6 +205,7 @@ async function run() {
     })
     if (response) {
       remember(selection.identity, response)
+      await historyPanel.value?.refresh()
       ElMessage.success(`${selection.characterName}的四张角色候选已生成并保存`)
     }
   } finally {

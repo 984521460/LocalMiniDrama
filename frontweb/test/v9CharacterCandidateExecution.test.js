@@ -6,11 +6,13 @@ import { fileURLToPath } from 'node:url'
 
 import {
   approvedCharacterCandidateOptions,
+  characterCandidateExecutionHistoryPageView,
   characterCandidateExecutionRequestView,
   characterCandidateExecutionResponseView,
   createCharacterCandidateExecutionRequest,
 } from '../src/characterCandidates/characterCandidateExecution.js'
 import { useCharacterCandidateExecution } from '../src/composables/useCharacterCandidateExecution.js'
+import { useCharacterCandidateHistory } from '../src/composables/useCharacterCandidateHistory.js'
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src')
 const uid = (suffix) => `00000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`
@@ -127,6 +129,24 @@ function response(requestValue = request()) {
   }
 }
 
+function historyPage({ sourceStatus = 'stale', sourceCurrent = false } = {}) {
+  const current = response().execution
+  const items = current.items.map((item) => ({ ...item, currentVersion: true }))
+  return {
+    schemaVersion: 'character-candidate-execution-history-page.v1',
+    dramaUid: current.request.dramaUid,
+    characterUid: current.request.characterUid,
+    entries: [{
+      ...current,
+      schemaVersion: 'character-candidate-execution-history-entry.v1',
+      sourceStatus,
+      sourceCurrent,
+      items,
+    }],
+    nextCursor: null,
+  }
+}
+
 function approvedExtraction() {
   return {
     uid: uid(4),
@@ -170,6 +190,43 @@ test('request and response views bind four exact candidate records', () => {
   profileDrift.batch.request.profileUid = uid(7)
   assert.throws(() => characterCandidateExecutionResponseView(profileDrift))
   assert.throws(() => characterCandidateExecutionRequestView({ ...request(), width: 2048, height: 2049 }))
+})
+
+test('history page is read-only evidence that accepts stale sources without weakening execution data', () => {
+  const parsed = characterCandidateExecutionHistoryPageView(historyPage())
+  assert.equal(parsed.entries[0].sourceStatus, 'stale')
+  assert.equal(parsed.entries[0].sourceCurrent, false)
+  assert.equal(parsed.entries[0].items.length, 4)
+  assert.equal(parsed.entries[0].items[0].currentVersion, true)
+
+  const impossibleCurrent = historyPage({ sourceStatus: 'stale', sourceCurrent: true })
+  assert.throws(() => characterCandidateExecutionHistoryPageView(impossibleCurrent))
+  const crossDrama = historyPage()
+  crossDrama.entries[0].request.dramaUid = uid(999)
+  assert.throws(() => characterCandidateExecutionHistoryPageView(crossDrama))
+  const extra = historyPage()
+  extra.entries[0].items[0].lockable = true
+  assert.throws(() => characterCandidateExecutionHistoryPageView(extra))
+})
+
+test('history composable reloads persisted pages after invalidation', async () => {
+  const calls = []
+  const composable = useCharacterCandidateHistory({
+    api: Object.freeze({
+      async listHistory(dramaId, dramaUid, characterUid, cursor) {
+        calls.push({ dramaId, dramaUid, characterUid, cursor })
+        return characterCandidateExecutionHistoryPageView(historyPage())
+      },
+    }),
+  })
+  const query = { dramaId: 1, dramaUid: uid(2), characterUid: uid(3) }
+  await composable.refresh(query)
+  assert.equal(composable.entries.value.length, 1)
+  composable.invalidate()
+  assert.equal(composable.entries.value.length, 0)
+  await composable.refresh(query)
+  assert.equal(composable.entries.value.length, 1)
+  assert.deepEqual(calls.map((value) => value.cursor), [null, null])
 })
 
 test('approved option projection only exposes current matching extraction facts', () => {
@@ -258,6 +315,10 @@ test('UI and API expose an explicit paid four-call confirmation through strict J
     path.join(sourceRoot, 'components/narrative/NarrativeReviewWorkspace.vue'),
     'utf8',
   )
+  const history = fs.readFileSync(
+    path.join(sourceRoot, 'components/assets/CharacterCandidateHistory.vue'),
+    'utf8',
+  )
   assert.match(component, /独立提交 4 次生成请求/u)
   assert.match(component, /ElMessageBox\.confirm/u)
   assert.match(component, /completedByIdentity/u)
@@ -265,5 +326,11 @@ test('UI and API expose an explicit paid four-call confirmation through strict J
   assert.match(component, /selected\.characterName/u)
   assert.match(api, /parseStrictJson/u)
   assert.match(api, /workflowJsonTextRequest/u)
+  assert.match(api, /candidate-executions\/history/u)
+  assert.match(history, /历史测试作品/u)
+  assert.match(history, /加载更多历史作品/u)
+  assert.match(history, /target="_blank"/u)
+  assert.match(history, /没有伪造图片/u)
+  assert.doesNotMatch(history, /锁定并生成/u)
   assert.match(workspace, /CharacterCandidateExecutionPanel/u)
 })

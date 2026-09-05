@@ -64,9 +64,17 @@ test('candidate execution route exposes create and read without altering the req
   const ids = seed(database);
   const calls = [];
   const expected = Object.freeze({ execution: Object.freeze({ state: 'succeeded' }), batch: {} });
+  const history = Object.freeze({
+    schemaVersion: 'character-candidate-execution-history-page.v1',
+    dramaUid: ids.dramaUid,
+    characterUid: ids.characterUid,
+    entries: Object.freeze([]),
+    nextCursor: null,
+  });
   const runtime = Object.freeze({
     async execute(value) { calls.push(value); return expected; },
     get(operationUid) { calls.push(operationUid); return expected; },
+    listHistory(value) { calls.push(value); return history; },
   });
   const baseUrl = await serverFor(t, database, runtime);
   const body = request(ids);
@@ -84,6 +92,18 @@ test('candidate execution route exposes create and read without altering the req
   assert.equal(read.status, 200);
   assert.equal((await read.json()).data.execution.state, 'succeeded');
   assert.equal(calls[1], body.operationUid);
+
+  const cursor = `1:${uid(31111)}`;
+  const historyRead = await fetch(
+    `${baseUrl}/dramas/1/characters/${ids.characterUid}/candidate-executions/history?cursor=${encodeURIComponent(cursor)}`,
+  );
+  assert.equal(historyRead.status, 200);
+  assert.deepEqual((await historyRead.json()).data, history);
+  assert.deepEqual(calls[2], {
+    dramaUid: ids.dramaUid,
+    characterUid: ids.characterUid,
+    cursor,
+  });
 });
 
 test('candidate execution route rejects path drift and unavailable runtime before execution', async (t) => {
@@ -93,6 +113,7 @@ test('candidate execution route rejects path drift and unavailable runtime befor
   const runtime = Object.freeze({
     execute() { calls += 1; },
     get() { calls += 1; },
+    listHistory() { calls += 1; },
   });
   const baseUrl = await serverFor(t, database, runtime);
   const crossed = await fetch(`${baseUrl}/dramas/1/characters/${uid(31199)}/candidate-executions`, {
@@ -118,6 +139,12 @@ test('candidate execution route rejects path drift and unavailable runtime befor
 
   const invalidRead = await fetch(`${baseUrl}/character-candidate-executions/not-a-uid`);
   assert.equal(invalidRead.status, 400);
+  assert.equal(calls, 0);
+
+  const invalidHistory = await fetch(
+    `${baseUrl}/dramas/1/characters/${ids.characterUid}/candidate-executions/history?cursor=invalid`,
+  );
+  assert.equal(invalidHistory.status, 400);
   assert.equal(calls, 0);
 });
 

@@ -32,6 +32,7 @@ const {
 } = require('../src/characterCandidates/execution/source');
 const { createNarrativeExecutionService } = require('../src/narrative/execution');
 const { createNarrativeReviewService } = require('../src/narrative/reviews');
+const { createNarrativeStalenessService } = require('../src/narrative/staleness');
 const { createV2Repositories } = require('../src/repositories/v2');
 const projectZipService = require('../src/services/projectZipService');
 const { createMigratedV2Database, insertDrama, uid } = require('./helpers/v2RepositoryDatabase');
@@ -725,6 +726,89 @@ test('completed execution fails closed after current character source drift', as
     isCharacterCandidateExecutionError(error)
       && error.code === 'CHARACTER_CANDIDATE_EXECUTION_DATA_INVALID'
   ));
+});
+
+test('historical candidate pages preserve stale-source results read-only', async (t) => {
+  const database = createMigratedV2Database(t);
+  const { ids, repositories } = await seedApprovedCharacterSource(database);
+  const { storage } = tempStorage(t);
+  const service = createCharacterCandidateExecutionService({
+    repositories,
+    provider: syntheticProvider([]),
+    storage,
+  });
+  const request = executionRequest(ids, uid(31018));
+  await service.execute(request);
+  createNarrativeStalenessService({ repositories }).invalidate({
+    rootKind: 'narrative_result',
+    rootUid: ids.extraction,
+  });
+
+  await assert.rejects(service.get(request.operationUid), (error) => (
+    isCharacterCandidateExecutionError(error)
+      && error.code === 'CHARACTER_CANDIDATE_EXECUTION_DATA_INVALID'
+  ));
+  const page = await service.listHistory({
+    dramaUid: ids.drama,
+    characterUid: ids.character,
+    cursor: null,
+  });
+  assert.equal(page.schemaVersion, 'character-candidate-execution-history-page.v1');
+  assert.equal(page.entries.length, 1);
+  assert.equal(page.nextCursor, null);
+  assert.equal(page.entries[0].operationUid, request.operationUid);
+  assert.equal(page.entries[0].sourceStatus, 'stale');
+  assert.equal(page.entries[0].sourceCurrent, false);
+  assert.equal(page.entries[0].items.length, 4);
+  assert.equal(page.entries[0].items[0].currentVersion, true);
+});
+
+test('historical candidate pages are bounded, cursor-paginated, and drama-scoped', async (t) => {
+  const database = createMigratedV2Database(t);
+  const { ids, repositories } = await seedApprovedCharacterSource(database);
+  const { storage } = tempStorage(t);
+  const service = createCharacterCandidateExecutionService({
+    repositories,
+    provider: syntheticProvider([], 0),
+    storage,
+  });
+  for (let index = 0; index < 17; index += 1) {
+    await assert.rejects(service.execute(executionRequest(ids, uid(31200 + index))), (error) => (
+      isCharacterCandidateExecutionError(error)
+        && error.code === 'CHARACTER_CANDIDATE_EXECUTION_SUBMISSION_UNKNOWN'
+    ));
+  }
+
+  const first = service.listHistory({
+    dramaUid: ids.drama,
+    characterUid: ids.character,
+    cursor: null,
+  });
+  assert.equal(first.entries.length, 16);
+  assert.match(first.nextCursor, /^[0-9]+:[0-9a-f-]{36}$/u);
+  assert.equal(new Set(first.entries.map((entry) => entry.operationUid)).size, 16);
+  assert.equal(first.entries.every((entry) => (
+    entry.state === 'submission_unknown'
+      && entry.sourceStatus === 'approved'
+      && entry.sourceCurrent === true
+      && entry.items.length === 0
+  )), true);
+
+  const second = service.listHistory({
+    dramaUid: ids.drama,
+    characterUid: ids.character,
+    cursor: first.nextCursor,
+  });
+  assert.equal(second.entries.length, 1);
+  assert.equal(second.nextCursor, null);
+  assert.equal(first.entries.some(
+    (entry) => entry.operationUid === second.entries[0].operationUid,
+  ), false);
+  assert.deepEqual(service.listHistory({
+    dramaUid: uid(31999),
+    characterUid: ids.character,
+    cursor: null,
+  }).entries, []);
 });
 
 test('completed execution revalidates installed media bytes on every read', async (t) => {

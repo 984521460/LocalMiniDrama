@@ -9,11 +9,22 @@ const {
 } = require('../../characterCandidates/execution');
 const { createV2Repositories } = require('../../repositories/v2');
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const HISTORY_CURSOR = /^[0-9]{1,15}:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 function legacyDramaId(value) {
   if (typeof value !== 'string' || !/^[1-9]\d*$/u.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function historyCursor(value) {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || value.length > 64 || !HISTORY_CURSOR.test(value)) {
+    throw new CharacterCandidateExecutionError(
+      'CHARACTER_CANDIDATE_EXECUTION_INPUT_INVALID',
+    );
+  }
+  return value;
 }
 
 function statusFor(code) {
@@ -67,6 +78,26 @@ function characterCandidateExecutionRoutes(database, log, runtime) {
       return response.success(res, await service.execute(req.body));
     } catch (error) {
       return handle(res, error, 'character-candidate-execution-create');
+    }
+  });
+
+  router.get('/dramas/:dramaId/characters/:characterUid/candidate-executions/history', async (req, res) => {
+    if (!service || typeof service.listHistory !== 'function') return unavailable(res);
+    try {
+      const dramaId = legacyDramaId(req.params.dramaId);
+      const drama = dramaId === null ? null : sources.findDramaByLegacyId(dramaId);
+      if (!drama || !UUID_V4.test(req.params.characterUid)) {
+        throw new CharacterCandidateExecutionError(
+          'CHARACTER_CANDIDATE_EXECUTION_INPUT_INVALID',
+        );
+      }
+      return response.success(res, await service.listHistory({
+        dramaUid: drama.uid,
+        characterUid: req.params.characterUid,
+        cursor: historyCursor(req.query.cursor),
+      }));
+    } catch (error) {
+      return handle(res, error, 'character-candidate-execution-history');
     }
   });
 

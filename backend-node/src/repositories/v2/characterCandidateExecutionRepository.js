@@ -46,6 +46,7 @@ const SET_HAS = Set.prototype.has;
 const STRING_INCLUDES = String.prototype.includes;
 const STRING_SLICE = String.prototype.slice;
 const STRING_TRIM = String.prototype.trim;
+const HISTORY_PAGE_SIZE = 16;
 
 function dataError(reason) {
   throw new V2RepositoryDataError(ENTITY, reason);
@@ -131,6 +132,22 @@ function createCharacterCandidateExecutionRepository(database) {
     LEFT JOIN assets AS asset ON asset.uid=item.asset_uid
     WHERE item.operation_uid=? ORDER BY item.ordinal
   `);
+  const listHistoryFirst = database.prepare(`
+    SELECT operation_uid, created_at_epoch_ms
+    FROM character_candidate_executions
+    WHERE drama_uid=@dramaUid AND character_uid=@characterUid
+    ORDER BY created_at_epoch_ms DESC, operation_uid DESC
+    LIMIT 17
+  `);
+  const listHistoryAfter = database.prepare(`
+    SELECT operation_uid, created_at_epoch_ms
+    FROM character_candidate_executions
+    WHERE drama_uid=@dramaUid AND character_uid=@characterUid
+      AND (created_at_epoch_ms < @cursorEpochMs
+        OR (created_at_epoch_ms = @cursorEpochMs AND operation_uid < @cursorOperationUid))
+    ORDER BY created_at_epoch_ms DESC, operation_uid DESC
+    LIMIT 17
+  `);
   const insert = database.prepare(`
     INSERT INTO character_candidate_executions
       (operation_uid, drama_uid, character_uid, source_selection_uid,
@@ -186,7 +203,7 @@ function createCharacterCandidateExecutionRepository(database) {
     });
   }
 
-  function mapItems(operation, rows) {
+  function mapItems(operation, rows, historical = false) {
     const output = [];
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
@@ -236,9 +253,9 @@ function createCharacterCandidateExecutionRepository(database) {
         || row.current_owner_type !== 'character'
         || row.current_owner_uid !== operation.request.characterUid
         || row.current_asset_type !== 'character_candidate'
-        || row.current_asset_version_uid !== row.asset_version_uid
+        || (!historical && row.current_asset_version_uid !== row.asset_version_uid)
         || row.current_asset_status !== 'ready') dataError('item binding');
-      output[output.length] = Object.freeze({
+      const item = {
         ordinal: row.ordinal,
         seed: row.seed,
         promptSha256: row.prompt_sha256,
@@ -256,12 +273,14 @@ function createCharacterCandidateExecutionRepository(database) {
         width: row.width,
         height: row.height,
         createdAtEpochMs: epoch(row.created_at_epoch_ms),
-      });
+      };
+      if (historical) item.currentVersion = row.current_asset_version_uid === row.asset_version_uid;
+      output[output.length] = Object.freeze(item);
     }
     return Object.freeze(output);
   }
 
-  function map(row) {
+  function map(row, historical = false) {
     if (!row) throw new V2RepositoryNotFoundError(ENTITY);
     let request;
     let source;
@@ -289,11 +308,12 @@ function createCharacterCandidateExecutionRepository(database) {
       || row.profile_json !== PROFILE_JSON || row.profile_sha256 !== PROFILE_SHA256
       || row.manifest_json !== MANIFEST_JSON || row.manifest_sha256 !== MANIFEST_SHA256
       || !Reflect.apply(SET_HAS, STATES, [row.state])) dataError('binding');
+    const characterSourceCurrent = row.current_character_name === source.characterName
+      && row.current_character_description === source.characterDescription
+      && row.current_character_personality === source.characterPersonality
+      && row.current_character_appearance === source.characterAppearance;
     if (row.current_drama_uid !== row.drama_uid
-      || row.current_character_name !== source.characterName
-      || row.current_character_description !== source.characterDescription
-      || row.current_character_personality !== source.characterPersonality
-      || row.current_character_appearance !== source.characterAppearance) dataError('character source');
+      || (!historical && !characterSourceCurrent)) dataError('character source');
 
     let persistedResult;
     try {
@@ -308,8 +328,10 @@ function createCharacterCandidateExecutionRepository(database) {
       || row.current_result_type !== 'extraction'
       || row.current_result_task_type !== contract.taskType
       || row.current_result_schema_version !== contract.schemaVersion
-      || row.current_result_status !== 'approved'
-      || row.current_result_review_uid !== row.extraction_review_uid
+      || (historical
+        ? (row.current_result_status !== 'approved' && row.current_result_status !== 'stale')
+        : row.current_result_status !== 'approved')
+      || (!historical && row.current_result_review_uid !== row.extraction_review_uid)
       || row.current_result_input_hash !== persistedResult.inputHash
       || row.current_result_hash !== row.extraction_result_hash
       || row.current_result_envelope_hash !== row.extraction_envelope_hash
@@ -347,7 +369,7 @@ function createCharacterCandidateExecutionRepository(database) {
       createdAtEpochMs,
       updatedAtEpochMs,
     };
-    const items = mapItems(operation, selectItems.all(row.operation_uid));
+    const items = mapItems(operation, selectItems.all(row.operation_uid), historical);
     if (row.state === 'succeeded') {
       if (row.batch_uid !== row.operation_uid || row.error_code !== null || items.length !== 4) {
         dataError('state');
@@ -360,11 +382,59 @@ function createCharacterCandidateExecutionRepository(database) {
     if (row.state === 'submission_unknown'
       && row.error_code !== 'CHARACTER_CANDIDATE_EXECUTION_SUBMISSION_UNKNOWN') dataError('state');
     if (row.state === 'succeeded' && row.error_code !== null) dataError('state');
+    if (historical) {
+      return Object.freeze({
+        ...operation,
+        schemaVersion: 'character-candidate-execution-history-entry.v1',
+        sourceStatus: row.current_result_status,
+        sourceCurrent: row.current_result_status === 'approved'
+          && row.current_result_review_uid === row.extraction_review_uid
+          && characterSourceCurrent,
+        items,
+      });
+    }
     return Object.freeze({ ...operation, items });
   }
 
   function get(operationUid) {
     return map(select.get(operationUid));
+  }
+
+  function historyCursor(value) {
+    if (value === null) return null;
+    if (typeof value !== 'string' || value.length > 64) dataError('history cursor');
+    const match = /^([0-9]{1,15}):([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u.exec(value);
+    if (!match) dataError('history cursor');
+    const cursorEpochMs = Number(match[1]);
+    epoch(cursorEpochMs);
+    return Object.freeze({ cursorEpochMs, cursorOperationUid: match[2] });
+  }
+
+  function listHistory({ dramaUid, characterUid, cursor }) {
+    if (typeof dramaUid !== 'string' || !UUID_V4.test(dramaUid)
+      || typeof characterUid !== 'string' || !UUID_V4.test(characterUid)) {
+      dataError('history identity');
+    }
+    const parsedCursor = historyCursor(cursor);
+    const rows = parsedCursor === null
+      ? listHistoryFirst.all({ dramaUid, characterUid })
+      : listHistoryAfter.all({ dramaUid, characterUid, ...parsedCursor });
+    const entries = [];
+    const count = Math.min(rows.length, HISTORY_PAGE_SIZE);
+    for (let index = 0; index < count; index += 1) {
+      entries[index] = map(select.get(rows[index].operation_uid), true);
+    }
+    const last = entries[entries.length - 1];
+    const nextCursor = rows.length > HISTORY_PAGE_SIZE
+      ? `${last.createdAtEpochMs}:${last.operationUid}`
+      : null;
+    return Object.freeze({
+      schemaVersion: 'character-candidate-execution-history-page.v1',
+      dramaUid,
+      characterUid,
+      entries: Object.freeze(entries),
+      nextCursor,
+    });
   }
 
   function requireTransition(operationUid, state, errorCode, batchUid) {
@@ -485,6 +555,7 @@ function createCharacterCandidateExecutionRepository(database) {
 
     get,
     getCharacterSource,
+    listHistory,
 
     markUnknown(operationUid) {
       return requireTransition(

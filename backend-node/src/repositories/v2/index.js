@@ -157,6 +157,7 @@ function createLazyCharacterCandidateExecutionRepository(database) {
     fail(...args) { return getTarget().fail(...args); },
     get(...args) { return getTarget().get(...args); },
     getCharacterSource(...args) { return getTarget().getCharacterSource(...args); },
+    listHistory(...args) { return getTarget().listHistory(...args); },
     markUnknown(...args) { return getTarget().markUnknown(...args); },
     recoverInterrupted(...args) { return getTarget().recoverInterrupted(...args); },
     reserve(...args) { return getTarget().reserve(...args); },

@@ -40,6 +40,14 @@ const ITEM_KEYS = Object.freeze([
   'parametersSha256', 'candidateUid', 'assetUid', 'assetVersionUid', 'logicalUri',
   'relativePath', 'contentSha256', 'byteLength', 'width', 'height', 'createdAtEpochMs',
 ])
+const HISTORY_ITEM_KEYS = Object.freeze([...ITEM_KEYS, 'currentVersion'])
+const HISTORY_ENTRY_KEYS = Object.freeze([
+  ...EXECUTION_KEYS, 'sourceStatus', 'sourceCurrent',
+])
+const HISTORY_PAGE_KEYS = Object.freeze([
+  'schemaVersion', 'dramaUid', 'characterUid', 'entries', 'nextCursor',
+])
+const HISTORY_CURSOR = /^[0-9]{1,15}:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const BATCH_KEYS = Object.freeze([
   'schemaVersion', 'batchUid', 'characterUid', 'requestSha256', 'request', 'candidates',
 ])
@@ -78,6 +86,7 @@ function exact(value, keys, message) {
   const output = Object.create(null)
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index]
+    if (!Object.hasOwn(descriptors, key)) invalid(message)
     const descriptor = descriptors[key]
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) invalid(message)
     output[key] = descriptor.value
@@ -89,11 +98,13 @@ function dense(value, maximum, message) {
   if (!ARRAY_IS_ARRAY(value)) invalid(message)
   let descriptors
   try { descriptors = Object.getOwnPropertyDescriptors(value) } catch { invalid(message) }
+  if (!Object.hasOwn(descriptors, 'length')) invalid(message)
   const length = descriptors.length?.value
   if (!Number.isSafeInteger(length) || length < 0 || length > maximum
     || Reflect.ownKeys(descriptors).length !== length + 1) invalid(message)
   const output = []
   for (let index = 0; index < length; index += 1) {
+    if (!Object.hasOwn(descriptors, String(index))) invalid(message)
     const descriptor = descriptors[String(index)]
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) invalid(message)
     Object.defineProperty(output, String(index), {
@@ -163,8 +174,8 @@ function sourceView(value, request) {
   return Object.freeze({ ...input })
 }
 
-function itemView(value, execution, ordinal) {
-  const input = exact(value, ITEM_KEYS)
+function itemView(value, execution, ordinal, historical = false) {
+  const input = exact(value, historical ? HISTORY_ITEM_KEYS : ITEM_KEYS)
   const parameters = exact(input.parameters, ['adapter', 'size', 'requestedSeed', 'ordinal'])
   const expectedSeed = (execution.request.seed + ordinal * 2_654_435_761) % 4_294_967_296
   const expectedUri = `asset://characters/${execution.request.characterUid}/candidate-batches/${execution.operationUid}/${ordinal}`
@@ -183,6 +194,7 @@ function itemView(value, execution, ordinal) {
   uid(input.candidateUid); uid(input.assetUid); uid(input.assetVersionUid)
   integer(input.byteLength, 1, 16 * 1024 * 1024)
   integer(input.createdAtEpochMs, 0, 253402300799999)
+  if (historical && typeof input.currentVersion !== 'boolean') invalid()
   return Object.freeze({ ...input, parameters: Object.freeze({ ...parameters }) })
 }
 
@@ -248,6 +260,70 @@ export function characterCandidateExecutionResponseView(value) {
     && execution.errorCode !== 'CHARACTER_CANDIDATE_EXECUTION_SUBMISSION_UNKNOWN') invalid()
   if (execution.state === 'failed' && !oneOf(execution.errorCode, FAILURE_CODES)) invalid()
   return Object.freeze({ execution, batch: null })
+}
+
+export function characterCandidateExecutionHistoryPageView(value) {
+  const page = exact(value, HISTORY_PAGE_KEYS)
+  if (page.schemaVersion !== 'character-candidate-execution-history-page.v1') invalid()
+  const dramaUid = uid(page.dramaUid)
+  const characterUid = uid(page.characterUid)
+  const rawEntries = dense(page.entries, 16)
+  const entries = []
+  let previous = null
+  for (let index = 0; index < rawEntries.length; index += 1) {
+    const raw = exact(rawEntries[index], HISTORY_ENTRY_KEYS)
+    const request = characterCandidateExecutionRequestView(raw.request)
+    if (raw.schemaVersion !== 'character-candidate-execution-history-entry.v1'
+      || raw.operationUid !== request.operationUid || request.dramaUid !== dramaUid
+      || request.characterUid !== characterUid || !oneOf(raw.state, STATES)
+      || (raw.sourceStatus !== 'approved' && raw.sourceStatus !== 'stale')
+      || typeof raw.sourceCurrent !== 'boolean'
+      || (raw.sourceStatus === 'stale' && raw.sourceCurrent)) invalid()
+    hash(raw.requestSha256); hash(raw.sourceSha256)
+    if (raw.profileSha256 !== PROFILE_SHA256 || raw.manifestSha256 !== MANIFEST_SHA256) invalid()
+    const source = sourceView(raw.source, request)
+    const createdAtEpochMs = integer(raw.createdAtEpochMs, 0, 253402300799999)
+    const updatedAtEpochMs = integer(raw.updatedAtEpochMs, createdAtEpochMs, 253402300799999)
+    if (previous && (previous.createdAtEpochMs < createdAtEpochMs
+      || (previous.createdAtEpochMs === createdAtEpochMs
+        && previous.operationUid <= raw.operationUid))) invalid()
+    const rawItems = dense(raw.items, 4)
+    const items = []
+    const execution = { ...raw, request, source }
+    for (let ordinal = 0; ordinal < rawItems.length; ordinal += 1) {
+      items[ordinal] = itemView(rawItems[ordinal], execution, ordinal, true)
+    }
+    if (raw.state === 'succeeded') {
+      if (raw.batchUid !== raw.operationUid || raw.errorCode !== null || items.length !== 4) invalid()
+    } else if (raw.batchUid !== null || items.length !== 0) invalid()
+    if (raw.state === 'reserved' && raw.errorCode !== null) invalid()
+    if (raw.state === 'failed' && !oneOf(raw.errorCode, FAILURE_CODES)) invalid()
+    if (raw.state === 'submission_unknown'
+      && raw.errorCode !== 'CHARACTER_CANDIDATE_EXECUTION_SUBMISSION_UNKNOWN') invalid()
+    const entry = Object.freeze({
+      ...raw,
+      request,
+      source,
+      items: Object.freeze(items),
+      createdAtEpochMs,
+      updatedAtEpochMs,
+    })
+    entries[index] = entry
+    previous = entry
+  }
+  if (page.nextCursor !== null) {
+    if (typeof page.nextCursor !== 'string' || !HISTORY_CURSOR.test(page.nextCursor)
+      || entries.length !== 16) invalid()
+    const last = entries[entries.length - 1]
+    if (page.nextCursor !== `${last.createdAtEpochMs}:${last.operationUid}`) invalid()
+  }
+  return Object.freeze({
+    schemaVersion: page.schemaVersion,
+    dramaUid,
+    characterUid,
+    entries: Object.freeze(entries),
+    nextCursor: page.nextCursor,
+  })
 }
 
 export function approvedCharacterCandidateOptions({ dramaUid, characters, results }) {
