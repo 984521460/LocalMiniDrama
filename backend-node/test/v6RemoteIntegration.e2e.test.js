@@ -33,7 +33,7 @@ test('remote execution router mounts environment and task APIs as one bounded v2
       return Object.freeze({ kind: 'fixed-plan' });
     },
     async initialize() { throw new Error('not used'); },
-    async installModels() { throw new Error('not used'); },
+    async verifyModels() { throw new Error('not used'); },
   });
   const remoteTasks = Object.freeze({
     async get(taskUid) {
@@ -135,7 +135,7 @@ test('the actual application composes production remote environment and task ser
       `${base}/remote-connections/${CONNECTION_UID}/initialization-plan`,
     );
     assert.equal(plan.status, 200);
-    assert.equal((await plan.json()).data.contractVersion, 'remote-initialization-plan.v1');
+    assert.equal((await plan.json()).data.contractVersion, 'remote-initialization-plan.v2');
 
     const task = await fetch(`${base}/remote-tasks/${TASK_UID}`);
     assert.equal(task.status, 404);

@@ -11,17 +11,28 @@ const {
   safeToken,
   sha256,
 } = require('./environmentValidation');
+const {
+  H3_REMOTE_ENVIRONMENT_PROFILE,
+  createH3RemoteModelCatalog,
+} = require('./h3EnvironmentProfile');
 
 const PROFILE = Object.freeze({
-  profileId: 'featurize-comfyui',
-  profileVersion: '1.0.0',
-  pythonVersion: '3.11',
-  torchVersion: '2.7.1',
-  cudaVersion: '12.8',
-  comfyUiVersion: '0.3.50',
-  customNodeLockVersion: 'builtin-nodes.1',
-  workflowBundleVersion: 'mvp-workflows.1',
-  ffmpegMinimumMajor: 7,
+  profileId: H3_REMOTE_ENVIRONMENT_PROFILE.profileId,
+  profileVersion: H3_REMOTE_ENVIRONMENT_PROFILE.profileVersion,
+  approvedEnvironmentSha256: H3_REMOTE_ENVIRONMENT_PROFILE.approvedEnvironmentSha256,
+  gpuName: H3_REMOTE_ENVIRONMENT_PROFILE.gpu.name,
+  gpuCount: 1,
+  totalVramMiB: H3_REMOTE_ENVIRONMENT_PROFILE.gpu.vramMiB,
+  driverVersion: H3_REMOTE_ENVIRONMENT_PROFILE.gpu.driverVersion,
+  pythonVersion: H3_REMOTE_ENVIRONMENT_PROFILE.runtime.pythonVersion,
+  torchVersion: H3_REMOTE_ENVIRONMENT_PROFILE.runtime.pytorchVersion,
+  cudaVersion: H3_REMOTE_ENVIRONMENT_PROFILE.cudaVersion,
+  comfyUiVersion: H3_REMOTE_ENVIRONMENT_PROFILE.comfyUI.version,
+  comfyUiRevision: H3_REMOTE_ENVIRONMENT_PROFILE.comfyUI.revision,
+  comfyListenScope: H3_REMOTE_ENVIRONMENT_PROFILE.comfyUI.listenScope,
+  customNodeLockVersion: 'minimax-h3-builtin-nodes.v1',
+  workflowBundleVersion: 'minimax-h3-t2v.v1',
+  ffmpegVersion: H3_REMOTE_ENVIRONMENT_PROFILE.runtime.ffmpegVersion,
 });
 const MAX_MODEL_SIZE_BYTES = 1_125_899_906_842_624;
 
@@ -29,11 +40,11 @@ const STEP_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: 'workspace-layout.v1',
     action: 'ensure-workspace-layout',
-    parameters: Object.freeze({ layoutVersion: '1.0.0' }),
+    parameters: Object.freeze({ layoutVersion: '2.0.0' }),
   }),
   Object.freeze({
     id: 'python-runtime.v1',
-    action: 'ensure-python-runtime',
+    action: 'verify-python-runtime',
     parameters: Object.freeze({
       pythonVersion: PROFILE.pythonVersion,
       torchVersion: PROFILE.torchVersion,
@@ -41,19 +52,9 @@ const STEP_DEFINITIONS = Object.freeze([
     }),
   }),
   Object.freeze({
-    id: 'comfyui-version.v1',
-    action: 'ensure-comfyui-version',
-    parameters: Object.freeze({ comfyUiVersion: PROFILE.comfyUiVersion }),
-  }),
-  Object.freeze({
-    id: 'custom-node-lock.v1',
-    action: 'ensure-custom-nodes',
-    parameters: Object.freeze({ lockVersion: PROFILE.customNodeLockVersion }),
-  }),
-  Object.freeze({
     id: 'ffmpeg-runtime.v1',
     action: 'verify-ffmpeg',
-    parameters: Object.freeze({ minimumMajor: PROFILE.ffmpegMinimumMajor }),
+    parameters: Object.freeze({ ffmpegVersion: PROFILE.ffmpegVersion }),
   }),
   Object.freeze({
     id: 'workflow-bundle.v1',
@@ -61,17 +62,34 @@ const STEP_DEFINITIONS = Object.freeze([
     parameters: Object.freeze({ bundleVersion: PROFILE.workflowBundleVersion }),
   }),
   Object.freeze({
+    id: 'comfyui-version.v1',
+    action: 'ensure-comfyui-service',
+    parameters: Object.freeze({
+      comfyUiVersion: PROFILE.comfyUiVersion,
+      comfyUiRevision: PROFILE.comfyUiRevision,
+      listenScope: PROFILE.comfyListenScope,
+    }),
+  }),
+  Object.freeze({
+    id: 'custom-node-lock.v1',
+    action: 'verify-custom-nodes',
+    parameters: Object.freeze({ lockVersion: PROFILE.customNodeLockVersion }),
+  }),
+  Object.freeze({
     id: 'environment-gate.v1',
     action: 'verify-environment',
-    parameters: Object.freeze({ profileVersion: PROFILE.profileVersion }),
+    parameters: Object.freeze({
+      profileVersion: PROFILE.profileVersion,
+      approvedEnvironmentSha256: PROFILE.approvedEnvironmentSha256,
+    }),
   }),
 ]);
 
 const INITIALIZATION_ACTION_METHODS = Object.freeze({
   'ensure-workspace-layout': 'ensureWorkspaceLayout',
-  'ensure-python-runtime': 'ensurePythonRuntime',
-  'ensure-comfyui-version': 'ensureComfyUiVersion',
-  'ensure-custom-nodes': 'ensureCustomNodes',
+  'verify-python-runtime': 'verifyPythonRuntime',
+  'ensure-comfyui-service': 'ensureComfyUiService',
+  'verify-custom-nodes': 'verifyCustomNodes',
   'verify-ffmpeg': 'verifyFfmpeg',
   'install-bundled-workflows': 'installBundledWorkflows',
   'verify-environment': 'verifyEnvironment',
@@ -88,14 +106,21 @@ function copyStep(step, ordinal) {
 
 function modelEntry(value) {
   const input = exactObject(value, [
-    'modelId', 'version', 'sizeBytes', 'licenseId', 'artifactSha256',
+    'modelId', 'version', 'relativePath', 'sizeBytes', 'licenseId',
+    'artifactSha256', 'acquisition',
   ]);
+  if (typeof input.relativePath !== 'string'
+    || !/^models\/(?:diffusion_models|text_encoders|vae|loras)\/[A-Za-z0-9._-]{1,160}$/u
+      .test(input.relativePath)
+    || input.acquisition !== 'runtime-user-acquired') fail();
   return Object.freeze({
     modelId: safeToken(input.modelId, false),
     version: safeToken(input.version, false),
+    relativePath: input.relativePath,
     sizeBytes: safeInteger(input.sizeBytes, 1, MAX_MODEL_SIZE_BYTES),
     licenseId: safeToken(input.licenseId, false),
     artifactSha256: sha256(input.artifactSha256),
+    acquisition: input.acquisition,
   });
 }
 
@@ -105,6 +130,14 @@ function normalizedModels(value) {
   if (models.some((model, index) => index > 0 && model.modelId === models[index - 1].modelId)) fail();
   const totalBytes = models.reduce((total, model) => total + model.sizeBytes, 0);
   if (!Number.isSafeInteger(totalBytes)) fail();
+  const approved = createH3RemoteModelCatalog();
+  const keys = [
+    'modelId', 'version', 'relativePath', 'sizeBytes', 'licenseId',
+    'artifactSha256', 'acquisition',
+  ];
+  if (models.length !== approved.length || models.some((model, index) => (
+    keys.some((key) => model[key] !== approved[index][key])
+  ))) fail();
   return Object.freeze(models);
 }
 
@@ -112,15 +145,16 @@ function createInitializationPlan(value) {
   const input = exactObject(value, ['connectionUid', 'modelCatalog']);
   const connectionUid = canonicalUid(input.connectionUid);
   const steps = Object.freeze(STEP_DEFINITIONS.map(copyStep));
-  const modelDownloads = normalizedModels(input.modelCatalog);
+  const modelFiles = normalizedModels(input.modelCatalog);
   const hashInput = Object.freeze({
-    contractVersion: 'remote-initialization-plan.v1',
+    contractVersion: 'remote-initialization-plan.v2',
     profileId: PROFILE.profileId,
     profileVersion: PROFILE.profileVersion,
+    approvedEnvironmentSha256: PROFILE.approvedEnvironmentSha256,
     connectionUid,
     steps,
-    modelDownloads,
-    requiresLargeModelConfirmation: modelDownloads.length > 0,
+    modelFiles,
+    requiresModelVerificationConfirmation: true,
   });
   const planHash = crypto.createHash('sha256').update(JSON.stringify(hashInput)).digest('hex');
   return Object.freeze({
@@ -130,8 +164,10 @@ function createInitializationPlan(value) {
     connectionUid,
     planHash,
     steps,
-    modelDownloads,
-    requiresLargeModelConfirmation: hashInput.requiresLargeModelConfirmation,
+    approvedEnvironmentSha256: hashInput.approvedEnvironmentSha256,
+    modelFiles: hashInput.modelFiles,
+    requiresModelVerificationConfirmation:
+      hashInput.requiresModelVerificationConfirmation,
   });
 }
 
@@ -140,9 +176,9 @@ function createInitializationRequest(value) {
   return Object.freeze({ planHash: sha256(input.planHash) });
 }
 
-function createModelInstallationRequest(value) {
+function createModelVerificationRequest(value) {
   const input = exactObject(value, ['planHash', 'confirmation']);
-  if (input.confirmation !== 'confirm-large-model-downloads') fail();
+  if (input.confirmation !== 'confirm-model-file-verification') fail();
   return Object.freeze({
     planHash: sha256(input.planHash),
     confirmation: input.confirmation,
@@ -154,5 +190,5 @@ module.exports = Object.freeze({
   PROFILE,
   createInitializationPlan,
   createInitializationRequest,
-  createModelInstallationRequest,
+  createModelVerificationRequest,
 });

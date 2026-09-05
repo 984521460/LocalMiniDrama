@@ -48,10 +48,10 @@
               :plan="initializationPlanFor(item.uid)"
               :checking="checkingEnvironmentUid === item.uid"
               :initializing="initializingEnvironmentUid === item.uid"
-              :installing-models="installingModelsUid === item.uid"
+              :verifying-models="verifyingModelsUid === item.uid"
               @check="checkEnvironment(item)"
               @initialize="initializeEnvironment(item, $event)"
-              @install-models="installEnvironmentModels(item, $event)"
+              @verify-models="verifyEnvironmentModels(item, $event)"
             />
             <RemoteExpertMode
               :connection-uid="item.uid"
@@ -190,7 +190,7 @@ const initializationPlans = ref(new Map())
 const expertTunnels = ref(new Map())
 const checkingEnvironmentUid = ref(null)
 const initializingEnvironmentUid = ref(null)
-const installingModelsUid = ref(null)
+const verifyingModelsUid = ref(null)
 const openingExpertTunnelUid = ref(null)
 const h3Profile = ref(null)
 const h3Validation = ref(null)
@@ -257,7 +257,7 @@ function clearRuntimeState() {
   expertTunnels.value = new Map()
   checkingEnvironmentUid.value = null
   initializingEnvironmentUid.value = null
-  installingModelsUid.value = null
+  verifyingModelsUid.value = null
   openingExpertTunnelUid.value = null
 }
 
@@ -329,7 +329,7 @@ async function initializeEnvironment(item, plan) {
   try {
     const result = await remoteConnectionAPI.initializeEnvironment(item.uid, plan)
     replaceMapValue(environmentReports, item.uid, result.report)
-    ElMessage.success('固定版本环境初始化完成')
+    ElMessage.success('核心环境准备和核验完成')
   } catch {
     ElMessage.error('环境初始化失败；系统未执行请求方提供的命令')
   } finally {
@@ -337,16 +337,16 @@ async function initializeEnvironment(item, plan) {
   }
 }
 
-async function installEnvironmentModels(item, plan) {
-  if (item.status !== 'ready' || installingModelsUid.value) return
-  installingModelsUid.value = item.uid
+async function verifyEnvironmentModels(item, plan) {
+  if (item.status !== 'ready' || verifyingModelsUid.value) return
+  verifyingModelsUid.value = item.uid
   try {
-    await remoteConnectionAPI.installEnvironmentModels(item.uid, plan)
-    ElMessage.success('已完成本次确认的大型模型安装计划')
+    await remoteConnectionAPI.verifyEnvironmentModels(item.uid, plan)
+    ElMessage.success('7 个批准模型文件已完成内容核验')
   } catch {
-    ElMessage.error('大型模型安装失败，请检查许可证、磁盘和远端状态')
+    ElMessage.error('模型文件核验失败；请检查许可证、文件放置、字节数和摘要')
   } finally {
-    installingModelsUid.value = null
+    verifyingModelsUid.value = null
   }
 }
 

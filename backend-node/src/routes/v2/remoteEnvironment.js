@@ -69,12 +69,12 @@ function remoteEnvironmentRoutes(log, runtime = {}) {
     }
   });
 
-  router.post('/remote-connections/:connectionUid/install-models', async (req, res) => {
+  router.post('/remote-connections/:connectionUid/verify-models', async (req, res) => {
     if (!service) return unavailable(res);
     try {
-      return response.success(res, await service.installModels(req.params.connectionUid, req.body));
+      return response.success(res, await service.verifyModels(req.params.connectionUid, req.body));
     } catch (error) {
-      return handleError(res, error, 'remote-environment-install-models');
+      return handleError(res, error, 'remote-environment-verify-models');
     }
   });
 

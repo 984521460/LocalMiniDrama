@@ -8,7 +8,7 @@ const {
   INITIALIZATION_ACTION_METHODS,
   createInitializationPlan,
   createInitializationRequest,
-  createModelInstallationRequest,
+  createModelVerificationRequest,
 } = require('./initializationPlan');
 const {
   canonicalUid,
@@ -21,7 +21,7 @@ const {
   isRemoteEnvironmentError,
 } = require('./remoteEnvironmentErrors');
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 const CATALOG_SNAPSHOT_UID = '00000000-0000-4000-8000-000000000001';
 
 function configuration(value) {
@@ -38,7 +38,7 @@ function configuration(value) {
     capture(input.probe, ['inspect']),
     capture(input.initializer, [
       ...Object.values(INITIALIZATION_ACTION_METHODS),
-      'installModel',
+      'verifyModel',
     ]),
   ];
   let modelCatalog;
@@ -46,7 +46,7 @@ function configuration(value) {
     modelCatalog = createInitializationPlan({
       connectionUid: CATALOG_SNAPSHOT_UID,
       modelCatalog: input.modelCatalog,
-    }).modelDownloads;
+    }).modelFiles;
   } catch {
     throw new TypeError('Remote environment service configuration is invalid');
   }
@@ -132,7 +132,7 @@ function createRemoteEnvironmentService(options) {
     sessionService, probe, initializer, nowEpochMs, modelCatalog, timeoutMs,
   } = configured;
   const activeCoreInitializations = new Map();
-  const activeModelInstallations = new Map();
+  const activeModelVerifications = new Map();
 
   function getInitializationPlan(connectionUid) {
     return createInitializationPlan({
@@ -232,7 +232,7 @@ function createRemoteEnvironmentService(options) {
       const report = await reportForSession(uid, session);
       if (!report.ready) throw createRemoteEnvironmentError('REMOTE_ENVIRONMENT_INITIALIZATION_FAILED');
       return Object.freeze({
-        contractVersion: 'remote-initialization-result.v1',
+        contractVersion: 'remote-initialization-result.v2',
         connectionUid: uid,
         planHash: plan.planHash,
         kind: 'core',
@@ -249,19 +249,23 @@ function createRemoteEnvironmentService(options) {
     }
   }
 
-  async function installModels(connectionUid, value) {
+  async function verifyModels(connectionUid, value) {
     const uid = canonicalUid(connectionUid);
-    const request = createModelInstallationRequest(value);
+    const request = createModelVerificationRequest(value);
     const plan = getInitializationPlan(uid);
     if (request.planHash !== plan.planHash) fail('REMOTE_ENVIRONMENT_PLAN_CONFLICT');
-    const existing = activeModelInstallations.get(uid);
+    const existing = activeModelVerifications.get(uid);
     if (existing) return existing;
     const operation = withSession(uid, async (session) => {
+      const report = await reportForSession(uid, session);
+      if (!report.ready) {
+        throw createRemoteEnvironmentError('REMOTE_ENVIRONMENT_INITIALIZATION_FAILED');
+      }
       const steps = [];
-      for (const model of plan.modelDownloads) {
+      for (const model of plan.modelFiles) {
         const result = await boundedCall(
           initializer,
-          'installModel',
+          'verifyModel',
           [session, model],
           timeoutMs,
           'REMOTE_ENVIRONMENT_INITIALIZATION_FAILED',
@@ -272,24 +276,24 @@ function createRemoteEnvironmentService(options) {
         }));
       }
       return Object.freeze({
-        contractVersion: 'remote-initialization-result.v1',
+        contractVersion: 'remote-initialization-result.v2',
         connectionUid: uid,
         planHash: plan.planHash,
-        kind: 'models',
+        kind: 'model-verification',
         status: 'completed',
         steps: Object.freeze(steps),
         report: null,
       });
     });
-    activeModelInstallations.set(uid, operation);
+    activeModelVerifications.set(uid, operation);
     try {
       return await operation;
     } finally {
-      if (activeModelInstallations.get(uid) === operation) activeModelInstallations.delete(uid);
+      if (activeModelVerifications.get(uid) === operation) activeModelVerifications.delete(uid);
     }
   }
 
-  return Object.freeze({ getInitializationPlan, initialize, inspect, installModels });
+  return Object.freeze({ getInitializationPlan, initialize, inspect, verifyModels });
 }
 
 module.exports = Object.freeze({ createRemoteEnvironmentService });

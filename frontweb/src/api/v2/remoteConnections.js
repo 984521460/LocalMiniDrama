@@ -19,7 +19,7 @@ import {
   initializationPlanView,
   initializationRequestPayload,
   initializationResultView,
-  modelInstallationRequestPayload,
+  modelVerificationRequestPayload,
 } from '../../components/remote/environmentContract.js'
 
 export const remoteConnectionAPI = Object.freeze({
@@ -102,11 +102,11 @@ export const remoteConnectionAPI = Object.freeze({
     ), plan)
   },
 
-  async installEnvironmentModels(connectionUid, plan) {
+  async verifyEnvironmentModels(connectionUid, plan) {
     const uid = remoteConnectionUidPath(connectionUid)
     return initializationResultView(await request.post(
-      `/v2/remote-connections/${uid}/install-models`,
-      modelInstallationRequestPayload(plan),
+      `/v2/remote-connections/${uid}/verify-models`,
+      modelVerificationRequestPayload(plan),
     ), plan)
   },
 })

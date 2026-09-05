@@ -1,154 +1,94 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://local-mini-drama.invalid/schemas/v6/remote-initialization-plan.schema.json",
-  "title": "Versioned Remote Initialization Plan",
-  "$comment": "This schema validates structure. Every consumer MUST additionally apply the semantic plan validator, which requires modelDownloads to be in strictly ascending modelId order, thereby enforcing modelId uniqueness, and verifies computed confirmation consistency.",
+  "title": "Current MiniMax H3 Remote Environment Plan",
+  "$comment": "Version 2 never downloads model weights. Runtime additionally verifies the canonical plan hash, strict model ordering and all approved-environment cross-bindings.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "contractVersion", "profileId", "profileVersion", "connectionUid", "planHash",
-    "steps", "modelDownloads", "requiresLargeModelConfirmation"
-  ],
+  "required": ["contractVersion", "profileId", "profileVersion", "approvedEnvironmentSha256", "connectionUid", "planHash", "steps", "modelFiles", "requiresModelVerificationConfirmation"],
   "properties": {
-    "contractVersion": { "const": "remote-initialization-plan.v1" },
-    "profileId": { "const": "featurize-comfyui" },
-    "profileVersion": { "const": "1.0.0" },
+    "contractVersion": { "const": "remote-initialization-plan.v2" },
+    "profileId": { "const": "minimax-h3-featurize" },
+    "profileVersion": { "const": "2.0.0" },
+    "approvedEnvironmentSha256": { "const": "716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43" },
     "connectionUid": { "$ref": "#/$defs/uuid" },
     "planHash": { "$ref": "#/$defs/sha256" },
     "steps": {
-      "type": "array",
-      "minItems": 7,
-      "maxItems": 7,
+      "type": "array", "minItems": 7, "maxItems": 7,
       "prefixItems": [
-        { "$ref": "#/$defs/workspaceStep" },
-        { "$ref": "#/$defs/pythonStep" },
-        { "$ref": "#/$defs/comfyStep" },
-        { "$ref": "#/$defs/nodesStep" },
-        { "$ref": "#/$defs/ffmpegStep" },
-        { "$ref": "#/$defs/workflowsStep" },
+        { "$ref": "#/$defs/workspaceStep" }, { "$ref": "#/$defs/pythonStep" },
+        { "$ref": "#/$defs/ffmpegStep" }, { "$ref": "#/$defs/workflowsStep" },
+        { "$ref": "#/$defs/comfyStep" }, { "$ref": "#/$defs/nodesStep" },
         { "$ref": "#/$defs/verifyStep" }
       ],
       "items": false
     },
-    "modelDownloads": {
-      "type": "array",
-      "maxItems": 64,
-      "uniqueItems": true,
-      "$comment": "The semantic plan validator requires strictly ascending modelId order; JSON Schema uniqueItems alone only rejects fully identical entries.",
-      "items": { "$ref": "#/$defs/model" }
+    "modelFiles": {
+      "type": "array", "minItems": 7, "maxItems": 7, "uniqueItems": true,
+      "prefixItems": [
+        { "$ref": "#/$defs/audioVaeModel" },
+        { "$ref": "#/$defs/fl2vaDiffusionModel" },
+        { "$ref": "#/$defs/fl2vaTurboLoraModel" },
+        { "$ref": "#/$defs/ref2vaDiffusionModel" },
+        { "$ref": "#/$defs/ref2vaTurboLoraModel" },
+        { "$ref": "#/$defs/textEncoderModel" },
+        { "$ref": "#/$defs/videoVaeModel" }
+      ],
+      "items": false
     },
-    "requiresLargeModelConfirmation": {
-      "type": "boolean",
-      "$comment": "Runtime requires true exactly when modelDownloads is non-empty."
-    }
+    "requiresModelVerificationConfirmation": { "const": true }
   },
   "$defs": {
-    "uuid": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-    },
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "token": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$" },
     "workspaceStep": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ordinal", "id", "action", "parameters"],
-      "properties": {
-        "ordinal": { "const": 0 }, "id": { "const": "workspace-layout.v1" },
-        "action": { "const": "ensure-workspace-layout" },
-        "parameters": {
-          "type": "object", "additionalProperties": false, "required": ["layoutVersion"],
-          "properties": { "layoutVersion": { "const": "1.0.0" } }
-        }
-      }
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "id", "action", "parameters"],
+      "properties": { "ordinal": { "const": 0 }, "id": { "const": "workspace-layout.v1" }, "action": { "const": "ensure-workspace-layout" }, "parameters": { "type": "object", "additionalProperties": false, "required": ["layoutVersion"], "properties": { "layoutVersion": { "const": "2.0.0" } } } }
     },
     "pythonStep": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ordinal", "id", "action", "parameters"],
-      "properties": {
-        "ordinal": { "const": 1 }, "id": { "const": "python-runtime.v1" },
-        "action": { "const": "ensure-python-runtime" },
-        "parameters": {
-          "type": "object", "additionalProperties": false,
-          "required": ["pythonVersion", "torchVersion", "cudaVersion"],
-          "properties": {
-            "pythonVersion": { "const": "3.11" },
-            "torchVersion": { "const": "2.7.1" },
-            "cudaVersion": { "const": "12.8" }
-          }
-        }
-      }
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "id", "action", "parameters"],
+      "properties": { "ordinal": { "const": 1 }, "id": { "const": "python-runtime.v1" }, "action": { "const": "verify-python-runtime" }, "parameters": { "type": "object", "additionalProperties": false, "required": ["pythonVersion", "torchVersion", "cudaVersion"], "properties": { "pythonVersion": { "const": "3.12.12" }, "torchVersion": { "const": "2.11.0+cu130" }, "cudaVersion": { "const": "13.0" } } } }
     },
     "comfyStep": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ordinal", "id", "action", "parameters"],
-      "properties": {
-        "ordinal": { "const": 2 }, "id": { "const": "comfyui-version.v1" },
-        "action": { "const": "ensure-comfyui-version" },
-        "parameters": {
-          "type": "object", "additionalProperties": false, "required": ["comfyUiVersion"],
-          "properties": { "comfyUiVersion": { "const": "0.3.50" } }
-        }
-      }
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "id", "action", "parameters"],
+      "properties": { "ordinal": { "const": 4 }, "id": { "const": "comfyui-version.v1" }, "action": { "const": "ensure-comfyui-service" }, "parameters": { "type": "object", "additionalProperties": false, "required": ["comfyUiVersion", "comfyUiRevision", "listenScope"], "properties": { "comfyUiVersion": { "const": "0.33.0" }, "comfyUiRevision": { "const": "0696f61d953d09878988ebc4ca46e263f73ff65f" }, "listenScope": { "const": "loopback" } } } }
     },
     "nodesStep": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ordinal", "id", "action", "parameters"],
-      "properties": {
-        "ordinal": { "const": 3 }, "id": { "const": "custom-node-lock.v1" },
-        "action": { "const": "ensure-custom-nodes" },
-        "parameters": {
-          "type": "object", "additionalProperties": false, "required": ["lockVersion"],
-          "properties": { "lockVersion": { "const": "builtin-nodes.1" } }
-        }
-      }
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "id", "action", "parameters"],
+      "properties": { "ordinal": { "const": 5 }, "id": { "const": "custom-node-lock.v1" }, "action": { "const": "verify-custom-nodes" }, "parameters": { "type": "object", "additionalProperties": false, "required": ["lockVersion"], "properties": { "lockVersion": { "const": "minimax-h3-builtin-nodes.v1" } } } }
     },
     "ffmpegStep": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ordinal", "id", "action", "parameters"],
-      "properties": {
-        "ordinal": { "const": 4 }, "id": { "const": "ffmpeg-runtime.v1" },
-        "action": { "const": "verify-ffmpeg" },
-        "parameters": {
-          "type": "object", "additionalProperties": false, "required": ["minimumMajor"],
-          "properties": { "minimumMajor": { "const": 7 } }
-        }
-      }
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "id", "action", "parameters"],
+      "properties": { "ordinal": { "const": 2 }, "id": { "const": "ffmpeg-runtime.v1" }, "action": { "const": "verify-ffmpeg" }, "parameters": { "type": "object", "additionalProperties": false, "required": ["ffmpegVersion"], "properties": { "ffmpegVersion": { "const": "8.1.2" } } } }
     },
     "workflowsStep": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ordinal", "id", "action", "parameters"],
-      "properties": {
-        "ordinal": { "const": 5 }, "id": { "const": "workflow-bundle.v1" },
-        "action": { "const": "install-bundled-workflows" },
-        "parameters": {
-          "type": "object", "additionalProperties": false, "required": ["bundleVersion"],
-          "properties": { "bundleVersion": { "const": "mvp-workflows.1" } }
-        }
-      }
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "id", "action", "parameters"],
+      "properties": { "ordinal": { "const": 3 }, "id": { "const": "workflow-bundle.v1" }, "action": { "const": "install-bundled-workflows" }, "parameters": { "type": "object", "additionalProperties": false, "required": ["bundleVersion"], "properties": { "bundleVersion": { "const": "minimax-h3-t2v.v1" } } } }
     },
     "verifyStep": {
-      "type": "object", "additionalProperties": false,
-      "required": ["ordinal", "id", "action", "parameters"],
-      "properties": {
-        "ordinal": { "const": 6 }, "id": { "const": "environment-gate.v1" },
-        "action": { "const": "verify-environment" },
-        "parameters": {
-          "type": "object", "additionalProperties": false, "required": ["profileVersion"],
-          "properties": { "profileVersion": { "const": "1.0.0" } }
-        }
-      }
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "id", "action", "parameters"],
+      "properties": { "ordinal": { "const": 6 }, "id": { "const": "environment-gate.v1" }, "action": { "const": "verify-environment" }, "parameters": { "type": "object", "additionalProperties": false, "required": ["profileVersion", "approvedEnvironmentSha256"], "properties": { "profileVersion": { "const": "2.0.0" }, "approvedEnvironmentSha256": { "const": "716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43" } } } }
     },
     "model": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["modelId", "version", "sizeBytes", "licenseId", "artifactSha256"],
+      "type": "object", "additionalProperties": false,
+      "required": ["modelId", "version", "relativePath", "sizeBytes", "licenseId", "artifactSha256", "acquisition"],
       "properties": {
         "modelId": { "$ref": "#/$defs/token" },
-        "version": { "$ref": "#/$defs/token" },
+        "version": { "const": "4cc1d817b6184899b41293954329f576cb5ae86b" },
+        "relativePath": { "type": "string", "pattern": "^models/(?:diffusion_models|text_encoders|vae|loras)/[A-Za-z0-9._-]{1,160}$" },
         "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 1125899906842624 },
-        "licenseId": { "$ref": "#/$defs/token" },
-        "artifactSha256": { "$ref": "#/$defs/sha256" }
+        "licenseId": { "const": "MiniMax-H3-Community-License-Agreement" },
+        "artifactSha256": { "$ref": "#/$defs/sha256" },
+        "acquisition": { "const": "runtime-user-acquired" }
       }
-    }
+    },
+    "audioVaeModel": { "allOf": [{ "$ref": "#/$defs/model" }, { "type": "object", "properties": { "modelId": { "const": "audio-vae" }, "relativePath": { "const": "models/vae/minimax_h3_audio_vae_fp32.safetensors" }, "sizeBytes": { "const": 605254808 }, "artifactSha256": { "const": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48" } } }] },
+    "fl2vaDiffusionModel": { "allOf": [{ "$ref": "#/$defs/model" }, { "type": "object", "properties": { "modelId": { "const": "fl2va-diffusion" }, "relativePath": { "const": "models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" }, "sizeBytes": { "const": 20970379616 }, "artifactSha256": { "const": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a" } } }] },
+    "fl2vaTurboLoraModel": { "allOf": [{ "$ref": "#/$defs/model" }, { "type": "object", "properties": { "modelId": { "const": "fl2va-turbo-lora" }, "relativePath": { "const": "models/loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors" }, "sizeBytes": { "const": 1956192992 }, "artifactSha256": { "const": "c396a9a06f58399e9df9754b18299818d84a2ddd371724ba48fe4a41221437dc" } } }] },
+    "ref2vaDiffusionModel": { "allOf": [{ "$ref": "#/$defs/model" }, { "type": "object", "properties": { "modelId": { "const": "ref2va-diffusion" }, "relativePath": { "const": "models/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors" }, "sizeBytes": { "const": 20970379616 }, "artifactSha256": { "const": "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779" } } }] },
+    "ref2vaTurboLoraModel": { "allOf": [{ "$ref": "#/$defs/model" }, { "type": "object", "properties": { "modelId": { "const": "ref2va-turbo-lora" }, "relativePath": { "const": "models/loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors" }, "sizeBytes": { "const": 1956193000 }, "artifactSha256": { "const": "5b9ab5ade15d0775676d01a907268a69a1468dc6033b3b0d3ded5502f3ebb84c" } } }] },
+    "textEncoderModel": { "allOf": [{ "$ref": "#/$defs/model" }, { "type": "object", "properties": { "modelId": { "const": "text-encoder" }, "relativePath": { "const": "models/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors" }, "sizeBytes": { "const": 15687142551 }, "artifactSha256": { "const": "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6" } } }] },
+    "videoVaeModel": { "allOf": [{ "$ref": "#/$defs/model" }, { "type": "object", "properties": { "modelId": { "const": "video-vae" }, "relativePath": { "const": "models/vae/minimax_h3_video_vae_fp16.safetensors" }, "sizeBytes": { "const": 5207808496 }, "artifactSha256": { "const": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522" } } }] }
   }
 }

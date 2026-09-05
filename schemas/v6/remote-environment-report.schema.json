@@ -1,26 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://local-mini-drama.invalid/schemas/v6/remote-environment-report.schema.json",
-  "title": "Sanitized Remote Environment Report",
+  "title": "Sanitized Current H3 Remote Environment Report",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "contractVersion", "connectionUid", "collectedAtEpochMs", "profileVersion",
-    "platform", "architecture", "gpuVendor", "gpuCount", "totalVramMiB",
-    "systemMemoryMiB", "diskFreeMiB", "pythonVersion", "torchVersion",
-    "cudaVersion", "ffmpegVersion", "comfyUiVersion", "workspaceWritable",
-    "directoriesReady", "comfyUiReachable", "ready"
+  "allOf": [
+    {
+      "if": { "properties": { "ready": { "const": true } }, "required": ["ready"] },
+      "then": { "$ref": "#/$defs/readyFacts" }
+    },
+    {
+      "if": { "properties": { "ready": { "const": false } }, "required": ["ready"] },
+      "then": { "not": { "$ref": "#/$defs/readyFacts" } }
+    }
   ],
+  "required": ["contractVersion", "connectionUid", "collectedAtEpochMs", "profileVersion", "platform", "architecture", "gpuVendor", "gpuName", "gpuCount", "totalVramMiB", "driverVersion", "systemMemoryMiB", "diskFreeMiB", "pythonVersion", "torchVersion", "cudaVersion", "ffmpegVersion", "comfyUiVersion", "comfyUiRevision", "workspaceWritable", "directoriesReady", "comfyUiReachable", "ready"],
   "properties": {
-    "contractVersion": { "const": "remote-environment-report.v1" },
+    "contractVersion": { "const": "remote-environment-report.v2" },
     "connectionUid": { "$ref": "#/$defs/uuid" },
     "collectedAtEpochMs": { "type": "integer", "minimum": 0, "maximum": 8640000000000000 },
-    "profileVersion": { "const": "1.0.0" },
+    "profileVersion": { "const": "2.0.0" },
     "platform": { "const": "linux" },
     "architecture": { "enum": ["x64", "arm64"] },
     "gpuVendor": { "enum": ["nvidia", "amd", "other", "none"] },
+    "gpuName": { "type": "string", "maxLength": 128, "pattern": "^[ -~]*$" },
     "gpuCount": { "type": "integer", "minimum": 0, "maximum": 16 },
     "totalVramMiB": { "type": "integer", "minimum": 0, "maximum": 2097152 },
+    "driverVersion": { "$ref": "#/$defs/nullableVersion" },
     "systemMemoryMiB": { "type": "integer", "minimum": 1, "maximum": 4194304 },
     "diskFreeMiB": { "type": "integer", "minimum": 0, "maximum": 1073741824 },
     "pythonVersion": { "$ref": "#/$defs/nullableVersion" },
@@ -28,24 +34,35 @@
     "cudaVersion": { "$ref": "#/$defs/nullableVersion" },
     "ffmpegVersion": { "$ref": "#/$defs/nullableVersion" },
     "comfyUiVersion": { "$ref": "#/$defs/nullableVersion" },
+    "comfyUiRevision": { "oneOf": [{ "$ref": "#/$defs/sha1" }, { "type": "null" }] },
     "workspaceWritable": { "type": "boolean" },
     "directoriesReady": { "type": "boolean" },
     "comfyUiReachable": { "type": "boolean" },
-    "ready": {
-      "type": "boolean",
-      "$comment": "Runtime derives readiness from the pinned profile and capability fields."
-    }
+    "ready": { "type": "boolean" }
   },
   "$defs": {
-    "uuid": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-    },
-    "nullableVersion": {
-      "oneOf": [
-        { "type": "string", "maxLength": 32, "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\+[0-9a-z.]+)?$" },
-        { "type": "null" }
-      ]
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "nullableVersion": { "oneOf": [{ "type": "string", "maxLength": 32, "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:\\+[0-9a-z.]+)?$" }, { "type": "null" }] },
+    "readyFacts": {
+      "type": "object",
+      "properties": {
+        "gpuVendor": { "const": "nvidia" },
+        "gpuName": { "const": "NVIDIA GeForce RTX 4090" },
+        "gpuCount": { "const": 1 },
+        "totalVramMiB": { "const": 24564 },
+        "driverVersion": { "const": "595.84" },
+        "pythonVersion": { "const": "3.12.12" },
+        "torchVersion": { "const": "2.11.0+cu130" },
+        "cudaVersion": { "const": "13.0" },
+        "ffmpegVersion": { "const": "8.1.2" },
+        "comfyUiVersion": { "const": "0.33.0" },
+        "comfyUiRevision": { "const": "0696f61d953d09878988ebc4ca46e263f73ff65f" },
+        "workspaceWritable": { "const": true },
+        "directoriesReady": { "const": true },
+        "comfyUiReachable": { "const": true }
+      },
+      "required": ["gpuVendor", "gpuName", "gpuCount", "totalVramMiB", "driverVersion", "pythonVersion", "torchVersion", "cudaVersion", "ffmpegVersion", "comfyUiVersion", "comfyUiRevision", "workspaceWritable", "directoriesReady", "comfyUiReachable"]
     }
   }
 }

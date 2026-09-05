@@ -16,6 +16,7 @@ const { createSshTunnelManager } = require('./sshTunnel');
 const { createH3LocalVideoInspector } = require('../h3/localVideoInspector');
 const { createH3GenerationHistoryService } = require('../h3/generationHistoryService');
 const { createRemoteOutputVerifier } = require('./outputVerifier');
+const { createH3RemoteModelCatalog } = require('./h3EnvironmentProfile');
 
 const DEPENDENCY_KEYS = Object.freeze([
   'credentialVault', 'sshTransport', 'tunnelManager', 'comfyClientFactory',
@@ -69,7 +70,7 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
   const remoteEnvironment = createRemoteEnvironmentService({
     ...environmentAdapter,
     nowEpochMs: Date.now,
-    modelCatalog: [],
+    modelCatalog: createH3RemoteModelCatalog(),
   });
   const remoteClient = createManagedComfyGateway({
     sessionService: remoteSessionService,
