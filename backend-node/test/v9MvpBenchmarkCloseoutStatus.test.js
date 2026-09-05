@@ -17,9 +17,11 @@ const {
 const {
   createMvpBenchmarkCloseoutStatusService,
 } = require('../src/benchmark/mvpBenchmarkCloseoutStatusService');
-const { remoteConnectionEvidenceSha256 } = require('../src/remote/connectionProfile');
 const mvpBenchmarkRoutes = require('../src/routes/v2/mvpBenchmark');
-const { createMvpBenchmarkSessionFixture } = require('./helpers/v9MvpBenchmarkSessionFixture');
+const {
+  createMvpBenchmarkSessionFixture,
+  mvpBenchmarkExternalAuthorizationRequestFixture,
+} = require('./helpers/v9MvpBenchmarkSessionFixture');
 
 function uid(number) {
   return `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`;
@@ -48,17 +50,11 @@ function serviceFixture(t, completed = false) {
   const current = createMvpBenchmarkSessionFixture(t, { includeExportFinal: true });
   const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
   const authorization = createMvpBenchmarkExternalAuthorization({
-    request: {
-      schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+    request: mvpBenchmarkExternalAuthorizationRequestFixture(current, session, {
       uid: uid(99500),
-      sessionUid: session.uid,
-      dramaUid: session.dramaUid,
-      sessionPlanSha256: session.planSha256,
-      connectionUid: current.connection.uid,
-      connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
       maximumCostCnyFen: 374,
       validityDurationMs: 7_200_000,
-    },
+    }),
     h3SubmissionLimit: session.h3Tasks.length,
     ttsSubmissionLimit: session.audioIntents.length,
     authorizedAtEpochMs: 1_000,

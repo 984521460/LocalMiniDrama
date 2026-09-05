@@ -512,7 +512,7 @@ async function authorizeMvpSession(seed) {
   const expiresAt = new Date(Date.now() + seed.validityDurationMs).toLocaleString()
   try {
     await ElMessageBox.confirm(
-      `确认仅创建本地不可变授权记录？连接：${connection.name}；费用硬上限：¥${(seed.maximumCostCnyFen / 100).toFixed(2)}；预计失效：${expiresAt}。该操作不会访问 SSH、Vault、Provider 或 GPU，也不会创建实例或产生费用。`,
+      `确认仅创建本地不可变授权记录？连接：${connection.name}；费用硬上限：¥${(seed.maximumCostCnyFen / 100).toFixed(2)}；预计失效：${expiresAt}。你逐项确认的 MiniMax H3 地域、商业资格、署名、使用政策、下游披露和素材权利声明将与本会话一起封存；这是自我声明，不是法律审查。该操作不会访问 SSH、Vault、Provider 或 GPU，也不会创建实例或产生费用。`,
       '确认本地外部授权',
       { type: 'warning', confirmButtonText: '确认创建', cancelButtonText: '取消' },
     )

@@ -27,6 +27,7 @@ export const mvpBenchmarkAuthorizationAPI = Object.freeze({
       connectionEvidenceSha256: connection.connectionEvidenceSha256,
       maximumCostCnyFen: seed.maximumCostCnyFen,
       validityDurationMs: seed.validityDurationMs,
+      operatorAttestation: seed.operatorAttestation,
     })
   },
 })

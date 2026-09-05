@@ -11,6 +11,7 @@ const express = require('express');
 const {
   MvpBenchmarkExternalAuthorizationError,
   createMvpBenchmarkExternalAuthorization,
+  mvpBenchmarkExternalAuthorizationRequestSha256,
   parseMvpBenchmarkExternalAuthorization,
   parseMvpBenchmarkExternalAuthorizationRequest,
   serializeMvpBenchmarkExternalAuthorizationJson,
@@ -29,25 +30,25 @@ const h3Routes = require('../src/routes/v2/h3');
 const mvpBenchmarkRoutes = require('../src/routes/v2/mvpBenchmark');
 const remoteTaskRoutes = require('../src/routes/v2/remoteTasks');
 const schema = require('../../schemas/v9/mvp-benchmark-external-authorization.schema.json');
-const { createMvpBenchmarkSessionFixture } = require('./helpers/v9MvpBenchmarkSessionFixture');
+const attestationSchema = require('../../schemas/v9/mvp-benchmark-operator-attestation.schema.json');
+const requestSchema = require('../../schemas/v9/mvp-benchmark-external-authorization-request.schema.json');
+const {
+  createMvpBenchmarkSessionFixture,
+  mvpBenchmarkExternalAuthorizationRequestFixture,
+  mvpBenchmarkOperatorAttestationFixture,
+  mvpBenchmarkOperatorAttestationSeedFixture,
+} = require('./helpers/v9MvpBenchmarkSessionFixture');
 const {
   createCoordinatorTransferFailureFixture,
 } = require('./helpers/v9RemoteFailureFixture');
 const { uid } = require('./helpers/v2RepositoryDatabase');
 
 function requestFor(current, session, overrides = {}) {
-  return {
-    schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+  return mvpBenchmarkExternalAuthorizationRequestFixture(current, session, {
     uid: uid(99500),
-    sessionUid: session.uid,
-    dramaUid: session.dramaUid,
-    sessionPlanSha256: session.planSha256,
-    connectionUid: current.connection.uid,
-    connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
     maximumCostCnyFen: 20_000,
-    validityDurationMs: 60 * 60 * 1000,
     ...overrides,
-  };
+  });
 }
 
 function counts(database) {
@@ -98,14 +99,18 @@ function activateReplacementVoiceProfile(current, profileUid, selectionUid) {
 function insertAuthorization(database, request, authorization, verb = 'INSERT') {
   return database.prepare(`
     ${verb} INTO mvp_benchmark_external_authorizations
-      (uid,session_uid,drama_uid,request_json,authorization_json,authorization_sha256,
+      (uid,session_uid,drama_uid,request_json,request_sha256,
+       authorization_json,authorization_sha256,
        authorized_at_epoch_ms,expires_at_epoch_ms)
-    VALUES (?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?)
   `).run(
     authorization.uid,
     authorization.sessionUid,
     authorization.dramaUid,
     serializeMvpBenchmarkExternalAuthorizationJson(request),
+    request.schemaVersion === 'mvp-benchmark-external-authorization-request.v2'
+      ? mvpBenchmarkExternalAuthorizationRequestSha256(request)
+      : null,
     serializeMvpBenchmarkExternalAuthorizationJson(authorization),
     authorization.authorizationSha256,
     authorization.authorizedAtEpochMs,
@@ -124,7 +129,7 @@ async function listen(app) {
 
 test('authorization contract fixes trusted environment, limits, expiry, and its digest', () => {
   const request = parseMvpBenchmarkExternalAuthorizationRequest({
-    schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+    schemaVersion: 'mvp-benchmark-external-authorization-request.v2',
     uid: uid(99510),
     sessionUid: uid(99511),
     dramaUid: uid(99512),
@@ -133,6 +138,7 @@ test('authorization contract fixes trusted environment, limits, expiry, and its 
     connectionEvidenceSha256: 'b'.repeat(64),
     maximumCostCnyFen: 1,
     validityDurationMs: 60_000,
+    operatorAttestation: mvpBenchmarkOperatorAttestationFixture(),
   });
   const authorization = createMvpBenchmarkExternalAuthorization({
     request,
@@ -150,6 +156,14 @@ test('authorization contract fixes trusted environment, limits, expiry, and its 
   assert.equal(authorization.perItemAttemptLimit, 1);
   assert.equal(authorization.instanceDisposition, 'return-after-terminal-or-expiry');
   assert.equal(authorization.expiresAtEpochMs, 61_000);
+  assert.equal(request.operatorAttestation.licenseId, 'MiniMax-H3-Community-License-Agreement');
+  assert.equal(request.operatorAttestation.requiredEnvironmentSha256,
+    authorization.requiredEnvironmentSha256);
+  const validateAttestation = new Ajv2020({ strict: true }).compile(attestationSchema);
+  const validateRequest = new Ajv2020({ strict: true }).compile(requestSchema);
+  assert.equal(validateAttestation(request.operatorAttestation), true,
+    JSON.stringify(validateAttestation.errors));
+  assert.equal(validateRequest(request), true, JSON.stringify(validateRequest.errors));
   assert.throws(
     () => parseMvpBenchmarkExternalAuthorizationRequest({ ...request, maximumCostCnyFen: 0 }),
     { code: 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID' },
@@ -165,6 +179,20 @@ test('authorization contract fixes trusted environment, limits, expiry, and its 
     () => parseMvpBenchmarkExternalAuthorizationRequest({
       ...request,
       validityDurationMs: 24 * 60 * 60 * 1000 + 1,
+    }),
+    { code: 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID' },
+  );
+  const historical = { ...request };
+  delete historical.operatorAttestation;
+  historical.schemaVersion = 'mvp-benchmark-external-authorization-request.v1';
+  assert.equal(parseMvpBenchmarkExternalAuthorizationRequest(historical).schemaVersion,
+    'mvp-benchmark-external-authorization-request.v1');
+  assert.throws(
+    () => createMvpBenchmarkExternalAuthorization({
+      request: historical,
+      h3SubmissionLimit: 4,
+      ttsSubmissionLimit: 1,
+      authorizedAtEpochMs: 1_000,
     }),
     { code: 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID' },
   );
@@ -229,6 +257,94 @@ test('repository prepares one immutable secret-free authorization without extern
       'DELETE FROM mvp_benchmark_external_authorizations WHERE uid=?',
     ).run(authorization.uid),
     /append-only/u,
+  );
+});
+
+test('migration rejects new legacy requests but historical v1 evidence remains read-only', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const request = parseMvpBenchmarkExternalAuthorizationRequest(requestFor(current, session));
+  const authorization = createMvpBenchmarkExternalAuthorization({
+    request,
+    h3SubmissionLimit: session.h3Tasks.length,
+    ttsSubmissionLimit: session.audioIntents.length,
+    authorizedAtEpochMs: 1_000,
+  });
+  const historical = { ...request };
+  delete historical.operatorAttestation;
+  historical.schemaVersion = 'mvp-benchmark-external-authorization-request.v1';
+  const parsedHistorical = parseMvpBenchmarkExternalAuthorizationRequest(historical);
+
+  current.database.pragma('recursive_triggers = OFF');
+  assert.throws(
+    () => insertAuthorization(
+      current.database,
+      parsedHistorical,
+      authorization,
+      'INSERT OR REPLACE',
+    ),
+    /operator attestation invalid/u,
+  );
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM mvp_benchmark_external_authorizations',
+  ).pluck().get(), 0);
+
+  current.database.exec(`
+    DROP TRIGGER v2_mvp_benchmark_external_authorizations_operator_attestation_insert;
+    DROP TRIGGER v2_mvp_benchmark_external_authorizations_validate_insert;
+    DROP TRIGGER v2_mvp_benchmark_external_authorizations_request_seal_after_insert;
+  `);
+  insertAuthorization(current.database, parsedHistorical, authorization);
+  assert.deepEqual(
+    current.repositories.mvpBenchmarkExternalAuthorizations.getStoredBySession(session.uid),
+    authorization,
+  );
+  assert.throws(
+    () => current.repositories.mvpBenchmarkExternalAuthorizations.get(authorization.uid),
+    (error) => error instanceof V2RepositoryDataError,
+  );
+});
+
+test('request seal rejects coordinated attestation and request digest drift', (t) => {
+  const current = createMvpBenchmarkSessionFixture(t);
+  const session = current.repositories.mvpBenchmarkSessions.prepare(current.request);
+  const request = parseMvpBenchmarkExternalAuthorizationRequest(requestFor(current, session));
+  const authorization = current.repositories.mvpBenchmarkExternalAuthorizations.prepare(
+    request,
+    { nowEpochMs: 1_000 },
+  );
+  const replacementRequest = parseMvpBenchmarkExternalAuthorizationRequest({
+    ...request,
+    operatorAttestation: mvpBenchmarkOperatorAttestationFixture({
+      commercialEligibilityBasis: 'written-minimax-authorization',
+    }),
+  });
+  const replacementSha256 = mvpBenchmarkExternalAuthorizationRequestSha256(replacementRequest);
+  current.database.exec('DROP TRIGGER v2_mvp_benchmark_external_authorizations_immutable_update');
+  current.database.prepare(`
+    UPDATE mvp_benchmark_external_authorizations
+    SET request_json=?, request_sha256=?
+    WHERE uid=?
+  `).run(
+    serializeMvpBenchmarkExternalAuthorizationJson(replacementRequest),
+    replacementSha256,
+    authorization.uid,
+  );
+  assert.notEqual(
+    current.database.prepare(`
+      SELECT request_sha256
+      FROM mvp_benchmark_external_authorization_request_seals
+      WHERE authorization_uid=?
+    `).pluck().get(authorization.uid),
+    replacementSha256,
+  );
+  assert.throws(
+    () => current.repositories.mvpBenchmarkExternalAuthorizations.getStoredBySession(session.uid),
+    (error) => error instanceof V2RepositoryDataError,
+  );
+  assert.throws(
+    () => current.repositories.mvpBenchmarkExternalAuthorizations.get(authorization.uid),
+    (error) => error instanceof V2RepositoryDataError,
   );
 });
 
@@ -298,14 +414,15 @@ test('database rejects coordinated wrong-target inserts and replacement conflict
   assert.throws(
     () => current.database.prepare(`
       INSERT INTO mvp_benchmark_external_authorizations
-        (uid,session_uid,drama_uid,request_json,authorization_json,authorization_sha256,
-         authorized_at_epoch_ms,expires_at_epoch_ms)
-      VALUES (?,?,?,?,?,?,?,?)
+        (uid,session_uid,drama_uid,request_json,request_sha256,authorization_json,
+         authorization_sha256,authorized_at_epoch_ms,expires_at_epoch_ms)
+      VALUES (?,?,?,?,?,?,?,?,?)
     `).run(
       wrongAuthorization.uid,
       wrongAuthorization.sessionUid,
       wrongAuthorization.dramaUid,
       serializeMvpBenchmarkExternalAuthorizationJson(wrongRequest),
+      mvpBenchmarkExternalAuthorizationRequestSha256(wrongRequest),
       serializeMvpBenchmarkExternalAuthorizationJson(wrongAuthorization),
       wrongAuthorization.authorizationSha256,
       wrongAuthorization.authorizedAtEpochMs,
@@ -325,10 +442,10 @@ test('database rejects coordinated wrong-target inserts and replacement conflict
   assert.throws(
     () => current.database.prepare(`
       INSERT OR REPLACE INTO mvp_benchmark_external_authorizations
-        (uid,session_uid,drama_uid,request_json,authorization_json,authorization_sha256,
-         authorized_at_epoch_ms,expires_at_epoch_ms)
-      SELECT ?,session_uid,drama_uid,request_json,authorization_json,authorization_sha256,
-             authorized_at_epoch_ms,expires_at_epoch_ms
+        (uid,session_uid,drama_uid,request_json,request_sha256,authorization_json,
+         authorization_sha256,authorized_at_epoch_ms,expires_at_epoch_ms)
+      SELECT ?,session_uid,drama_uid,request_json,request_sha256,authorization_json,
+             authorization_sha256,authorized_at_epoch_ms,expires_at_epoch_ms
       FROM mvp_benchmark_external_authorizations WHERE uid=?
     `).run(uid(99599), valid.uid),
     /immutable/u,
@@ -434,6 +551,7 @@ test('derived authorization rolls back a source change injected during current-s
       connectionUid: current.connection.uid,
       maximumCostCnyFen: 374,
       validityDurationMs: 7_200_000,
+      operatorAttestation: mvpBenchmarkOperatorAttestationSeedFixture(),
     }, { nowEpochMs: 1_000 }),
     { code: 'V2_REPOSITORY_CONFLICT' },
   );
@@ -450,6 +568,12 @@ test('benchmark session and external authorization stay outside project archives
   assert.equal(PROJECT_ARCHIVE_CATALOG.excludedTables.includes('mvp_benchmark_sessions'), true);
   assert.equal(
     PROJECT_ARCHIVE_CATALOG.excludedTables.includes('mvp_benchmark_external_authorizations'),
+    true,
+  );
+  assert.equal(
+    PROJECT_ARCHIVE_CATALOG.excludedTables.includes(
+      'mvp_benchmark_external_authorization_request_seals',
+    ),
     true,
   );
 });
@@ -516,6 +640,7 @@ test('path-bound route derives authorization identity and source evidence from l
       body: JSON.stringify({
         maximumCostCnyFen: 374,
         validityDurationMs: 2 * 60 * 60 * 1000,
+        operatorAttestation: mvpBenchmarkOperatorAttestationSeedFixture(),
         extra: true,
       }),
     },
@@ -524,12 +649,34 @@ test('path-bound route derives authorization identity and source evidence from l
   assert.equal(current.database.prepare(
     'SELECT count(*) FROM mvp_benchmark_external_authorizations',
   ).pluck().get(), 0);
+  const unconfirmed = await fetch(
+    `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/connections/${current.connection.uid}/authorization`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        maximumCostCnyFen: 374,
+        validityDurationMs: 2 * 60 * 60 * 1000,
+        operatorAttestation: mvpBenchmarkOperatorAttestationSeedFixture({
+          territoryEligibilityConfirmed: false,
+        }),
+      }),
+    },
+  );
+  assert.equal(unconfirmed.status, 400);
+  assert.equal(current.database.prepare(
+    'SELECT count(*) FROM mvp_benchmark_external_authorizations',
+  ).pluck().get(), 0);
   const result = await fetch(
     `${base}/api/v1/v2/dramas/${session.dramaUid}/mvp-benchmark/sessions/${session.uid}/connections/${current.connection.uid}/authorization`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ maximumCostCnyFen: 374, validityDurationMs: 2 * 60 * 60 * 1000 }),
+      body: JSON.stringify({
+        maximumCostCnyFen: 374,
+        validityDurationMs: 2 * 60 * 60 * 1000,
+        operatorAttestation: mvpBenchmarkOperatorAttestationSeedFixture(),
+      }),
     },
   );
   assert.equal(result.status, 201);
@@ -550,7 +697,11 @@ test('path-bound route derives authorization identity and source evidence from l
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ maximumCostCnyFen: 374, validityDurationMs: 2 * 60 * 60 * 1000 }),
+      body: JSON.stringify({
+        maximumCostCnyFen: 374,
+        validityDurationMs: 2 * 60 * 60 * 1000,
+        operatorAttestation: mvpBenchmarkOperatorAttestationSeedFixture(),
+      }),
     },
   );
   assert.equal(retry.status, 201);
@@ -751,7 +902,7 @@ test('authorization request rejects Proxy and accessor inputs without executing 
 
   let getterReads = 0;
   const value = {
-    schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+    schemaVersion: 'mvp-benchmark-external-authorization-request.v2',
     uid: uid(99550),
     sessionUid: uid(99551),
     dramaUid: uid(99552),
@@ -760,6 +911,7 @@ test('authorization request rejects Proxy and accessor inputs without executing 
     connectionEvidenceSha256: 'b'.repeat(64),
     maximumCostCnyFen: 1,
     validityDurationMs: 60_000,
+    operatorAttestation: mvpBenchmarkOperatorAttestationFixture(),
   };
   Object.defineProperty(value, 'uid', {
     enumerable: true,
@@ -779,7 +931,7 @@ test('authorization request rejects Proxy and accessor inputs without executing 
     configurable: true,
     get() {
       inheritedReads += 1;
-      return 'mvp-benchmark-external-authorization-request.v1';
+      return 'mvp-benchmark-external-authorization-request.v2';
     },
   });
   try {

@@ -14,6 +14,9 @@ const {
 const { createH3ExecutionBinding } = require('../../src/h3/executionBinding');
 const { remoteConnectionEvidenceSha256 } = require('../../src/remote/connectionProfile');
 const {
+  createMvpBenchmarkOperatorAttestation,
+} = require('../../src/benchmark/mvpBenchmarkOperatorAttestation');
+const {
   createRemoteTaskRequest,
   hashRemoteTaskPrompt,
   hashRemoteTaskRequest,
@@ -22,6 +25,46 @@ const { createPromptSemanticFixture, seedContinuityFixture } = require('./v5Cont
 const { uid } = require('./v2RepositoryDatabase');
 
 const CREDENTIAL_REF = `credential:v1:${uid(99101)}`;
+
+function mvpBenchmarkOperatorAttestationSeedFixture(overrides = {}) {
+  return {
+    schemaVersion: 'mvp-benchmark-operator-attestation-seed.v1',
+    territoryEligibilityConfirmed: true,
+    commercialEligibilityBasis: 'annual-revenue-not-over-usd-20000000',
+    commercialUiAttributionAccepted: true,
+    acceptableUseAndSafeguardsAccepted: true,
+    downstreamUseRestrictionsAccepted: true,
+    publicAiContentDisclosureAccepted: true,
+    benchmarkInputRightsConfirmed: true,
+    ...overrides,
+  };
+}
+
+function mvpBenchmarkOperatorAttestationFixture(overrides = {}) {
+  return createMvpBenchmarkOperatorAttestation(
+    mvpBenchmarkOperatorAttestationSeedFixture(overrides),
+  );
+}
+
+function mvpBenchmarkExternalAuthorizationRequestFixture(
+  current,
+  session,
+  overrides = {},
+) {
+  return {
+    schemaVersion: 'mvp-benchmark-external-authorization-request.v2',
+    uid: uid(99500),
+    sessionUid: session.uid,
+    dramaUid: session.dramaUid,
+    sessionPlanSha256: session.planSha256,
+    connectionUid: current.connection.uid,
+    connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
+    maximumCostCnyFen: 1_000,
+    validityDurationMs: 60 * 60 * 1000,
+    operatorAttestation: mvpBenchmarkOperatorAttestationFixture(),
+    ...overrides,
+  };
+}
 
 function uidSequence(start) {
   let current = start;
@@ -339,4 +382,9 @@ function createMvpBenchmarkSessionFixture(t, options = {}) {
   };
 }
 
-module.exports = Object.freeze({ createMvpBenchmarkSessionFixture });
+module.exports = Object.freeze({
+  createMvpBenchmarkSessionFixture,
+  mvpBenchmarkExternalAuthorizationRequestFixture,
+  mvpBenchmarkOperatorAttestationFixture,
+  mvpBenchmarkOperatorAttestationSeedFixture,
+});

@@ -37,7 +37,10 @@ const { createProductionMediaExportRuntime } = require('../src/media/productionR
 const { remoteConnectionEvidenceSha256 } = require('../src/remote/connectionProfile');
 const mvpBenchmarkRoutes = require('../src/routes/v2/mvpBenchmark');
 const { getFfmpegPath, getFfprobePath } = require('../src/utils/ffmpegPath');
-const { createMvpBenchmarkSessionFixture } = require('./helpers/v9MvpBenchmarkSessionFixture');
+const {
+  createMvpBenchmarkSessionFixture,
+  mvpBenchmarkExternalAuthorizationRequestFixture,
+} = require('./helpers/v9MvpBenchmarkSessionFixture');
 const { probeInput, trustedProbe } = require('./helpers/v8MediaFixture');
 const { createMigratedV2Database, uid } = require('./helpers/v2RepositoryDatabase');
 
@@ -149,17 +152,10 @@ async function listen(app) {
 }
 
 function authorizationRequest(current, session) {
-  return {
-    schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+  return mvpBenchmarkExternalAuthorizationRequestFixture(current, session, {
     uid: uid(120000),
-    sessionUid: session.uid,
-    dramaUid: session.dramaUid,
-    sessionPlanSha256: session.planSha256,
-    connectionUid: current.connection.uid,
-    connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
     maximumCostCnyFen: 1_000,
-    validityDurationMs: 60 * 60 * 1000,
-  };
+  });
 }
 
 function observation(current) {

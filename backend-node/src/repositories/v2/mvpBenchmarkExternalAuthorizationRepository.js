@@ -7,10 +7,15 @@ const {
   assertMvpBenchmarkExternalAuthorizationActive,
   createMvpBenchmarkExternalAuthorization,
   isMvpBenchmarkExternalAuthorizationError,
+  mvpBenchmarkExternalAuthorizationRequestSha256,
   parseMvpBenchmarkExternalAuthorization,
   parseMvpBenchmarkExternalAuthorizationRequest,
+  parseCurrentMvpBenchmarkExternalAuthorizationRequest,
   serializeMvpBenchmarkExternalAuthorizationJson,
 } = require('../../benchmark/mvpBenchmarkExternalAuthorization');
+const {
+  createMvpBenchmarkOperatorAttestation,
+} = require('../../benchmark/mvpBenchmarkOperatorAttestation');
 const { remoteConnectionEvidenceSha256 } = require('../../remote/connectionProfile');
 const {
   V2RepositoryConflictError,
@@ -29,7 +34,7 @@ const OBJECT_FREEZE = Object.freeze;
 const REFLECT_OWN_KEYS = Reflect.ownKeys;
 const DERIVED_KEYS = Object.freeze([
   'uid', 'sessionUid', 'dramaUid', 'connectionUid',
-  'maximumCostCnyFen', 'validityDurationMs',
+  'maximumCostCnyFen', 'validityDurationMs', 'operatorAttestation',
 ]);
 
 function invalidData() {
@@ -77,10 +82,20 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
   }
 
   const statements = Object.freeze({
-    get: database.prepare('SELECT * FROM mvp_benchmark_external_authorizations WHERE uid=?'),
-    getBySession: database.prepare(
-      'SELECT * FROM mvp_benchmark_external_authorizations WHERE session_uid=?',
-    ),
+    get: database.prepare(`
+      SELECT authorization.*, seal.request_sha256 AS sealed_request_sha256
+      FROM mvp_benchmark_external_authorizations AS authorization
+      LEFT JOIN mvp_benchmark_external_authorization_request_seals AS seal
+        ON seal.authorization_uid=authorization.uid
+      WHERE authorization.uid=?
+    `),
+    getBySession: database.prepare(`
+      SELECT authorization.*, seal.request_sha256 AS sealed_request_sha256
+      FROM mvp_benchmark_external_authorizations AS authorization
+      LEFT JOIN mvp_benchmark_external_authorization_request_seals AS seal
+        ON seal.authorization_uid=authorization.uid
+      WHERE authorization.session_uid=?
+    `),
     reservedAudioIntent: database.prepare(`
       SELECT session.uid
       FROM mvp_benchmark_sessions AS session,
@@ -97,10 +112,12 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
     `),
     insert: database.prepare(`
       INSERT INTO mvp_benchmark_external_authorizations
-        (uid,session_uid,drama_uid,request_json,authorization_json,authorization_sha256,
+        (uid,session_uid,drama_uid,request_json,request_sha256,
+         authorization_json,authorization_sha256,
          authorized_at_epoch_ms,expires_at_epoch_ms)
       VALUES
-        (@uid,@sessionUid,@dramaUid,@requestJson,@authorizationJson,@authorizationSha256,
+        (@uid,@sessionUid,@dramaUid,@requestJson,@requestSha256,
+         @authorizationJson,@authorizationSha256,
          @authorizedAtEpochMs,@expiresAtEpochMs)
     `),
   });
@@ -138,6 +155,10 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
         Reflect.apply(JSON_PARSE, JSON, [row.authorization_json]),
       );
       if (serializeMvpBenchmarkExternalAuthorizationJson(request) !== row.request_json
+        || (request.schemaVersion === 'mvp-benchmark-external-authorization-request.v2'
+          ? row.request_sha256 !== mvpBenchmarkExternalAuthorizationRequestSha256(request)
+            || row.sealed_request_sha256 !== row.request_sha256
+          : row.request_sha256 !== null || row.sealed_request_sha256 !== null)
         || serializeMvpBenchmarkExternalAuthorizationJson(authorization) !== row.authorization_json
         || row.uid !== request.uid || row.uid !== authorization.uid
         || row.session_uid !== request.sessionUid || row.session_uid !== authorization.sessionUid
@@ -154,6 +175,14 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
 
   function mapRow(row) {
     const stored = mapStoredRow(row);
+    try {
+      parseCurrentMvpBenchmarkExternalAuthorizationRequest(
+        stored.request,
+        'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_DATA_INVALID',
+      );
+    } catch {
+      return invalidData();
+    }
     const session = assertSources(stored.request, invalidData);
     if (stored.authorization.h3SubmissionLimit !== session.h3Tasks.length
       || stored.authorization.ttsSubmissionLimit !== session.audioIntents.length
@@ -203,6 +232,7 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
       sessionUid: authorization.sessionUid,
       dramaUid: authorization.dramaUid,
       requestJson: serializeMvpBenchmarkExternalAuthorizationJson(request),
+      requestSha256: mvpBenchmarkExternalAuthorizationRequestSha256(request),
       authorizationJson: serializeMvpBenchmarkExternalAuthorizationJson(authorization),
       authorizationSha256: authorization.authorizationSha256,
       authorizedAtEpochMs: authorization.authorizedAtEpochMs,
@@ -218,7 +248,9 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
       && left.connectionUid === right.connectionUid
       && left.connectionEvidenceSha256 === right.connectionEvidenceSha256
       && left.maximumCostCnyFen === right.maximumCostCnyFen
-      && left.validityDurationMs === right.validityDurationMs;
+      && left.validityDurationMs === right.validityDurationMs
+      && left.operatorAttestation.attestationSha256
+        === right.operatorAttestation.attestationSha256;
   }
 
   const prepareDerivedAndRead = database.transaction((input, nowEpochMs) => {
@@ -233,8 +265,8 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
     if (session.dramaUid !== input.dramaUid) {
       throw new V2RepositoryConflictError(ENTITY, 'authorized');
     }
-    const request = parseMvpBenchmarkExternalAuthorizationRequest({
-      schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+    const request = parseCurrentMvpBenchmarkExternalAuthorizationRequest({
+      schemaVersion: 'mvp-benchmark-external-authorization-request.v2',
       uid: input.uid,
       sessionUid: session.uid,
       dramaUid: session.dramaUid,
@@ -243,6 +275,7 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
       connectionEvidenceSha256: remoteConnectionEvidenceSha256(connection),
       maximumCostCnyFen: input.maximumCostCnyFen,
       validityDurationMs: input.validityDurationMs,
+      operatorAttestation: createMvpBenchmarkOperatorAttestation(input.operatorAttestation),
     });
     const existing = statements.getBySession.get(session.uid);
     if (existing) {
@@ -268,6 +301,7 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
       sessionUid: authorization.sessionUid,
       dramaUid: authorization.dramaUid,
       requestJson: serializeMvpBenchmarkExternalAuthorizationJson(request),
+      requestSha256: mvpBenchmarkExternalAuthorizationRequestSha256(request),
       authorizationJson: serializeMvpBenchmarkExternalAuthorizationJson(authorization),
       authorizationSha256: authorization.authorizationSha256,
       authorizedAtEpochMs: authorization.authorizedAtEpochMs,
@@ -293,7 +327,7 @@ function createMvpBenchmarkExternalAuthorizationRepository(database, dependencie
     },
     prepare(value, { nowEpochMs = Date.now() } = {}) {
       let request;
-      try { request = parseMvpBenchmarkExternalAuthorizationRequest(value); } catch (error) {
+      try { request = parseCurrentMvpBenchmarkExternalAuthorizationRequest(value); } catch (error) {
         if (isMvpBenchmarkExternalAuthorizationError(error)) throw error;
         throw new TypeError('MVP benchmark external authorization request is invalid');
       }

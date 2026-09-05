@@ -7,11 +7,26 @@ import {
   mvpBenchmarkAuthorizationSeed,
   mvpBenchmarkAuthorizationView,
 } from '../src/benchmark/mvpAuthorization.js'
+import { mvpBenchmarkOperatorAttestationSeed } from '../src/benchmark/mvpOperatorAttestation.js'
 import { createMvpBenchmarkAuthorizationState } from '../src/composables/useMvpBenchmarkAuthorization.js'
 import { workflowSuccessEnvelopeDataJsonText } from '../src/api/v2/workflowRequest.js'
 
 function uid(number) {
   return `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`
+}
+
+function operatorAttestation(overrides = {}) {
+  return {
+    schemaVersion: 'mvp-benchmark-operator-attestation-seed.v1',
+    territoryEligibilityConfirmed: true,
+    commercialEligibilityBasis: 'annual-revenue-not-over-usd-20000000',
+    commercialUiAttributionAccepted: true,
+    acceptableUseAndSafeguardsAccepted: true,
+    downstreamUseRestrictionsAccepted: true,
+    publicAiContentDisclosureAccepted: true,
+    benchmarkInputRightsConfirmed: true,
+    ...overrides,
+  }
 }
 
 function authorization(overrides = {}) {
@@ -81,14 +96,28 @@ test('authorization projection and seed reject inherited missing-key fallbacks w
   } finally {
     delete Object.prototype.schemaVersion
   }
+  const attestation = operatorAttestation()
+  assert.deepEqual(mvpBenchmarkOperatorAttestationSeed(attestation), attestation)
   assert.deepEqual(mvpBenchmarkAuthorizationSeed({
     maximumCostCnyFen: 374,
     validityDurationMs: 7_200_000,
-  }), { maximumCostCnyFen: 374, validityDurationMs: 7_200_000 })
+    operatorAttestation: attestation,
+  }), {
+    maximumCostCnyFen: 374,
+    validityDurationMs: 7_200_000,
+    operatorAttestation: attestation,
+  })
   assert.throws(() => mvpBenchmarkAuthorizationSeed({
     maximumCostCnyFen: 0,
     validityDurationMs: 7_200_000,
+    operatorAttestation: attestation,
   }))
+  assert.throws(() => mvpBenchmarkOperatorAttestationSeed(operatorAttestation({
+    territoryEligibilityConfirmed: false,
+  })))
+  assert.throws(() => mvpBenchmarkOperatorAttestationSeed(operatorAttestation({
+    commercialEligibilityBasis: '',
+  })))
 
   let envelopeReads = 0
   Object.defineProperty(Object.prototype, 'success', {
@@ -127,7 +156,11 @@ test('latest authorization request wins and only ready configured connections ar
   await state.refreshConnections()
   assert.deepEqual(state.connections.value.map((entry) => entry.uid), [uid(4)])
   const session = { uid: uid(2), dramaUid: uid(3), planSha256: 'a'.repeat(64) }
-  const seed = { maximumCostCnyFen: 374, validityDurationMs: 7_200_000 }
+  const seed = {
+    maximumCostCnyFen: 374,
+    validityDurationMs: 7_200_000,
+    operatorAttestation: operatorAttestation(),
+  }
   const first = state.authorize(session, uid(4), seed)
   const second = state.authorize(session, uid(4), seed)
   pending[1].resolve(authorization({ uid: uid(8) }))
@@ -164,11 +197,20 @@ test('authorization UI requires explicit confirmation and exposes no external ac
   assert.match(api, /connections\/\$\{encodeURIComponent\(connection\.uid\)\}\/authorization/u)
   assert.match(api, /maximumCostCnyFen/u)
   assert.match(api, /validityDurationMs/u)
+  assert.match(api, /operatorAttestation/u)
   assert.doesNotMatch(api, /preflight|execute-next|release|SSH|Vault|Provider/u)
   assert.match(panel, /费用上限（分）/u)
   assert.match(panel, /有效期（分钟）/u)
+  assert.match(panel, /MiniMax H3 操作者自我声明/u)
+  assert.match(panel, /这是付费执行前的自我声明，不是平台或本项目提供的法律审查/u)
+  assert.match(panel, /不包括欧盟、英国、韩国和美国/u)
+  assert.match(panel, /不发生在欧盟、英国、韩国或美国/u)
+  assert.match(panel, /ref\(false\)/u)
+  assert.match(panel, /commercialEligibilityBasis = ref\(''\)/u)
+  assert.match(panel, /benchmarkInputRightsConfirmed/u)
   assert.match(panel, /不会执行预检|不执行预检/u)
   assert.match(canvas, /ElMessageBox\.confirm/u)
   assert.match(canvas, /不会访问 SSH、Vault、Provider 或 GPU/u)
+  assert.match(canvas, /这是自我声明，不是法律审查/u)
   assert.doesNotMatch(panel, /credentialRef|secret|password/u)
 })

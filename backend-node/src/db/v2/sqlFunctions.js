@@ -37,7 +37,8 @@ const {
 } = require('../../benchmark/mvpBenchmarkSession');
 const {
   parseMvpBenchmarkExternalAuthorization,
-  parseMvpBenchmarkExternalAuthorizationRequest,
+  mvpBenchmarkExternalAuthorizationRequestSha256,
+  parseCurrentMvpBenchmarkExternalAuthorizationRequest,
   serializeMvpBenchmarkExternalAuthorizationJson,
 } = require('../../benchmark/mvpBenchmarkExternalAuthorization');
 const {
@@ -668,7 +669,7 @@ function mvpBenchmarkExternalAuthorizationRecordValid(
     if (typeof requestJson !== 'string' || Buffer.byteLength(requestJson, 'utf8') > 64 * 1024
       || typeof authorizationJson !== 'string'
       || Buffer.byteLength(authorizationJson, 'utf8') > 64 * 1024) return 0;
-    const request = parseMvpBenchmarkExternalAuthorizationRequest(
+    const request = parseCurrentMvpBenchmarkExternalAuthorizationRequest(
       JSON.parse(requestJson),
       'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_DATA_INVALID',
     );
@@ -690,6 +691,19 @@ function mvpBenchmarkExternalAuthorizationRecordValid(
       ? 1 : 0;
   } catch {
     return 0;
+  }
+}
+
+function mvpBenchmarkExternalAuthorizationRequestJsonSha256(requestJson) {
+  try {
+    if (typeof requestJson !== 'string'
+      || Buffer.byteLength(requestJson, 'utf8') > 64 * 1024) return null;
+    return mvpBenchmarkExternalAuthorizationRequestSha256(
+      JSON.parse(requestJson),
+      'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_DATA_INVALID',
+    );
+  } catch {
+    return null;
   }
 }
 
@@ -1279,6 +1293,11 @@ function registerV2SqlFunctions(database) {
     'mvp_benchmark_external_authorization_record_valid',
     { deterministic: true },
     mvpBenchmarkExternalAuthorizationRecordValid,
+  );
+  database.function(
+    'mvp_benchmark_external_authorization_request_sha256',
+    { deterministic: true },
+    mvpBenchmarkExternalAuthorizationRequestJsonSha256,
   );
   database.function(
     'mvp_benchmark_connection_evidence_sha256',

@@ -23,6 +23,9 @@ const {
   parseMvpBenchmarkExternalAuthorizationUid,
 } = require('../../benchmark/mvpBenchmarkExternalAuthorization');
 const {
+  parseMvpBenchmarkOperatorAttestationSeed,
+} = require('../../benchmark/mvpBenchmarkOperatorAttestation');
+const {
   isMvpBenchmarkExecutionPreflightError,
 } = require('../../benchmark/mvpBenchmarkExecutionPreflight');
 const {
@@ -68,7 +71,7 @@ function exactEmptyBody(value) {
 }
 
 function exactAuthorizationSeed(value) {
-  const keys = ['maximumCostCnyFen', 'validityDurationMs'];
+  const keys = ['maximumCostCnyFen', 'validityDurationMs', 'operatorAttestation'];
   if (!value || typeof value !== 'object' || isProxy(value) || ARRAY_IS_ARRAY(value)) return null;
   try {
     const prototype = REFLECT_APPLY(OBJECT_GET_PROTOTYPE_OF, Object, [value]);
@@ -84,6 +87,9 @@ function exactAuthorizationSeed(value) {
         || !REFLECT_APPLY(OBJECT_HAS_OWN, Object, [descriptor, 'value'])) return null;
       output[key] = descriptor.value;
     }
+    output.operatorAttestation = parseMvpBenchmarkOperatorAttestationSeed(
+      output.operatorAttestation,
+    );
     return output;
   } catch {
     return null;
@@ -838,6 +844,7 @@ function mvpBenchmarkRoutes(log, runtime, database) {
           connectionUid,
           maximumCostCnyFen: seed.maximumCostCnyFen,
           validityDurationMs: seed.validityDurationMs,
+          operatorAttestation: seed.operatorAttestation,
         }));
       } catch (error) {
         return authorizationError(res, error);

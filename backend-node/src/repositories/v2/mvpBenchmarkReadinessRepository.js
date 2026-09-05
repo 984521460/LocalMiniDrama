@@ -8,6 +8,7 @@ const REQUIRED_TABLES = Object.freeze([
   'character_candidate_execution_items', 'character_candidate_executions',
   'character_reference_package_executions',
   'media_export_run_seals', 'mvp_benchmark_external_authorizations', 'mvp_benchmark_sessions',
+  'mvp_benchmark_external_authorization_request_seals',
   'mvp_benchmark_execution_reservations', 'mvp_benchmark_live_environment_attestations',
   'mvp_benchmark_execution_reservation_seals',
   'mvp_benchmark_live_environment_attestation_seals',
@@ -20,16 +21,21 @@ const REQUIRED_TABLES = Object.freeze([
   'narrative_results', 'narrative_task_executions', 'remote_connections', 'source_documents',
   'voice_profiles', 'workflow_definitions', 'workflow_runs',
 ]);
-const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
 const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
 const REQUIRED_TRIGGERS = Object.freeze([
   'v2_audio_tts_execution_evidence_validate_insert',
   'v2_mvp_benchmark_external_authorizations_current_sources_insert',
   'v2_mvp_benchmark_sessions_current_sources_insert',
   'v2_mvp_benchmark_human_av_reviews_validate_insert',
+  'v2_mvp_benchmark_external_authorizations_operator_attestation_insert',
+  'v2_mvp_benchmark_external_authorizations_request_seal_after_insert',
+  'v2_mvp_benchmark_external_authorization_request_seals_validate_insert',
+  'v2_mvp_benchmark_external_authorization_request_seals_immutable_update',
+  'v2_mvp_benchmark_external_authorization_request_seals_append_only',
 ]);
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 31;
+const EXPECTED_MIGRATION_VERSION = 32;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -48,7 +54,7 @@ function createMvpBenchmarkReadinessRepository(database) {
         `).pluck(),
         triggerCount: database.prepare(`
           SELECT count(*) AS count FROM sqlite_schema
-          WHERE type='trigger' AND name IN (?,?,?,?)
+          WHERE type='trigger' AND name IN (?,?,?,?,?,?,?,?,?)
         `).pluck(),
         readyConnection: database.prepare(`
           SELECT EXISTS(
@@ -103,12 +109,15 @@ function createMvpBenchmarkReadinessRepository(database) {
         REQUIRED_TABLES[31],
         REQUIRED_TABLES[32],
         REQUIRED_TABLES[33],
+        REQUIRED_TABLES[34],
       );
       const readyConnection = current.readyConnection.get();
       const viewCount = current.viewCount.get(REQUIRED_VIEW);
       const triggerCount = current.triggerCount.get(
         REQUIRED_TRIGGERS[0], REQUIRED_TRIGGERS[1], REQUIRED_TRIGGERS[2],
-        REQUIRED_TRIGGERS[3],
+        REQUIRED_TRIGGERS[3], REQUIRED_TRIGGERS[4],
+        REQUIRED_TRIGGERS[5], REQUIRED_TRIGGERS[6], REQUIRED_TRIGGERS[7],
+        REQUIRED_TRIGGERS[8],
       );
       const migrationSummary = current.migrationSummary.get();
       return Object.freeze({

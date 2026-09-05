@@ -22,22 +22,18 @@ const { remoteConnectionEvidenceSha256 } = require('../src/remote/connectionProf
 const {
   V2RepositoryConflictError,
 } = require('../src/repositories/v2');
-const { createMvpBenchmarkSessionFixture } = require('./helpers/v9MvpBenchmarkSessionFixture');
+const {
+  createMvpBenchmarkSessionFixture,
+  mvpBenchmarkExternalAuthorizationRequestFixture,
+} = require('./helpers/v9MvpBenchmarkSessionFixture');
 const { uid } = require('./helpers/v2RepositoryDatabase');
 
 function authorizationRequest(current, session, overrides = {}) {
-  return {
-    schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+  return mvpBenchmarkExternalAuthorizationRequestFixture(current, session, {
     uid: uid(99900),
-    sessionUid: session.uid,
-    dramaUid: session.dramaUid,
-    sessionPlanSha256: session.planSha256,
-    connectionUid: current.connection.uid,
-    connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
     maximumCostCnyFen: 1_000,
-    validityDurationMs: 60 * 60 * 1000,
     ...overrides,
-  };
+  });
 }
 
 function rawObservation(current, observedAtEpochMs) {

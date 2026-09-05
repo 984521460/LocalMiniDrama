@@ -343,3 +343,18 @@ transition to a complete ten-item reference package, a bounded failure, or
 `submission_unknown` without replaying Provider work. The operation is
 append-only, revalidated on every read, and included in Project Archive 2.1 so
 successful and uncertain production evidence survive a clean round-trip.
+
+Migration `0032_mvp_benchmark_operator_attestations.sql` upgrades newly created
+MVP benchmark external authorizations to request schema v2. Each new request
+must embed one canonical, secret-free operator self-attestation that pins the
+approved MiniMax H3 license revision and environment evidence, records one
+commercial-eligibility basis, and explicitly accepts every required operating
+and disclosure responsibility. The trigger binds the canonical request digest
+before insert, including when recursive triggers are disabled or a replacement
+conflict algorithm is requested. A separate append-only request seal makes a
+coordinated request-body and digest rewrite fail closed even if the primary-row
+update guard is lost. Historical v1 authorization evidence remains readable for
+settlement reconstruction but cannot become a new active paid-run authorization.
+The attestation is an auditable declaration, not independent legal verification,
+and the migration performs no Vault, SSH, Provider, GPU, billing, media, or
+instance operation.

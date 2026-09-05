@@ -79,6 +79,7 @@ export function createMvpBenchmarkAuthorizationState({
           connectionEvidenceSha256: connection.connectionEvidenceSha256,
           maximumCostCnyFen: seed.maximumCostCnyFen,
           validityDurationMs: seed.validityDurationMs,
+          operatorAttestation: seed.operatorAttestation,
         },
       )
       if (!authorizationGuard.isCurrent(token)) return false

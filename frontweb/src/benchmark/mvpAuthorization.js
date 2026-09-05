@@ -1,3 +1,5 @@
+import { mvpBenchmarkOperatorAttestationSeed } from './mvpOperatorAttestation.js'
+
 const {
   freeze: FREEZE,
   getOwnPropertyDescriptors: GET_OWN_PROPERTY_DESCRIPTORS,
@@ -22,7 +24,7 @@ const AUTHORIZATION_KEYS = FREEZE([
   'instanceDisposition', 'authorizedAtEpochMs', 'expiresAtEpochMs',
   'authorizationSha256',
 ])
-const SEED_KEYS = FREEZE(['maximumCostCnyFen', 'validityDurationMs'])
+const SEED_KEYS = FREEZE(['maximumCostCnyFen', 'validityDurationMs', 'operatorAttestation'])
 
 function invalid() {
   throw new TypeError(ERROR_MESSAGE)
@@ -76,6 +78,7 @@ export function mvpBenchmarkAuthorizationSeed(value) {
   return FREEZE({
     maximumCostCnyFen: safeInteger(input.maximumCostCnyFen, 1, 1_000_000),
     validityDurationMs: safeInteger(input.validityDurationMs, 60_000, 86_400_000),
+    operatorAttestation: mvpBenchmarkOperatorAttestationSeed(input.operatorAttestation),
   })
 }
 

@@ -30,21 +30,17 @@ const {
 } = require('../src/benchmark/mvpBenchmarkExecutionAccountingService');
 const { PROJECT_ARCHIVE_CATALOG } = require('../src/adapters/v2/zip/projectArchiveCatalog');
 const { remoteConnectionEvidenceSha256 } = require('../src/remote/connectionProfile');
-const { createMvpBenchmarkSessionFixture } = require('./helpers/v9MvpBenchmarkSessionFixture');
+const {
+  createMvpBenchmarkSessionFixture,
+  mvpBenchmarkExternalAuthorizationRequestFixture,
+} = require('./helpers/v9MvpBenchmarkSessionFixture');
 const { uid } = require('./helpers/v2RepositoryDatabase');
 
 function authorizationRequest(current, session) {
-  return {
-    schemaVersion: 'mvp-benchmark-external-authorization-request.v1',
+  return mvpBenchmarkExternalAuthorizationRequestFixture(current, session, {
     uid: uid(99700),
-    sessionUid: session.uid,
-    dramaUid: session.dramaUid,
-    sessionPlanSha256: session.planSha256,
-    connectionUid: current.connection.uid,
-    connectionEvidenceSha256: remoteConnectionEvidenceSha256(current.connection),
     maximumCostCnyFen: 1_000,
-    validityDurationMs: 60 * 60 * 1000,
-  };
+  });
 }
 
 function observation(current) {

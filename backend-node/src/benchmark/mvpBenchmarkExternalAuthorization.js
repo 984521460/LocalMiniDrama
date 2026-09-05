@@ -7,18 +7,26 @@ const { RTX_4090_GPU_CLASS } = require('../h3/gpuClasses');
 const {
   MVP_BENCHMARK_APPROVED_ENVIRONMENT_SHA256,
 } = require('./mvpBenchmarkApprovedEnvironment');
+const {
+  parseMvpBenchmarkOperatorAttestation,
+} = require('./mvpBenchmarkOperatorAttestation');
 
-const REQUEST_SCHEMA_VERSION = 'mvp-benchmark-external-authorization-request.v1';
+const LEGACY_REQUEST_SCHEMA_VERSION = 'mvp-benchmark-external-authorization-request.v1';
+const REQUEST_SCHEMA_VERSION = 'mvp-benchmark-external-authorization-request.v2';
 const AUTHORIZATION_SCHEMA_VERSION = 'mvp-benchmark-external-authorization.v1';
 const MAXIMUM_COST_CNY_FEN = 1_000_000;
 const MINIMUM_VALIDITY_DURATION_MS = 60_000;
 const MAXIMUM_VALIDITY_DURATION_MS = 24 * 60 * 60 * 1000;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
-const REQUEST_KEYS = Object.freeze([
+const LEGACY_REQUEST_KEYS = Object.freeze([
   'schemaVersion', 'uid', 'sessionUid', 'dramaUid', 'sessionPlanSha256',
   'connectionUid', 'connectionEvidenceSha256', 'maximumCostCnyFen',
   'validityDurationMs',
+]);
+const REQUEST_KEYS = Object.freeze([
+  ...LEGACY_REQUEST_KEYS,
+  'operatorAttestation',
 ]);
 const CREATE_KEYS = Object.freeze([
   'request', 'h3SubmissionLimit', 'ttsSubmissionLimit', 'authorizedAtEpochMs',
@@ -112,6 +120,7 @@ function serializeMvpBenchmarkExternalAuthorizationJson(value) {
   if (value === null) return 'null';
   if (typeof value === 'string') return REFLECT_APPLY(JSON_STRINGIFY, JSON, [value]);
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (!value || typeof value !== 'object' || ARRAY_IS_ARRAY(value)) {
     throw new TypeError('MVP benchmark external authorization JSON is invalid');
   }
@@ -131,14 +140,35 @@ function serializeMvpBenchmarkExternalAuthorizationJson(value) {
   return `${output}}`;
 }
 
+function requestSchemaVersion(value, code) {
+  try {
+    if (!value || typeof value !== 'object' || ARRAY_IS_ARRAY(value) || isProxy(value)) fail(code);
+    const prototype = OBJECT_GET_PROTOTYPE_OF(value);
+    const descriptors = OBJECT_GET_OWN_PROPERTY_DESCRIPTORS(value);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || !OBJECT_HAS_OWN(descriptors, 'schemaVersion')) fail(code);
+    const descriptor = descriptors.schemaVersion;
+    if (!descriptor?.enumerable || !OBJECT_HAS_OWN(descriptor, 'value')) fail(code);
+    return descriptor.value;
+  } catch (error) {
+    if (error instanceof MvpBenchmarkExternalAuthorizationError) throw error;
+    return fail(code);
+  }
+}
+
 function parseMvpBenchmarkExternalAuthorizationRequest(
   value,
   code = 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID',
 ) {
-  const input = exactObject(value, REQUEST_KEYS, code);
-  if (input.schemaVersion !== REQUEST_SCHEMA_VERSION) fail(code);
-  return OBJECT_FREEZE({
-    schemaVersion: REQUEST_SCHEMA_VERSION,
+  const schemaVersion = requestSchemaVersion(value, code);
+  const keys = schemaVersion === LEGACY_REQUEST_SCHEMA_VERSION
+    ? LEGACY_REQUEST_KEYS
+    : REQUEST_KEYS;
+  const input = exactObject(value, keys, code);
+  if (input.schemaVersion !== LEGACY_REQUEST_SCHEMA_VERSION
+    && input.schemaVersion !== REQUEST_SCHEMA_VERSION) fail(code);
+  const parsed = {
+    schemaVersion: input.schemaVersion,
     uid: uid(input.uid, code),
     sessionUid: uid(input.sessionUid, code),
     dramaUid: uid(input.dramaUid, code),
@@ -152,7 +182,23 @@ function parseMvpBenchmarkExternalAuthorizationRequest(
       MAXIMUM_VALIDITY_DURATION_MS,
       code,
     ),
-  });
+  };
+  if (input.schemaVersion === REQUEST_SCHEMA_VERSION) {
+    parsed.operatorAttestation = parseMvpBenchmarkOperatorAttestation(
+      input.operatorAttestation,
+      code,
+    );
+  }
+  return OBJECT_FREEZE(parsed);
+}
+
+function parseCurrentMvpBenchmarkExternalAuthorizationRequest(
+  value,
+  code = 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID',
+) {
+  const request = parseMvpBenchmarkExternalAuthorizationRequest(value, code);
+  if (request.schemaVersion !== REQUEST_SCHEMA_VERSION) fail(code);
+  return request;
 }
 
 function parseMvpBenchmarkExternalAuthorizationUid(
@@ -205,12 +251,19 @@ function digest(value) {
     .digest('hex');
 }
 
+function mvpBenchmarkExternalAuthorizationRequestSha256(
+  value,
+  code = 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_DATA_INVALID',
+) {
+  return digest(parseCurrentMvpBenchmarkExternalAuthorizationRequest(value, code));
+}
+
 function createMvpBenchmarkExternalAuthorization(
   value,
   code = 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_INPUT_INVALID',
 ) {
   const input = exactObject(value, CREATE_KEYS, code);
-  const request = parseMvpBenchmarkExternalAuthorizationRequest(input.request, code);
+  const request = parseCurrentMvpBenchmarkExternalAuthorizationRequest(input.request, code);
   const authorizedAtEpochMs = safeInteger(input.authorizedAtEpochMs, 0, 253402300799999, code);
   const expiresAtEpochMs = authorizedAtEpochMs + request.validityDurationMs;
   if (!Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs > 253402300799999) fail(code);
@@ -242,28 +295,13 @@ function parseMvpBenchmarkExternalAuthorization(
   value,
   code = 'MVP_BENCHMARK_EXTERNAL_AUTHORIZATION_DATA_INVALID',
 ) {
-  const input = exactObject(value, AUTHORIZATION_KEYS, code);
-  const authorizedAtEpochMs = safeInteger(input.authorizedAtEpochMs, 0, 253402300799999, code);
-  const expiresAtEpochMs = safeInteger(input.expiresAtEpochMs, 0, 253402300799999, code);
-  const expected = createMvpBenchmarkExternalAuthorization({
-    request: {
-      schemaVersion: REQUEST_SCHEMA_VERSION,
-      uid: input.uid,
-      sessionUid: input.sessionUid,
-      dramaUid: input.dramaUid,
-      sessionPlanSha256: input.sessionPlanSha256,
-      connectionUid: input.connectionUid,
-      connectionEvidenceSha256: input.connectionEvidenceSha256,
-      maximumCostCnyFen: input.maximumCostCnyFen,
-      validityDurationMs: expiresAtEpochMs - authorizedAtEpochMs,
-    },
-    h3SubmissionLimit: input.h3SubmissionLimit,
-    ttsSubmissionLimit: input.ttsSubmissionLimit,
-    authorizedAtEpochMs,
-  }, code);
-  const parsed = baseAuthorization(input, code);
-  if (parsed.authorizationSha256 !== expected.authorizationSha256) fail(code);
-  return expected;
+  const parsed = baseAuthorization(value, code);
+  const placeholder = OBJECT_FREEZE({
+    ...parsed,
+    authorizationSha256: '0'.repeat(64),
+  });
+  if (parsed.authorizationSha256 !== digest(placeholder)) fail(code);
+  return parsed;
 }
 
 function assertMvpBenchmarkExternalAuthorizationActive(value, nowEpochMs) {
@@ -286,6 +324,7 @@ function isMvpBenchmarkExternalAuthorizationError(error) {
 
 module.exports = OBJECT_FREEZE({
   AUTHORIZATION_SCHEMA_VERSION,
+  LEGACY_REQUEST_SCHEMA_VERSION,
   MAXIMUM_COST_CNY_FEN,
   MAXIMUM_VALIDITY_DURATION_MS,
   MINIMUM_VALIDITY_DURATION_MS,
@@ -294,8 +333,10 @@ module.exports = OBJECT_FREEZE({
   assertMvpBenchmarkExternalAuthorizationActive,
   createMvpBenchmarkExternalAuthorization,
   isMvpBenchmarkExternalAuthorizationError,
+  mvpBenchmarkExternalAuthorizationRequestSha256,
   parseMvpBenchmarkExternalAuthorization,
   parseMvpBenchmarkExternalAuthorizationRequest,
+  parseCurrentMvpBenchmarkExternalAuthorizationRequest,
   parseMvpBenchmarkExternalAuthorizationUid,
   serializeMvpBenchmarkExternalAuthorizationJson,
 });

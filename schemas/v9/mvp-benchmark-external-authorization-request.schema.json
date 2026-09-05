@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/mvp-benchmark-external-authorization-request.schema.json",
+  "title": "MVP Benchmark External Authorization Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "uid",
+    "sessionUid",
+    "dramaUid",
+    "sessionPlanSha256",
+    "connectionUid",
+    "connectionEvidenceSha256",
+    "maximumCostCnyFen",
+    "validityDurationMs",
+    "operatorAttestation"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mvp-benchmark-external-authorization-request.v2" },
+    "uid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sessionUid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "dramaUid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sessionPlanSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "connectionUid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "connectionEvidenceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "maximumCostCnyFen": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "validityDurationMs": { "type": "integer", "minimum": 60000, "maximum": 86400000 },
+    "operatorAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "licenseId",
+        "licenseSourceRevision",
+        "requiredEnvironmentSha256",
+        "territoryEligibilityConfirmed",
+        "commercialEligibilityBasis",
+        "commercialUiAttributionAccepted",
+        "acceptableUseAndSafeguardsAccepted",
+        "downstreamUseRestrictionsAccepted",
+        "publicAiContentDisclosureAccepted",
+        "benchmarkInputRightsConfirmed",
+        "attestationSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "mvp-benchmark-operator-attestation.v1" },
+        "licenseId": { "const": "MiniMax-H3-Community-License-Agreement" },
+        "licenseSourceRevision": { "const": "42ed227ee7df40d41602854ae760620d6eb651fe" },
+        "requiredEnvironmentSha256": { "const": "716b53e4b0cc4bb2a732e16ff0722e5313bc9ecef28cb6950be092b4fd852d43" },
+        "territoryEligibilityConfirmed": { "const": true },
+        "commercialEligibilityBasis": {
+          "enum": [
+            "annual-revenue-not-over-usd-20000000",
+            "written-minimax-authorization"
+          ]
+        },
+        "commercialUiAttributionAccepted": { "const": true },
+        "acceptableUseAndSafeguardsAccepted": { "const": true },
+        "downstreamUseRestrictionsAccepted": { "const": true },
+        "publicAiContentDisclosureAccepted": { "const": true },
+        "benchmarkInputRightsConfirmed": { "const": true },
+        "attestationSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

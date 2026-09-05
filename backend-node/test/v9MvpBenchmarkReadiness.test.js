@@ -427,6 +427,28 @@ test('readiness fails closed when the version-twenty-eight authorization source 
   });
 });
 
+test('readiness fails closed when a version-thirty-two attestation contract is missing', (t) => {
+  const missingTable = createMigratedV2Database(t);
+  const tableRepository = createMvpBenchmarkReadinessRepository(missingTable);
+  assert.equal(tableRepository.inspect().contractsReady, true);
+  missingTable.exec('DROP TABLE mvp_benchmark_external_authorization_request_seals');
+  assert.deepEqual(tableRepository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+
+  const missingTrigger = createMigratedV2Database(t);
+  const triggerRepository = createMvpBenchmarkReadinessRepository(missingTrigger);
+  assert.equal(triggerRepository.inspect().contractsReady, true);
+  missingTrigger.exec(
+    'DROP TRIGGER v2_mvp_benchmark_external_authorizations_operator_attestation_insert',
+  );
+  assert.deepEqual(triggerRepository.inspect(), {
+    contractsReady: false,
+    readyConnection: false,
+  });
+});
+
 test('readiness fails closed when any version-twenty-three accounting table is missing', (t) => {
   const tables = [
     'mvp_benchmark_execution_settlements',

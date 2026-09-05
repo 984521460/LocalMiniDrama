@@ -102,6 +102,7 @@ const EXCLUDED_TABLES = Object.freeze([
   'audio_tts_execution_evidence',
   'mvp_benchmark_sessions',
   'mvp_benchmark_external_authorizations',
+  'mvp_benchmark_external_authorization_request_seals',
   'mvp_benchmark_live_environment_attestations',
   'mvp_benchmark_execution_reservations',
   'mvp_benchmark_live_environment_attestation_seals',
