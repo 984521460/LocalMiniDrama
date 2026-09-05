@@ -12,10 +12,11 @@
     "sourceSelectionUid",
     "status",
     "nextStage",
-    "stages"
+    "stages",
+    "history"
   ],
   "properties": {
-    "schemaVersion": { "const": "mvp-benchmark-narrative-status.v1" },
+    "schemaVersion": { "const": "mvp-benchmark-narrative-status.v2" },
     "workspaceName": { "const": "mvp-benchmark-rain-before-clear-v1" },
     "sourceId": { "const": "rain-before-clear-v1" },
     "dramaUid": { "$ref": "#/$defs/uuid" },
@@ -25,6 +26,7 @@
         "not_started",
         "awaiting_review",
         "rejected",
+        "replacement_required",
         "ready_for_next_stage",
         "approved_complete"
       ]
@@ -39,8 +41,19 @@
       "type": "array",
       "maxItems": 4,
       "items": { "$ref": "#/$defs/stage" }
+    },
+    "history": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/historyEntry" }
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "replacement_required" } } },
+      "then": { "properties": { "nextStage": { "type": "null" } } }
+    }
+  ],
   "$defs": {
     "uuid": {
       "type": "string",
@@ -49,6 +62,10 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "isoInstant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
     },
     "stageName": {
       "type": "string",
@@ -90,6 +107,76 @@
           "else": { "properties": { "approvalRef": { "type": "null" } } }
         }
       ]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "decision",
+        "resultHash",
+        "envelopeHash",
+        "comment",
+        "createdAt"
+      ],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uuid" },
+        "decision": { "enum": ["approve", "reject"] },
+        "resultHash": { "$ref": "#/$defs/sha256" },
+        "envelopeHash": { "$ref": "#/$defs/sha256" },
+        "comment": { "type": ["string", "null"] },
+        "createdAt": { "$ref": "#/$defs/isoInstant" }
+      }
+    },
+    "staleEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "operationUid",
+        "resultUid",
+        "rootKind",
+        "rootUid",
+        "reasonCode",
+        "staledAt"
+      ],
+      "properties": {
+        "uid": { "$ref": "#/$defs/uuid" },
+        "operationUid": { "$ref": "#/$defs/uuid" },
+        "resultUid": { "$ref": "#/$defs/uuid" },
+        "rootKind": { "const": "narrative_result" },
+        "rootUid": { "$ref": "#/$defs/uuid" },
+        "reasonCode": { "const": "narrative_result_superseded" },
+        "staledAt": { "$ref": "#/$defs/isoInstant" }
+      }
+    },
+    "historyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "status",
+        "resultUid",
+        "resultHash",
+        "envelopeHash",
+        "output",
+        "reviews",
+        "staleEvent"
+      ],
+      "properties": {
+        "stage": { "$ref": "#/$defs/stageName" },
+        "status": { "const": "stale" },
+        "resultUid": { "$ref": "#/$defs/uuid" },
+        "resultHash": { "$ref": "#/$defs/sha256" },
+        "envelopeHash": { "$ref": "#/$defs/sha256" },
+        "output": { "type": "object" },
+        "reviews": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/review" }
+        },
+        "staleEvent": { "$ref": "#/$defs/staleEvent" }
+      }
     }
   }
 }

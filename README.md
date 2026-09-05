@@ -331,6 +331,8 @@ npm run benchmark:source:check
 
 隔离工作区建立后，可用 `npm run benchmark:narrative -- status` 查看固定叙事链；`stage <extraction|adaptation|script|shot>` 只把下一阶段的仓库自有计划写成 `pending_review`，不会联网。人工审阅后必须把命令输出中的阶段、结果 UID、结果摘要和信封摘要原样带回 `approve <stage> <resultUid> <resultHash> <envelopeHash>`，工具才会批准该阶段；不存在自动批量批准。
 
+发现测试作品有误时，使用 `supersede <stage> <resultUid> <resultHash> <envelopeHash>` 精确指定旧结果。工具只会把旧结果和依赖它的下游结果标记为 `stale`，不会删除、覆盖或伪造为审核拒绝；原输出、原摘要、原审核意见和替换审计会继续出现在 `status.history`。修订版使用新的执行与结果 UID，重新进入 `pending_review`，仍需人工单独批准。相同命令可在中断后安全重试；每个阶段最多接受 32 个版本，达到上限时失败关闭而不丢弃历史。
+
 叙事审核页中的事实提取结果支持按事实显式“定位原文”；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/evidence/:factId` 会重新校验结果、原文全文摘要、选区、原文块哈希、Unicode 码点偏移与引文，再返回不含凭据的高亮上下文。
 
 改编结果支持显式打开“原著事实与改编决策”对照；只读路由 `GET /api/v1/v2/narrative-results/:resultUid/adaptation-comparison` 会重新校验已批准事实来源、当前原文证据、改编输入与五段节拍，把原著事实、基于事实的推断和带理由的改编决策分栏展示，且原著事实可继续定位到原文。

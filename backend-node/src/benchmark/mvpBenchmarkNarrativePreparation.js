@@ -6,7 +6,11 @@ const { types: { isProxy } } = require('node:util');
 const { createReferenceOwnershipResolver } = require('../assets/referenceOwnership');
 const { createNarrativeExecutionService } = require('../narrative/execution');
 const { createNarrativeReviewService } = require('../narrative/reviews');
-const { createV2Repositories } = require('../repositories/v2');
+const { createNarrativeStalenessService } = require('../narrative/staleness');
+const {
+  V2RepositoryNotFoundError,
+  createV2Repositories,
+} = require('../repositories/v2');
 const {
   DURATION_BUDGET,
   STYLE,
@@ -18,10 +22,12 @@ const {
 const { WORKSPACE_NAME } = require('./mvpBenchmarkWorkspace');
 
 const ERROR_CODE = 'MVP_BENCHMARK_NARRATIVE_INVALID';
-const STATUS_SCHEMA_VERSION = 'mvp-benchmark-narrative-status.v1';
+const STATUS_SCHEMA_VERSION = 'mvp-benchmark-narrative-status.v2';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
+const ISO_INSTANT = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/u;
 const STAGES = Object.freeze(['extraction', 'adaptation', 'script', 'shot']);
+const MAX_REVISIONS_PER_STAGE = 32;
 const OUTPUT_BUILDERS = Object.freeze({
   extraction: (command) => createRainExtractionOutput(command.source.blocks),
   adaptation: () => createRainAdaptationOutput(),
@@ -74,6 +80,15 @@ function deterministicUid(value) {
     + `-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+function exactResultIdentity(value) {
+  const input = exactObject(value, ['stage', 'resultUid', 'resultHash', 'envelopeHash']);
+  if (typeof input.stage !== 'string' || !STAGES.includes(input.stage)
+    || typeof input.resultUid !== 'string' || !UUID_V4.test(input.resultUid)
+    || typeof input.resultHash !== 'string' || !SHA256.test(input.resultHash)
+    || typeof input.envelopeHash !== 'string' || !SHA256.test(input.envelopeHash)) fail();
+  return input;
+}
+
 function workspaceIdentity(value) {
   const input = exactObject(value, [
     'workspaceName', 'sourceId', 'dramaUid', 'sourceSelectionUid',
@@ -123,12 +138,64 @@ function createMvpBenchmarkNarrativePreparation({
   const identity = workspaceIdentity(workspace);
   const repositories = createV2Repositories(database);
   const reviews = createNarrativeReviewService({ repositories });
+  const staleHistory = createNarrativeStalenessService({ repositories });
   const executions = createNarrativeExecutionService({
     repositories,
     provider: provider(),
     assetOwnership: createReferenceOwnershipResolver(database),
     createUid,
   });
+
+  function operationUid(stage, revision) {
+    if (!Number.isSafeInteger(revision) || revision < 1
+      || revision > MAX_REVISIONS_PER_STAGE) fail();
+    const key = revision === 1
+      ? `rain-before-clear-narrative:${identity.sourceSelectionUid}:${stage}`
+      : `rain-before-clear-narrative:r${revision}:${identity.sourceSelectionUid}:${stage}`;
+    return deterministicUid(key);
+  }
+
+  function boundExecution(record, revisionCount, requireCurrent) {
+    let matched = null;
+    for (let revision = 1; revision <= revisionCount; revision += 1) {
+      const uid = operationUid(record.resultType, revision);
+      let execution;
+      try { execution = repositories.narrativeExecutions.get(uid); } catch (error) {
+        if (error instanceof V2RepositoryNotFoundError) continue;
+        return fail();
+      }
+      if (execution.resultUid !== record.uid) continue;
+      if (matched !== null || execution.state !== 'succeeded') fail();
+      matched = Object.freeze({ uid, execution });
+    }
+    if (matched === null) fail();
+    if (requireCurrent) {
+      let current;
+      try { current = executions.get(matched.uid); } catch { return fail(); }
+      if (current?.execution?.state !== 'succeeded' || current?.result?.uid !== record.uid) fail();
+    }
+    return matched;
+  }
+
+  function publicReview(review, record) {
+    if (!review || typeof review !== 'object'
+      || typeof review.uid !== 'string' || !UUID_V4.test(review.uid)
+      || review.resultUid !== record.uid
+      || !['approve', 'reject'].includes(review.decision)
+      || review.resultHash !== record.resultHash
+      || review.envelopeHash !== record.envelopeHash
+      || (review.comment !== null && typeof review.comment !== 'string')
+      || typeof review.createdAt !== 'string' || !ISO_INSTANT.test(review.createdAt)
+      || new Date(review.createdAt).toISOString() !== review.createdAt) fail();
+    return Object.freeze({
+      uid: review.uid,
+      decision: review.decision,
+      resultHash: review.resultHash,
+      envelopeHash: review.envelopeHash,
+      comment: review.comment,
+      createdAt: review.createdAt,
+    });
+  }
 
   function inspect() {
     let records;
@@ -141,11 +208,21 @@ function createMvpBenchmarkNarrativePreparation({
       if (error instanceof MvpBenchmarkNarrativeError) throw error;
       return fail();
     }
-    if (!Array.isArray(records) || records.length > STAGES.length) fail();
-    const stages = [];
-    let blocked = false;
+    if (!Array.isArray(records)
+      || records.length > STAGES.length * MAX_REVISIONS_PER_STAGE) fail();
+    const counts = Object.create(null);
+    for (let index = 0; index < STAGES.length; index += 1) counts[STAGES[index]] = 0;
     for (let index = 0; index < records.length; index += 1) {
-      const record = records[index];
+      if (!Object.hasOwn(counts, records[index]?.resultType)) fail();
+      counts[records[index].resultType] += 1;
+      if (counts[records[index].resultType] > MAX_REVISIONS_PER_STAGE) fail();
+    }
+    const stages = [];
+    const history = [];
+    const active = records.filter((record) => record.status !== 'stale');
+    let blocked = false;
+    for (let index = 0; index < active.length; index += 1) {
+      const record = active[index];
       const expectedStage = STAGES[index];
       if (blocked || record.resultType !== expectedStage
         || record.dramaUid !== identity.dramaUid
@@ -157,16 +234,7 @@ function createMvpBenchmarkNarrativePreparation({
         || !['pending_review', 'approved', 'rejected'].includes(record.status)) fail();
       let detail;
       try { detail = reviews.getResult(record.uid); } catch { return fail(); }
-      try {
-        const execution = executions.get(deterministicUid(
-          `rain-before-clear-narrative:${identity.sourceSelectionUid}:${expectedStage}`,
-        ));
-        if (execution?.execution?.state !== 'succeeded'
-          || execution?.result?.uid !== record.uid) fail();
-      } catch (error) {
-        if (error instanceof MvpBenchmarkNarrativeError) throw error;
-        return fail();
-      }
+      boundExecution(record, counts[expectedStage], true);
       const approvalRef = detail.approval?.reviewRef ?? null;
       if ((record.status === 'approved') !== (approvalRef !== null)) fail();
       stages.push(Object.freeze({
@@ -180,10 +248,42 @@ function createMvpBenchmarkNarrativePreparation({
       }));
       if (record.status !== 'approved') blocked = true;
     }
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      if (record.status !== 'stale') continue;
+      if (record.dramaUid !== identity.dramaUid
+        || record.sourceSelectionUid !== identity.sourceSelectionUid
+        || !UUID_V4.test(record.uid) || !SHA256.test(record.resultHash)
+        || !SHA256.test(record.envelopeHash)) fail();
+      let detail;
+      let events;
+      try {
+        detail = reviews.getResult(record.uid);
+        events = staleHistory.listEvents(record.uid);
+      } catch { return fail(); }
+      if (events.length !== 1 || events[0].resultUid !== record.uid
+        || events[0].rootKind !== 'narrative_result'
+        || events[0].reasonCode !== 'narrative_result_superseded') fail();
+      boundExecution(record, counts[record.resultType], false);
+      history.push(Object.freeze({
+        stage: record.resultType,
+        status: 'stale',
+        resultUid: record.uid,
+        resultHash: record.resultHash,
+        envelopeHash: record.envelopeHash,
+        output: record.result.output,
+        reviews: Object.freeze(detail.reviews.map((review) => publicReview(review, record))),
+        staleEvent: events[0],
+      }));
+    }
     const last = stages.length === 0 ? null : stages[stages.length - 1];
-    const nextStage = blocked || stages.length === STAGES.length
+    const candidateStage = blocked || stages.length === STAGES.length
       ? null : STAGES[stages.length];
-    const status = stages.length === 0 ? 'not_started'
+    const replacementRequired = candidateStage !== null
+      && history.some((item) => item.stage === candidateStage);
+    const nextStage = replacementRequired ? null : candidateStage;
+    const status = replacementRequired ? 'replacement_required'
+      : stages.length === 0 ? 'not_started'
       : last.status === 'pending_review' ? 'awaiting_review'
         : last.status === 'rejected' ? 'rejected'
           : stages.length === STAGES.length ? 'approved_complete' : 'ready_for_next_stage';
@@ -193,18 +293,24 @@ function createMvpBenchmarkNarrativePreparation({
       status,
       nextStage,
       stages: Object.freeze(stages),
+      history: Object.freeze(history),
     });
   }
 
-  function requestFor(stage, current) {
+  function requestFor(stage, current, allowReplacement = false) {
     const index = STAGES.indexOf(stage);
-    if (index < 0 || current.nextStage !== stage) fail();
+    if (index < 0 || index !== current.stages.length
+      || (current.nextStage !== stage
+        && !(allowReplacement && current.status === 'replacement_required'
+          && current.history.some((item) => item.stage === stage)))) fail();
     const upstream = index === 0 ? null : current.stages[index - 1];
     if (upstream && (upstream.status !== 'approved' || upstream.approvalRef === null)) fail();
     return Object.freeze({
       schemaVersion: 'narrative-execution-request.v1',
-      operationUid: deterministicUid(
-        `rain-before-clear-narrative:${identity.sourceSelectionUid}:${stage}`,
+      operationUid: operationUid(
+        stage,
+        current.stages.filter((item) => item.stage === stage).length
+          + current.history.filter((item) => item.stage === stage).length + 1,
       ),
       dramaUid: identity.dramaUid,
       sourceSelectionUid: identity.sourceSelectionUid,
@@ -219,30 +325,32 @@ function createMvpBenchmarkNarrativePreparation({
     });
   }
 
+  async function stageCurrent(stage, current, allowReplacement = false) {
+    const existing = current.stages.find((item) => item.stage === stage);
+    if (existing) return current;
+    let completed;
+    try {
+      completed = await executions.execute(requestFor(stage, current, allowReplacement));
+    } catch {
+      return fail();
+    }
+    if (completed?.execution?.state !== 'succeeded'
+      || completed?.result?.resultType !== stage
+      || completed.result.status !== 'pending_review') fail();
+    return inspect();
+  }
+
   return Object.freeze({
     inspect,
 
     async stage(stage) {
       if (typeof stage !== 'string' || !STAGES.includes(stage)) fail();
       const current = inspect();
-      const existing = current.stages.find((item) => item.stage === stage);
-      if (existing) return current;
-      let completed;
-      try { completed = await executions.execute(requestFor(stage, current)); } catch {
-        return fail();
-      }
-      if (completed?.execution?.state !== 'succeeded'
-        || completed?.result?.resultType !== stage
-        || completed.result.status !== 'pending_review') fail();
-      return inspect();
+      return stageCurrent(stage, current);
     },
 
     approve(value) {
-      const input = exactObject(value, ['stage', 'resultUid', 'resultHash', 'envelopeHash']);
-      if (typeof input.stage !== 'string' || !STAGES.includes(input.stage)
-        || typeof input.resultUid !== 'string' || !UUID_V4.test(input.resultUid)
-        || typeof input.resultHash !== 'string' || !SHA256.test(input.resultHash)
-        || typeof input.envelopeHash !== 'string' || !SHA256.test(input.envelopeHash)) fail();
+      const input = exactResultIdentity(value);
       const current = inspect();
       const stage = current.stages.find((item) => item.stage === input.stage);
       if (!stage || stage.resultUid !== input.resultUid
@@ -266,6 +374,41 @@ function createMvpBenchmarkNarrativePreparation({
         return fail();
       }
       return inspect();
+    },
+
+    async supersede(value) {
+      const input = exactResultIdentity(value);
+      let current = inspect();
+      const historical = current.history.find((item) => item.stage === input.stage
+        && item.resultUid === input.resultUid
+        && item.resultHash === input.resultHash
+        && item.envelopeHash === input.envelopeHash);
+      const activeStage = current.stages.find((item) => item.stage === input.stage);
+      if (historical) {
+        if (activeStage) return current;
+        return stageCurrent(input.stage, current, true);
+      }
+      if (!activeStage || !['pending_review', 'approved', 'rejected'].includes(activeStage.status)
+        || activeStage.resultUid !== input.resultUid
+        || activeStage.resultHash !== input.resultHash
+        || activeStage.envelopeHash !== input.envelopeHash) fail();
+      const staleness = createNarrativeStalenessService({
+        repositories,
+        createUid: () => deterministicUid(
+          `rain-before-clear-supersede:${input.resultUid}:${input.envelopeHash}`,
+        ),
+      });
+      try {
+        staleness.invalidate({ rootKind: 'narrative_result', rootUid: input.resultUid });
+      } catch {
+        return fail();
+      }
+      current = inspect();
+      if (current.status !== 'replacement_required'
+        || !current.history.some((item) => item.resultUid === input.resultUid
+          && item.resultHash === input.resultHash
+          && item.envelopeHash === input.envelopeHash)) fail();
+      return stageCurrent(input.stage, current, true);
     },
   });
 }

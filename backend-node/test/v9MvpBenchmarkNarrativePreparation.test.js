@@ -12,6 +12,8 @@ const Ajv2020 = require('ajv/dist/2020');
 const {
   createMvpBenchmarkNarrativePreparation,
 } = require('../src/benchmark/mvpBenchmarkNarrativePreparation');
+const { createNarrativeStalenessService } = require('../src/narrative/staleness');
+const { createV2Repositories } = require('../src/repositories/v2');
 const {
   DATABASE_RELATIVE_PATH,
   WORKSPACE_NAME,
@@ -87,6 +89,7 @@ test('fixed benchmark narrative advances only through explicit exact stage appro
   const current = fixture(t);
   const preparation = createPreparation(current);
   assert.deepEqual(preparation.inspect().stages, []);
+  assert.deepEqual(preparation.inspect().history, []);
   assert.equal(preparation.inspect().nextStage, 'extraction');
 
   const extraction = await preparation.stage('extraction');
@@ -143,6 +146,69 @@ test('fixed benchmark narrative advances only through explicit exact stage appro
   new Array(10).fill(0));
 });
 
+test('explicit supersession preserves the old work and stages a separately reviewable correction', async (t) => {
+  const current = fixture(t);
+  const preparation = createPreparation(current, 311500);
+  const first = await preparation.stage('extraction');
+  const original = first.stages[0];
+  const persistedBefore = current.database.prepare(`
+    SELECT result_json FROM narrative_results WHERE uid=?
+  `).pluck().get(original.resultUid);
+
+  await assert.rejects(preparation.supersede({
+    ...approvalFor(first),
+    resultHash: 'f'.repeat(64),
+  }), { code: 'MVP_BENCHMARK_NARRATIVE_INVALID' });
+  assert.equal(current.database.prepare(
+    "SELECT count(*) FROM narrative_results WHERE status='stale'",
+  ).pluck().get(), 0);
+
+  const replacement = await preparation.supersede(approvalFor(first));
+  assert.equal(validateStatus(replacement), true, JSON.stringify(validateStatus.errors));
+  assert.equal(replacement.status, 'awaiting_review');
+  assert.equal(replacement.stages.length, 1);
+  assert.equal(replacement.history.length, 1);
+  assert.notEqual(replacement.stages[0].resultUid, original.resultUid);
+  assert.equal(replacement.stages[0].status, 'pending_review');
+  assert.equal(replacement.history[0].resultUid, original.resultUid);
+  assert.equal(replacement.history[0].resultHash, original.resultHash);
+  assert.equal(replacement.history[0].envelopeHash, original.envelopeHash);
+  assert.deepEqual(replacement.history[0].output, original.output);
+  assert.deepEqual(replacement.history[0].reviews, []);
+  assert.equal(replacement.history[0].staleEvent.reasonCode, 'narrative_result_superseded');
+  assert.equal(replacement.history[0].staleEvent.rootUid, original.resultUid);
+  assert.equal(current.database.prepare(`
+    SELECT result_json FROM narrative_results WHERE uid=?
+  `).pluck().get(original.resultUid), persistedBefore);
+  assert.equal(current.database.prepare(`
+    SELECT status FROM narrative_results WHERE uid=?
+  `).pluck().get(original.resultUid), 'stale');
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_results').pluck().get(), 2);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_stale_events').pluck().get(), 1);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_task_executions').pluck().get(), 2);
+
+  const corrected = replacement.stages[0].output;
+  assert.equal(corrected.characters[0].evidence[0].quote,
+    '修复师林澈抱着一只银色证物箱冲进站内');
+  assert.equal(corrected.scenes[0].location, '海城旧车站');
+  assert.equal(corrected.scenes[0].time, '暴雨中');
+  assert.deepEqual(corrected.scenes[0].evidence.map((item) => item.quote), [
+    '暴雨压住海城最后一班列车',
+    '旧车站突然断电',
+  ]);
+  assert.deepEqual(corrected.relationships[0].evidence.map((item) => item.quote), [
+    '林澈故意走向三号柜，把箱子放在地上，却用维修钥匙打开旁边的配电井',
+    '夏弦借应急灯熄灭的一秒翻过检票闸机，追向控制室',
+    '夏弦低声提醒：广播来自站内旧线路，操作者一定还在楼里',
+  ]);
+
+  const replay = await preparation.supersede(approvalFor(first));
+  assert.equal(replay.stages[0].resultUid, replacement.stages[0].resultUid);
+  assert.equal(replay.history.length, 1);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_results').pluck().get(), 2);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_stale_events').pluck().get(), 1);
+});
+
 test('rejected fixed stage cannot be approved or silently replaced', async (t) => {
   const current = fixture(t);
   const preparation = createPreparation(current, 312000);
@@ -168,6 +234,66 @@ test('rejected fixed stage cannot be approved or silently replaced', async (t) =
     code: 'MVP_BENCHMARK_NARRATIVE_INVALID',
   });
   assert.equal(current.database.prepare('SELECT count(*) FROM narrative_results').pluck().get(), 1);
+
+  const replacement = await preparation.supersede(approvalFor(rejected));
+  assert.equal(replacement.history.length, 1);
+  assert.equal(replacement.history[0].resultUid, stage.resultUid);
+  assert.equal(replacement.history[0].reviews.length, 1);
+  assert.equal(replacement.history[0].reviews[0].decision, 'reject');
+  assert.equal(replacement.stages[0].status, 'pending_review');
+});
+
+test('an interrupted exact supersession resumes without deleting or duplicating work', async (t) => {
+  const current = fixture(t);
+  const preparation = createPreparation(current, 312500);
+  const first = await preparation.stage('extraction');
+  const old = approvalFor(first);
+  createNarrativeStalenessService({
+    repositories: createV2Repositories(current.database),
+    createUid: () => uid(312900),
+    nowEpochMs: () => 1788566401000,
+  }).invalidate({ rootKind: 'narrative_result', rootUid: old.resultUid });
+
+  const interrupted = preparation.inspect();
+  assert.equal(interrupted.status, 'replacement_required');
+  assert.equal(interrupted.nextStage, null);
+  assert.equal(interrupted.stages.length, 0);
+  assert.equal(interrupted.history.length, 1);
+
+  const recovered = await preparation.supersede(old);
+  assert.equal(recovered.status, 'awaiting_review');
+  assert.equal(recovered.stages.length, 1);
+  assert.equal(recovered.history.length, 1);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_results').pluck().get(), 2);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_stale_events').pluck().get(), 1);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_task_executions').pluck().get(), 2);
+});
+
+test('superseding an approved fact result preserves it and every dependent test work', async (t) => {
+  const current = fixture(t);
+  const preparation = createPreparation(current, 313500);
+  let status = await preparation.stage('extraction');
+  const extractionIdentity = approvalFor(status);
+  const extractionOutput = status.stages[0].output;
+  status = preparation.approve(extractionIdentity);
+  status = await preparation.stage('adaptation');
+  const adaptation = status.stages[1];
+
+  const replacement = await preparation.supersede(extractionIdentity);
+  assert.equal(validateStatus(replacement), true, JSON.stringify(validateStatus.errors));
+  assert.equal(replacement.status, 'awaiting_review');
+  assert.deepEqual(replacement.stages.map((item) => item.stage), ['extraction']);
+  assert.deepEqual(replacement.history.map((item) => item.stage), ['extraction', 'adaptation']);
+  assert.deepEqual(replacement.history[0].output, extractionOutput);
+  assert.equal(replacement.history[0].reviews.length, 1);
+  assert.equal(replacement.history[0].reviews[0].decision, 'approve');
+  assert.equal(replacement.history[1].resultUid, adaptation.resultUid);
+  assert.deepEqual(replacement.history[1].output, adaptation.output);
+  assert.equal(replacement.history[1].reviews.length, 0);
+  assert.equal(replacement.history[0].staleEvent.rootUid, extractionIdentity.resultUid);
+  assert.equal(replacement.history[1].staleEvent.rootUid, extractionIdentity.resultUid);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_results').pluck().get(), 3);
+  assert.equal(current.database.prepare('SELECT count(*) FROM narrative_stale_events').pluck().get(), 2);
 });
 
 test('persisted narrative status fails closed after source evidence drift', async (t) => {
@@ -195,7 +321,16 @@ test('narrative CLI accepts only explicit status, stage, and exact approval shap
     resultHash: 'a'.repeat(64),
     envelopeHash: 'b'.repeat(64),
   });
-  for (const invalid of [[], ['approve'], ['stage'], ['stage', 'extraction', 'extra'], ['approve-all']]) {
+  assert.deepEqual(command(['supersede', 'extraction', uid(314001), 'c'.repeat(64), 'd'.repeat(64)]), {
+    kind: 'supersede',
+    stage: 'extraction',
+    resultUid: uid(314001),
+    resultHash: 'c'.repeat(64),
+    envelopeHash: 'd'.repeat(64),
+  });
+  for (const invalid of [
+    [], ['approve'], ['supersede'], ['stage'], ['stage', 'extraction', 'extra'], ['approve-all'],
+  ]) {
     assert.throws(() => command(invalid), TypeError);
   }
 });

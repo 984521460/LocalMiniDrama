@@ -36,9 +36,9 @@ function command(argv) {
   if (argv.length === 2 && argv[0] === 'stage') {
     return Object.freeze({ kind: 'stage', stage: argv[1] });
   }
-  if (argv.length === 5 && argv[0] === 'approve') {
+  if (argv.length === 5 && ['approve', 'supersede'].includes(argv[0])) {
     return Object.freeze({
-      kind: 'approve',
+      kind: argv[0],
       stage: argv[1],
       resultUid: argv[2],
       resultHash: argv[3],
@@ -79,7 +79,13 @@ async function main(argv = process.argv.slice(2)) {
     let status;
     if (action.kind === 'status') status = preparation.inspect();
     else if (action.kind === 'stage') status = await preparation.stage(action.stage);
-    else status = preparation.approve({
+    else if (action.kind === 'approve') status = preparation.approve({
+      stage: action.stage,
+      resultUid: action.resultUid,
+      resultHash: action.resultHash,
+      envelopeHash: action.envelopeHash,
+    });
+    else status = await preparation.supersede({
       stage: action.stage,
       resultUid: action.resultUid,
       resultHash: action.resultHash,

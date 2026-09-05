@@ -86,7 +86,7 @@ test('the same benchmark extraction reopens one exact fact-to-source trace', asy
   assert.equal(trace.factId, 'character-lin-che');
   assert.equal(trace.factLabel, '林澈');
   assert.equal(trace.evidenceCount, 1);
-  assert.equal(trace.evidence[0].quote, '林澈抱着一只银色证物箱冲进站内');
+  assert.equal(trace.evidence[0].quote, '修复师林澈抱着一只银色证物箱冲进站内');
   assert.equal(
     `${trace.evidence[0].beforeText}${trace.evidence[0].quote}${trace.evidence[0].afterText}`,
     trace.evidence[0].selectedBlockText,

@@ -23,11 +23,23 @@ function evidence(blocks, quote) {
 }
 
 function createRainExtractionOutput(blocks) {
-  const linChe = evidence(blocks, '林澈抱着一只银色证物箱冲进站内');
+  const linChe = evidence(blocks, '修复师林澈抱着一只银色证物箱冲进站内');
   const xiaXian = evidence(blocks, '她在停摆的钟下看见调查员夏弦');
+  const storm = evidence(blocks, '暴雨压住海城最后一班列车');
   const station = evidence(blocks, '旧车站突然断电');
   const caseEvidence = evidence(blocks, '一只银色证物箱');
-  const partnership = evidence(blocks, '夏弦低声提醒：广播来自站内旧线路，操作者一定还在楼里');
+  const linCheInvestigation = evidence(
+    blocks,
+    '林澈故意走向三号柜，把箱子放在地上，却用维修钥匙打开旁边的配电井',
+  );
+  const xiaXianPursuit = evidence(
+    blocks,
+    '夏弦借应急灯熄灭的一秒翻过检票闸机，追向控制室',
+  );
+  const partnership = evidence(
+    blocks,
+    '夏弦低声提醒：广播来自站内旧线路，操作者一定还在楼里',
+  );
   const power = evidence(blocks, '林澈接通备用电源，所有站台灯同时亮起');
   const target = evidence(blocks, '真正目标是箱内那块记录事故真相的存储芯片');
   return Object.freeze({
@@ -37,8 +49,8 @@ function createRainExtractionOutput(blocks) {
       { factId: 'character-xia-xian', name: '夏弦', description: '调查员，在车站内协助林澈。', evidence: [xiaXian] },
     ],
     scenes: [{
-      factId: 'scene-old-station', location: '海城旧车站', time: '暴雨夜',
-      description: '旧车站断电，应急灯亮起。', evidence: [station],
+      factId: 'scene-old-station', location: '海城旧车站', time: '暴雨中',
+      description: '暴雨中的海城旧车站断电，应急灯亮起。', evidence: [storm, station],
     }],
     props: [{
       factId: 'prop-evidence-case', name: '银色证物箱',
@@ -48,8 +60,8 @@ function createRainExtractionOutput(blocks) {
       factId: 'relationship-investigation-partners',
       fromCharacterFactId: 'character-lin-che',
       toCharacterFactId: 'character-xia-xian',
-      relationship: '两人在车站内协同行动并调查广播来源。',
-      evidence: [partnership],
+      relationship: '两人在车站内协同追查广播操作者。',
+      evidence: [linCheInvestigation, xiaXianPursuit, partnership],
     }],
     events: [{
       factId: 'event-restore-power', summary: '林澈恢复备用电源并照亮站台。',
