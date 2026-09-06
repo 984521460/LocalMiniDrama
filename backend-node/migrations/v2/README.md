@@ -358,3 +358,12 @@ settlement reconstruction but cannot become a new active paid-run authorization.
 The attestation is an auditable declaration, not independent legal verification,
 and the migration performs no Vault, SSH, Provider, GPU, billing, media, or
 instance operation.
+
+Migration `0033_ssh_public_key_authentication.sql` adds an effective SSH
+authentication method and a validated, non-secret Ed25519 public key to remote
+connections. Historical rows remain password-authenticated, while new or
+rotated key profiles must carry an exact `ssh-ed25519` public key and a changed
+opaque credential reference. Connection evidence, H3 intent validation, MVP
+authorization, readiness, attestation, and reservation guards all bind the
+effective method. Private keys remain exclusively in the credential vault;
+the migration neither reads credentials nor performs SSH or external work.

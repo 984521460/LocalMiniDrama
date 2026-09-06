@@ -8,6 +8,7 @@ export const CREDENTIAL_KINDS = Object.freeze([
   'api_key',
   'provider_token',
   'ssh_password',
+  'ssh_private_key',
   'ssh_key_passphrase',
 ] as const)
 

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v6/ssh-public-key.schema.json",
+  "title": "SSH Public Key",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "connectionUid", "algorithm", "publicKey", "fingerprint"],
+  "properties": {
+    "contractVersion": { "const": "ssh-public-key.v1" },
+    "connectionUid": { "$ref": "#/$defs/uid" },
+    "algorithm": { "const": "ssh-ed25519" },
+    "publicKey": {
+      "type": "string",
+      "pattern": "^ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI[A-Za-z0-9+/]{43} local-mini-drama$"
+    },
+    "fingerprint": { "type": "string", "pattern": "^SHA256:[A-Za-z0-9+/]{43}$" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  }
+}

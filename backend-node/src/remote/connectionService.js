@@ -9,9 +9,15 @@ const {
   createRemoteConnectionRequest,
   createRemoteConnectionUpdateRequest,
   createRemoteCredentialReplacementRequest,
+  credentialKindForAuthMethod,
   parseRemoteConnectionUid,
   publicRemoteConnection,
 } = require('./connectionProfile');
+const {
+  createSshPublicKeyView,
+  generateSshKeyPair,
+  parseGeneratedSshKeyPair,
+} = require('./sshKeyPair');
 
 const trustedErrors = new WeakMap();
 const MESSAGES = Object.freeze({
@@ -21,6 +27,8 @@ const MESSAGES = Object.freeze({
   REMOTE_CONNECTION_DATA_INVALID: 'Remote connection persisted state is invalid',
   REMOTE_CREDENTIAL_OPERATION_FAILED: 'Remote credential operation failed',
   REMOTE_CREDENTIAL_CLEANUP_REQUIRED: 'Remote credential cleanup is required',
+  REMOTE_SSH_KEY_GENERATION_FAILED: 'SSH key generation failed',
+  REMOTE_SSH_PUBLIC_KEY_UNAVAILABLE: 'SSH public key is unavailable for this connection',
   REMOTE_CONNECTION_UNEXPECTED: 'Remote connection operation failed',
 });
 
@@ -64,7 +72,7 @@ function translateError(error) {
   return createError('REMOTE_CONNECTION_UNEXPECTED');
 }
 
-function validateDependencies(repository, vault, createUid) {
+function validateDependencies(repository, vault, createUid, generateKeyPair) {
   if (!repository || typeof repository !== 'object'
     || typeof repository.createConnection !== 'function'
     || typeof repository.getConnection !== 'function'
@@ -75,13 +83,19 @@ function validateDependencies(repository, vault, createUid) {
     || typeof vault.store !== 'function'
     || typeof vault.inspect !== 'function'
     || typeof vault.remove !== 'function'
-    || typeof createUid !== 'function') {
+    || typeof createUid !== 'function'
+    || typeof generateKeyPair !== 'function') {
     throw new TypeError('Remote connection service dependencies are invalid');
   }
 }
 
-function createRemoteConnectionService({ repository, vault, createUid = randomUUID } = {}) {
-  validateDependencies(repository, vault, createUid);
+function createRemoteConnectionService({
+  repository,
+  vault,
+  createUid = randomUUID,
+  generateKeyPair = generateSshKeyPair,
+} = {}) {
+  validateDependencies(repository, vault, createUid, generateKeyPair);
 
   async function credentialState(record) {
     try {
@@ -89,7 +103,7 @@ function createRemoteConnectionService({ repository, vault, createUid = randomUU
       return { kind: descriptor.kind, configured: descriptor.configured };
     } catch (error) {
       if (ownErrorCode(error) === 'CREDENTIAL_NOT_FOUND') {
-        return { kind: 'ssh_password', configured: false };
+        return { kind: credentialKindForAuthMethod(record.authMethod), configured: false };
       }
       throw translateError(error);
     }
@@ -113,11 +127,32 @@ function createRemoteConnectionService({ repository, vault, createUid = randomUU
     }
   }
 
+  async function credentialMaterial(input) {
+    if (input.authMethod === 'password') {
+      return Object.freeze({
+        kind: 'ssh_password',
+        secret: input.secret,
+        sshPublicKey: null,
+      });
+    }
+    try {
+      const generated = parseGeneratedSshKeyPair(await generateKeyPair());
+      return Object.freeze({
+        kind: 'ssh_private_key',
+        secret: generated.privateKey,
+        sshPublicKey: generated.publicKey,
+      });
+    } catch {
+      throw createError('REMOTE_SSH_KEY_GENERATION_FAILED');
+    }
+  }
+
   async function create(value) {
     let descriptor;
     try {
       const input = createRemoteConnectionRequest(value);
-      descriptor = await vault.store({ kind: 'ssh_password', secret: input.secret });
+      const material = await credentialMaterial(input);
+      descriptor = await vault.store({ kind: material.kind, secret: material.secret });
       const record = repository.createConnection({
         uid: createUid(),
         name: input.name,
@@ -128,6 +163,7 @@ function createRemoteConnectionService({ repository, vault, createUid = randomUU
         credentialRef: descriptor.ref,
         status: 'unverified',
         authMethod: input.authMethod,
+        sshPublicKey: material.sshPublicKey,
         comfyHost: input.comfyHost,
         comfyPort: input.comfyPort,
         remoteWorkDir: input.remoteWorkDir,
@@ -158,6 +194,22 @@ function createRemoteConnectionService({ repository, vault, createUid = randomUU
     }
   }
 
+  async function getSshPublicKey(uid) {
+    try {
+      const connectionUid = parseRemoteConnectionUid(uid);
+      const record = repository.getConnection(connectionUid);
+      if (record.authMethod !== 'publickey') {
+        throw createError('REMOTE_SSH_PUBLIC_KEY_UNAVAILABLE');
+      }
+      if (typeof repository.getSshPublicKey !== 'function') {
+        throw createError('REMOTE_SSH_PUBLIC_KEY_UNAVAILABLE');
+      }
+      return createSshPublicKeyView(connectionUid, repository.getSshPublicKey(connectionUid));
+    } catch (error) {
+      throw translateError(error);
+    }
+  }
+
   async function update(uid, value) {
     try {
       const input = createRemoteConnectionUpdateRequest(value);
@@ -177,11 +229,14 @@ function createRemoteConnectionService({ repository, vault, createUid = randomUU
       if (current.stateVersion !== input.expectedStateVersion) {
         throw createError('REMOTE_CONNECTION_CONFLICT');
       }
-      descriptor = await vault.store({ kind: 'ssh_password', secret: input.secret });
+      const material = await credentialMaterial(input);
+      descriptor = await vault.store({ kind: material.kind, secret: material.secret });
       const record = repository.replaceCredential({
         uid: connectionUid,
         expectedStateVersion: input.expectedStateVersion,
         credentialRef: descriptor.ref,
+        authMethod: input.authMethod,
+        sshPublicKey: material.sshPublicKey,
       });
       persisted = true;
       if (!await removeAndConfirm(current.credentialRef)) {
@@ -199,7 +254,7 @@ function createRemoteConnectionService({ repository, vault, createUid = randomUU
     }
   }
 
-  return Object.freeze({ create, get, list, replaceCredential, update });
+  return Object.freeze({ create, get, getSshPublicKey, list, replaceCredential, update });
 }
 
 module.exports = {

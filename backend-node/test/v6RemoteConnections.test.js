@@ -120,6 +120,7 @@ test('remote connection requests are exact, bounded, and accessor safe', () => {
     secret: 'replacement-password-value',
   }), {
     expectedStateVersion: 3,
+    authMethod: 'password',
     secret: 'replacement-password-value',
   });
   assert.throws(() => createRemoteCredentialReplacementRequest({

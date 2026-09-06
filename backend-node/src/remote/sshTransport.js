@@ -95,6 +95,13 @@ function parseExpectedFingerprint(value) {
   return value;
 }
 
+function parseAuthMethod(value) {
+  if (value !== 'password' && value !== 'publickey') {
+    throw createError('SSH_TRANSPORT_INPUT_INVALID');
+  }
+  return value;
+}
+
 function hostIdentity(rawKey, parseHostKey) {
   if (!Buffer.isBuffer(rawKey) || rawKey.length < 1 || rawKey.length > 65536) {
     throw createError('SSH_HOST_KEY_INVALID');
@@ -232,9 +239,10 @@ function createSshTransport(options = {}) {
   }
 
   async function connect(value) {
-    const input = exactObject(value, ['endpoint', 'expectedFingerprint', 'secret']);
+    const input = exactObject(value, ['endpoint', 'expectedFingerprint', 'authMethod', 'secret']);
     const endpoint = parseEndpoint(input.endpoint);
     const expectedFingerprint = parseExpectedFingerprint(input.expectedFingerprint);
+    const authMethod = parseAuthMethod(input.authMethod);
     if (!Buffer.isBuffer(input.secret) || input.secret.length < 1 || input.secret.length > 2560) {
       throw createError('SSH_TRANSPORT_INPUT_INVALID');
     }
@@ -243,7 +251,7 @@ function createSshTransport(options = {}) {
     return new Promise((resolve, reject) => {
       let settled = false;
       let fingerprintMismatch = false;
-      let attemptedPassword = false;
+      let attemptedCredential = false;
       const finish = (error, session) => {
         if (settled) return;
         settled = true;
@@ -289,12 +297,12 @@ function createSshTransport(options = {}) {
             }
           },
           authHandler(_methodsLeft, _partialSuccess, callback) {
-            if (attemptedPassword) return callback(false);
-            attemptedPassword = true;
-            return callback({
-              type: 'password',
-              username: endpoint.username,
-              password: secret,
+            if (attemptedCredential) return callback(false);
+            attemptedCredential = true;
+            return callback(authMethod === 'password' ? {
+              type: 'password', username: endpoint.username, password: secret,
+            } : {
+              type: 'publickey', username: endpoint.username, key: secret,
             });
           },
         });

@@ -3,7 +3,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const TARGET_PATTERN = /^LocalMiniDrama\/v1\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const USERNAME_PATTERN = /^(?:api_key|provider_token|ssh_password|ssh_key_passphrase)$/;
+const USERNAME_PATTERN = /^(?:api_key|provider_token|ssh_password|ssh_private_key|ssh_key_passphrase)$/;
 const MAX_OUTPUT_BYTES = 65536;
 
 class CredentialBridgeError extends Error {

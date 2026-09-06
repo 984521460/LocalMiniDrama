@@ -4,6 +4,8 @@ import {
   remoteConnectionUidPath,
   remoteConnectionUpdatePayload,
   remoteCredentialReplacementPayload,
+  remoteConnectionView,
+  sshPublicKeyView,
 } from '../../remote/connectionProfile.js'
 import {
   hostIdentityConfirmationPayload,
@@ -31,22 +33,30 @@ export const remoteConnectionAPI = Object.freeze({
     return request.get(`/v2/remote-connections/${remoteConnectionUidPath(connectionUid)}`)
   },
 
-  create(form) {
-    return request.post('/v2/remote-connections', remoteConnectionCreatePayload(form))
+  async create(form) {
+    return remoteConnectionView(await request.post(
+      '/v2/remote-connections', remoteConnectionCreatePayload(form),
+    ))
   },
 
-  update(record, form) {
-    return request.put(
+  async update(record, form) {
+    return remoteConnectionView(await request.put(
       `/v2/remote-connections/${remoteConnectionUidPath(record.uid)}`,
       remoteConnectionUpdatePayload(record, form),
-    )
+    ))
   },
 
-  replaceCredential(record, password) {
-    return request.put(
+  async replaceCredential(record, credential) {
+    return remoteConnectionView(await request.put(
       `/v2/remote-connections/${remoteConnectionUidPath(record.uid)}/credential`,
-      remoteCredentialReplacementPayload(record, password),
-    )
+      remoteCredentialReplacementPayload(record, credential),
+    ))
+  },
+
+  async getSshPublicKey(connectionUid) {
+    return sshPublicKeyView(await request.get(
+      `/v2/remote-connections/${remoteConnectionUidPath(connectionUid)}/ssh-public-key`,
+    ))
   },
 
   async probeHostIdentity(connectionUid) {

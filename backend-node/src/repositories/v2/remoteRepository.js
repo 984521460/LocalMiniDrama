@@ -67,12 +67,20 @@ function createRemoteRepository(database) {
     database.prepare('PRAGMA table_info(remote_connections)').all().map((column) => column.name),
   );
   const hasProductizedConnections = connectionColumns.has('auth_method');
+  const hasSshKeyAuthentication = connectionColumns.has('ssh_public_key');
   const taskColumns = new Set(
     database.prepare('PRAGMA table_info(remote_tasks)').all().map((column) => column.name),
   );
   const hasFormalTasks = taskColumns.has('contract_version');
   const hasReliabilityPolicy = taskColumns.has('max_retries');
-  const insertConnection = database.prepare(hasProductizedConnections ? `
+  const insertConnection = database.prepare(hasSshKeyAuthentication ? `
+      INSERT INTO remote_connections
+        (uid, name, host, port, username, host_fingerprint, credential_ref, status,
+         auth_method, auth_method_v2, ssh_public_key, comfy_host, comfy_port, remote_work_dir)
+      VALUES
+        (@uid, @name, @host, @port, @username, @hostFingerprint, @credentialRef, @status,
+         'password', @authMethod, @sshPublicKey, @comfyHost, @comfyPort, @remoteWorkDir)
+    ` : hasProductizedConnections ? `
       INSERT INTO remote_connections
         (uid, name, host, port, username, host_fingerprint, credential_ref, status,
          auth_method, comfy_host, comfy_port, remote_work_dir)
@@ -122,6 +130,9 @@ function createRemoteRepository(database) {
   const listConnectionRows = database.prepare(`
     SELECT * FROM remote_connections ORDER BY name, uid
   `);
+  const getSshPublicKeyRow = hasSshKeyAuthentication ? database.prepare(`
+    SELECT ssh_public_key AS sshPublicKey FROM remote_connections WHERE uid = ?
+  `) : null;
   const listTaskRows = database.prepare(`
     SELECT * FROM remote_tasks WHERE connection_uid = ? ORDER BY created_at, uid
   `);
@@ -144,7 +155,15 @@ function createRemoteRepository(database) {
         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     WHERE uid = @uid AND state_version = @expectedStateVersion
   `) : null;
-  const replaceCredential = hasProductizedConnections ? database.prepare(`
+  const replaceCredential = hasSshKeyAuthentication ? database.prepare(`
+    UPDATE remote_connections
+    SET credential_ref = @credentialRef,
+        auth_method_v2 = @authMethod,
+        ssh_public_key = @sshPublicKey,
+        state_version = state_version + 1,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE uid = @uid AND state_version = @expectedStateVersion
+  `) : hasProductizedConnections ? database.prepare(`
     UPDATE remote_connections
     SET credential_ref = @credentialRef,
         state_version = state_version + 1,
@@ -294,8 +313,18 @@ function createRemoteRepository(database) {
   function mapConnection(row) {
     try {
       const mapped = mapRow(row, CONNECTION_MAP);
-      return createRemoteConnectionRecord(hasProductizedConnections ? mapped : {
-        ...mapped,
+      const {
+        authMethod: _legacyAuthMethod,
+        authMethodV2,
+        sshPublicKey: _sshPublicKey,
+        ...connectionFields
+      } = mapped;
+      const connection = hasSshKeyAuthentication ? {
+        ...connectionFields,
+        authMethod: authMethodV2,
+      } : mapped;
+      return createRemoteConnectionRecord(hasProductizedConnections ? connection : {
+        ...connection,
         authMethod: 'password',
         comfyHost: '127.0.0.1',
         comfyPort: 8188,
@@ -404,16 +433,22 @@ function createRemoteRepository(database) {
         'credentialRef',
         'status',
         'authMethod',
+        'sshPublicKey',
         'comfyHost',
         'comfyPort',
         'remoteWorkDir',
       ];
-      assertAllowedKeys(connection, hasProductizedConnections
+      const unsupportedKeys = hasProductizedConnections
+        ? ['sshPublicKey']
+        : ['authMethod', 'sshPublicKey', 'comfyHost', 'comfyPort', 'remoteWorkDir'];
+      assertAllowedKeys(connection, hasSshKeyAuthentication
         ? allowedKeys
-        : allowedKeys.filter((key) => ![
-          'authMethod', 'comfyHost', 'comfyPort', 'remoteWorkDir',
-        ].includes(key)), 'remote connection');
-      executeWrite('remote connection', 'created', () => insertConnection.run(connection));
+        : allowedKeys.filter((key) => !unsupportedKeys.includes(key)), 'remote connection');
+      const persistedConnection = hasSshKeyAuthentication
+        && !Object.hasOwn(connection, 'sshPublicKey')
+        ? { ...connection, sshPublicKey: null }
+        : connection;
+      executeWrite('remote connection', 'created', () => insertConnection.run(persistedConnection));
       return getConnection(connection.uid);
     },
 
@@ -516,6 +551,16 @@ function createRemoteRepository(database) {
     },
 
     getConnection,
+    getSshPublicKey(uid) {
+      if (!getSshPublicKeyRow) {
+        throw new V2RepositoryDataError('remote connection', 'SSH public key schema');
+      }
+      const row = requiredRow(getSshPublicKeyRow.get(uid), 'remote connection', uid);
+      if (typeof row.sshPublicKey !== 'string') {
+        throw new V2RepositoryDataError('remote connection', 'SSH public key');
+      }
+      return row.sshPublicKey;
+    },
     getFormalTask,
     getTask,
 
@@ -562,13 +607,17 @@ function createRemoteRepository(database) {
       return getConnection(uid);
     },
 
-    replaceCredential({ uid, expectedStateVersion, credentialRef }) {
+    replaceCredential({
+      uid, expectedStateVersion, credentialRef, authMethod = 'password', sshPublicKey = null,
+    }) {
       if (!replaceCredential) {
         throw new V2RepositoryDataError('remote connection', 'productized schema');
       }
-      const replacement = { uid, expectedStateVersion, credentialRef };
+      const replacement = {
+        uid, expectedStateVersion, credentialRef, authMethod, sshPublicKey,
+      };
       assertAllowedKeys(replacement, [
-        'uid', 'expectedStateVersion', 'credentialRef',
+        'uid', 'expectedStateVersion', 'credentialRef', 'authMethod', 'sshPublicKey',
       ], 'remote connection credential replacement');
       const result = executeWrite(
         'remote connection',

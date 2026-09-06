@@ -6,6 +6,7 @@ const HOST_FINGERPRINT = /^SHA256:[A-Za-z0-9+/]{43}$/u
 const SHA256 = /^[0-9a-f]{64}$/u
 const TIMESTAMP = /^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\.[0-9]{3}Z$/u
 const STATUSES = new Set(['unverified', 'ready', 'changed', 'disabled', 'error'])
+const AUTH_METHODS = new Set(['password', 'publickey'])
 const MESSAGE = 'Remote connection value is invalid'
 
 function fail() {
@@ -99,6 +100,15 @@ function stateVersion(value) {
   return value
 }
 
+function authMethod(value) {
+  if (!AUTH_METHODS.has(value)) fail()
+  return value
+}
+
+function credentialKindForAuthMethod(value) {
+  return authMethod(value) === 'password' ? 'ssh_password' : 'ssh_private_key'
+}
+
 function environmentReport(value) {
   if (value === null) return null
   fail()
@@ -116,11 +126,11 @@ export function remoteConnectionView(value) {
   if (!STATUSES.has(input.status)
     || typeof input.createdAt !== 'string' || !TIMESTAMP.test(input.createdAt)
     || typeof input.updatedAt !== 'string' || !TIMESTAMP.test(input.updatedAt)
-    || input.authMethod !== 'password'
+    || !AUTH_METHODS.has(input.authMethod)
     || input.comfyHost !== '127.0.0.1'
     || typeof input.connectionEvidenceSha256 !== 'string'
     || !SHA256.test(input.connectionEvidenceSha256)
-    || input.credentialKind !== 'ssh_password'
+    || input.credentialKind !== credentialKindForAuthMethod(input.authMethod)
     || typeof input.credentialConfigured !== 'boolean') fail()
   return Object.freeze({
     uid: uid(input.uid),
@@ -157,17 +167,20 @@ export function remoteConnectionUidPath(value) {
 
 export function remoteConnectionCreatePayload(value) {
   const input = exactObject(value, [
-    'name', 'host', 'port', 'username', 'password', 'comfyPort', 'remoteWorkDir',
+    'name', 'host', 'port', 'username', 'authMethod', 'password', 'comfyPort', 'remoteWorkDir',
   ])
+  const method = authMethod(input.authMethod)
   const password = input.password
-  if (typeof password !== 'string' || password.includes('\0') || password.length < 1 || password.length > 1024) fail()
+  if (typeof password !== 'string' || password.includes('\0') || password.length > 1024
+    || (method === 'password' && password.length < 1)
+    || (method === 'publickey' && password !== '')) fail()
   return Object.freeze({
     name: text(input.name, 120),
     host: host(input.host),
     port: port(input.port),
     username: username(input.username),
-    authMethod: 'password',
-    secret: password,
+    authMethod: method,
+    ...(method === 'password' ? { secret: password } : {}),
     comfyHost: '127.0.0.1',
     comfyPort: port(input.comfyPort),
     remoteWorkDir: workDir(input.remoteWorkDir),
@@ -177,9 +190,9 @@ export function remoteConnectionCreatePayload(value) {
 export function remoteConnectionUpdatePayload(record, value) {
   const current = remoteConnectionView(record)
   const input = exactObject(value, [
-    'name', 'host', 'port', 'username', 'password', 'comfyPort', 'remoteWorkDir',
+    'name', 'host', 'port', 'username', 'authMethod', 'password', 'comfyPort', 'remoteWorkDir',
   ])
-  if (input.password !== '') fail()
+  if (input.password !== '' || authMethod(input.authMethod) !== current.authMethod) fail()
   return Object.freeze({
     expectedStateVersion: current.stateVersion,
     name: text(input.name, 120),
@@ -192,17 +205,43 @@ export function remoteConnectionUpdatePayload(record, value) {
   })
 }
 
-export function remoteCredentialReplacementPayload(record, password) {
+export function remoteCredentialReplacementPayload(record, value) {
   const current = remoteConnectionView(record)
+  const input = typeof value === 'string'
+    ? { authMethod: 'password', password: value }
+    : exactObject(value, ['authMethod', 'password'])
+  const method = authMethod(input.authMethod)
+  const password = input.password
   if (typeof password !== 'string' || password.includes('\0')) fail()
   let length = 0
   for (const _character of password) {
     length += 1
     if (length > 1024) fail()
   }
-  if (length < 1) fail()
+  if ((method === 'password' && length < 1) || (method === 'publickey' && length !== 0)) fail()
   return Object.freeze({
     expectedStateVersion: current.stateVersion,
-    secret: password,
+    authMethod: method,
+    ...(method === 'password' ? { secret: password } : {}),
+  })
+}
+
+export function sshPublicKeyView(value) {
+  const input = exactObject(value, [
+    'contractVersion', 'connectionUid', 'algorithm', 'publicKey', 'fingerprint',
+  ])
+  if (input.contractVersion !== 'ssh-public-key.v1'
+    || input.algorithm !== 'ssh-ed25519'
+    || typeof input.publicKey !== 'string'
+    || !/^ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI[A-Za-z0-9+/]{43} local-mini-drama$/u
+      .test(input.publicKey)
+    || typeof input.fingerprint !== 'string'
+    || !HOST_FINGERPRINT.test(input.fingerprint)) fail()
+  return Object.freeze({
+    contractVersion: input.contractVersion,
+    connectionUid: uid(input.connectionUid),
+    algorithm: input.algorithm,
+    publicKey: input.publicKey,
+    fingerprint: input.fingerprint,
   })
 }

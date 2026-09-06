@@ -7,6 +7,7 @@ const { createSshTransport } = require('../src/remote/sshTransport');
 const { createSshTunnelManager } = require('../src/remote/sshTunnel');
 const { createRemoteSessionService } = require('../src/remote/remoteSessionService');
 const { remoteConnectionEvidenceSha256 } = require('../src/remote/connectionProfile');
+const { generateSshKeyPair } = require('../src/remote/sshKeyPair');
 
 const HOST_KEY = Buffer.from('synthetic-host-key-material');
 const FINGERPRINT = 'SHA256:zAiiwVB6Uxu2FL8c0K6V6Z/zOD0OWrdz1sKXb539o+w';
@@ -63,6 +64,7 @@ test('authenticated SSH sessions require the confirmed host key and zero the pas
   const session = await accepted.connect({
     endpoint: { host: 'workspace.example.invalid', port: 57339, username: 'worker' },
     expectedFingerprint: FINGERPRINT,
+    authMethod: 'password',
     secret,
   });
   assert.equal(secret.every((value) => value === 0), true);
@@ -80,6 +82,7 @@ test('authenticated SSH sessions require the confirmed host key and zero the pas
   await assert.rejects(rejected.connect({
     endpoint: { host: 'workspace.example.invalid', port: 57339, username: 'worker' },
     expectedFingerprint: `SHA256:${'A'.repeat(43)}`,
+    authMethod: 'password',
     secret: rejectedSecret,
   }), { code: 'SSH_HOST_FINGERPRINT_MISMATCH' });
   assert.equal(rejectedSecret.every((value) => value === 0), true);
@@ -152,6 +155,9 @@ test('credential-backed sessions open only for confirmed profiles and never expo
   const service = createRemoteSessionService({
     repository: { getConnection() { return record; } },
     vault: {
+      async inspect(ref) {
+        return { ref, kind: 'ssh_password', configured: true };
+      },
       async read(ref) {
         assert.equal(ref, credentialRef);
         return 'vault-password-value';
@@ -187,10 +193,17 @@ test('credential-backed sessions open only for confirmed profiles and never expo
   assert.equal(JSON.stringify(tunnel).includes('vault-password-value'), false);
 
   let guardedVaultReads = 0;
+  let guardedVaultInspects = 0;
   let guardedConnects = 0;
   const guarded = createRemoteSessionService({
     repository: { getConnection() { return record; } },
-    vault: { async read() { guardedVaultReads += 1; return Buffer.from('unused'); } },
+    vault: {
+      async inspect(ref) {
+        guardedVaultInspects += 1;
+        return { ref, kind: 'ssh_password', configured: true };
+      },
+      async read() { guardedVaultReads += 1; return Buffer.from('unused'); },
+    },
     sshTransport: { async connect() { guardedConnects += 1; return session; } },
     tunnelManager: { async open() { throw new Error('must not open'); } },
   });
@@ -198,18 +211,23 @@ test('credential-backed sessions open only for confirmed profiles and never expo
     code: 'REMOTE_SESSION_NOT_READY',
   });
   assert.equal(guardedVaultReads, 0);
+  assert.equal(guardedVaultInspects, 0);
   assert.equal(guardedConnects, 0);
   const guardedSession = await guarded.openSession(
     record.uid,
     remoteConnectionEvidenceSha256(record),
   );
   assert.equal(guardedVaultReads, 1);
+  assert.equal(guardedVaultInspects, 1);
   assert.equal(guardedConnects, 1);
   await guardedSession.session.close();
 
   const blocked = createRemoteSessionService({
     repository: { getConnection() { return { ...record, status: 'changed' }; } },
-    vault: { async read() { throw new Error('must not read'); } },
+    vault: {
+      async inspect() { throw new Error('must not inspect'); },
+      async read() { throw new Error('must not read'); },
+    },
     sshTransport: { async connect() { throw new Error('must not connect'); } },
     tunnelManager: { async open() { throw new Error('must not open'); } },
   });
@@ -221,7 +239,10 @@ test('credential-backed sessions open only for confirmed profiles and never expo
   let compatibleSnapshot;
   const compatible = createRemoteSessionService({
     repository: { getConnection() { return record; } },
-    vault: { async read() { return compatibleBuffer; } },
+    vault: {
+      async inspect(ref) { return { ref, kind: 'ssh_password', configured: true }; },
+      async read() { return compatibleBuffer; },
+    },
     sshTransport: {
       async connect(input) {
         compatibleSnapshot = Buffer.from(input.secret);
@@ -239,7 +260,10 @@ test('credential-backed sessions open only for confirmed profiles and never expo
   let maxUtf8Snapshot;
   const maxUtf8 = createRemoteSessionService({
     repository: { getConnection() { return record; } },
-    vault: { async read() { return maxUtf8Secret; } },
+    vault: {
+      async inspect(ref) { return { ref, kind: 'ssh_password', configured: true }; },
+      async read() { return maxUtf8Secret; },
+    },
     sshTransport: {
       async connect(input) {
         maxUtf8Consumed = input.secret;
@@ -272,7 +296,10 @@ test('credential-backed sessions open only for confirmed profiles and never expo
     let invalidConnects = 0;
     const invalid = createRemoteSessionService({
       repository: { getConnection() { return record; } },
-      vault: { async read() { return invalidSecret; } },
+      vault: {
+        async inspect(ref) { return { ref, kind: 'ssh_password', configured: true }; },
+        async read() { return invalidSecret; },
+      },
       sshTransport: { async connect() { invalidConnects += 1; return session; } },
       tunnelManager: { async open() { throw new Error('must not open'); } },
     });
@@ -287,11 +314,101 @@ test('credential-backed sessions open only for confirmed profiles and never expo
 
   const failingVault = createRemoteSessionService({
     repository: { getConnection() { return record; } },
-    vault: { async read() { throw new TypeError('synthetic vault failure'); } },
+    vault: {
+      async inspect(ref) { return { ref, kind: 'ssh_password', configured: true }; },
+      async read() { throw new TypeError('synthetic vault failure'); },
+    },
     sshTransport: { async connect() { throw new Error('must not connect'); } },
     tunnelManager: { async open() { throw new Error('must not open'); } },
   });
   await assert.rejects(failingVault.openSession(record.uid), {
     code: 'REMOTE_SESSION_CREDENTIAL_FAILED',
   });
+});
+
+test('public-key sessions bind the Vault kind, confirmed host key, and SSH auth method', async () => {
+  const pair = generateSshKeyPair();
+  const client = new FakeClient();
+  let authentication;
+  const originalConnect = client.connect.bind(client);
+  client.connect = (config) => {
+    config.authHandler([], false, (candidate) => {
+      authentication = candidate === false ? false : {
+        type: candidate.type,
+        username: candidate.username,
+        key: Buffer.from(candidate.key),
+      };
+    });
+    originalConnect(config);
+  };
+  const transport = createSshTransport({
+    createClient: () => client,
+    parseHostKey: () => ({ type: 'ssh-ed25519' }),
+    timeoutMs: 500,
+  });
+  const keyBytes = Buffer.from(pair.privateKey, 'utf8');
+  const session = await transport.connect({
+    endpoint: { host: 'workspace.example.invalid', port: 57339, username: 'worker' },
+    expectedFingerprint: FINGERPRINT,
+    authMethod: 'publickey',
+    secret: keyBytes,
+  });
+  assert.equal(authentication.type, 'publickey');
+  assert.equal(authentication.username, 'worker');
+  assert.deepEqual(authentication.key, Buffer.from(pair.privateKey, 'utf8'));
+  assert.equal(keyBytes.every((value) => value === 0), true);
+  await session.close();
+
+  const keyRecord = {
+    uid: '00000000-0000-4000-8000-000000005011',
+    name: 'Synthetic key worker',
+    host: 'workspace.example.invalid',
+    port: 57339,
+    username: 'worker',
+    hostFingerprint: FINGERPRINT,
+    credentialRef: 'credential:v1:00000000-0000-4000-8000-000000005010',
+    status: 'ready',
+    createdAt: '2026-08-28T06:00:00.000Z',
+    updatedAt: '2026-08-28T06:00:00.000Z',
+    authMethod: 'publickey',
+    comfyHost: '127.0.0.1',
+    comfyPort: 8188,
+    remoteWorkDir: 'ai-drama-studio',
+    environmentReport: null,
+    environmentCheckedAtEpochMs: null,
+    stateVersion: 1,
+  };
+  let reads = 0;
+  const mismatched = createRemoteSessionService({
+    repository: { getConnection() { return keyRecord; } },
+    vault: {
+      async inspect(ref) { return { ref, kind: 'ssh_password', configured: true }; },
+      async read() { reads += 1; return pair.privateKey; },
+    },
+    sshTransport: { async connect() { throw new Error('must not connect'); } },
+    tunnelManager: { async open() { throw new Error('must not open'); } },
+  });
+  await assert.rejects(mismatched.openSession(keyRecord.uid), {
+    code: 'REMOTE_SESSION_CREDENTIAL_FAILED',
+  });
+  assert.equal(reads, 0);
+
+  let connectedWith;
+  const accepted = createRemoteSessionService({
+    repository: { getConnection() { return keyRecord; } },
+    vault: {
+      async inspect(ref) { return { ref, kind: 'ssh_private_key', configured: true }; },
+      async read() { return pair.privateKey; },
+    },
+    sshTransport: {
+      async connect(input) {
+        connectedWith = { ...input, secret: Buffer.from(input.secret) };
+        return { async close() {} };
+      },
+    },
+    tunnelManager: { async open() { throw new Error('must not open'); } },
+  });
+  await accepted.openSession(keyRecord.uid);
+  assert.equal(connectedWith.authMethod, 'publickey');
+  assert.deepEqual(connectedWith.secret, Buffer.from(pair.privateKey, 'utf8'));
 });

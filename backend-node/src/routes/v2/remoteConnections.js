@@ -27,6 +27,8 @@ const STATUS_BY_CODE = Object.freeze({
   REMOTE_CONNECTION_DATA_INVALID: 500,
   REMOTE_CREDENTIAL_OPERATION_FAILED: 500,
   REMOTE_CREDENTIAL_CLEANUP_REQUIRED: 500,
+  REMOTE_SSH_KEY_GENERATION_FAILED: 500,
+  REMOTE_SSH_PUBLIC_KEY_UNAVAILABLE: 409,
   REMOTE_CONNECTION_UNEXPECTED: 500,
   REMOTE_HOST_IDENTITY_INPUT_INVALID: 400,
   REMOTE_HOST_IDENTITY_DATA_INVALID: 500,
@@ -286,6 +288,8 @@ function remoteConnectionRoutes(log, runtime = {}, database) {
       repository,
       vault: credentialVault,
       ...(typeof runtime.createUid === 'function' ? { createUid: runtime.createUid } : {}),
+      ...(typeof runtime.generateSshKeyPair === 'function'
+        ? { generateKeyPair: runtime.generateSshKeyPair } : {}),
     });
     hostIdentityService = createRemoteHostIdentityService({
       repository,
@@ -405,6 +409,15 @@ function remoteConnectionRoutes(log, runtime = {}, database) {
       return response.success(res, await service.get(req.params.connectionUid));
     } catch (error) {
       return handleError(res, error, 'remote-connection-detail');
+    }
+  });
+
+  router.get('/remote-connections/:connectionUid/ssh-public-key', async (req, res) => {
+    if (!service) return unavailable(res);
+    try {
+      return response.success(res, await service.getSshPublicKey(req.params.connectionUid));
+    } catch (error) {
+      return handleError(res, error, 'remote-connection-ssh-public-key');
     }
   });
 

@@ -35,7 +35,7 @@ const REQUIRED_TRIGGERS = Object.freeze([
   'v2_mvp_benchmark_external_authorization_request_seals_append_only',
 ]);
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 32;
+const EXPECTED_MIGRATION_VERSION = 33;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -66,6 +66,12 @@ function createMvpBenchmarkReadinessRepository(database) {
           SELECT COUNT(*) AS count, MIN(version) AS min_version, MAX(version) AS max_version
           FROM schema_migrations
         `),
+        remoteAuthenticationColumnCount: database.prepare(`
+          SELECT count(*) AS count
+          FROM pragma_table_xinfo('remote_connections')
+          WHERE (name='auth_method_v2' AND type='TEXT' AND "notnull"=1)
+             OR (name='ssh_public_key' AND type='TEXT' AND "notnull"=0)
+        `).pluck(),
       });
     }
     return statements;
@@ -120,13 +126,15 @@ function createMvpBenchmarkReadinessRepository(database) {
         REQUIRED_TRIGGERS[8],
       );
       const migrationSummary = current.migrationSummary.get();
+      const remoteAuthenticationColumnCount = current.remoteAuthenticationColumnCount.get();
       return Object.freeze({
         contractsReady: tableCount === REQUIRED_TABLES.length
           && viewCount === 1
           && triggerCount === REQUIRED_TRIGGERS.length
           && migrationSummary.count === EXPECTED_MIGRATION_VERSION
           && migrationSummary.min_version === EXPECTED_FIRST_MIGRATION_VERSION
-          && migrationSummary.max_version === EXPECTED_MIGRATION_VERSION,
+          && migrationSummary.max_version === EXPECTED_MIGRATION_VERSION
+          && remoteAuthenticationColumnCount === 2,
         readyConnection: readyConnection === 1,
       });
     } catch {

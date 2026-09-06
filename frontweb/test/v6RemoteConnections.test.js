@@ -77,6 +77,7 @@ test('create and update payloads keep password only in explicit submission paylo
     host: 'workspace.example.invalid',
     port: 57339,
     username: 'worker',
+    authMethod: 'password',
     password: 'synthetic-password-value',
     comfyPort: 8188,
     remoteWorkDir: 'ai-drama-studio',
@@ -101,6 +102,7 @@ test('create and update payloads keep password only in explicit submission paylo
     host: 'gpu.example.invalid',
     port: 22,
     username: 'worker',
+    authMethod: 'password',
     password: '',
     comfyPort: 8188,
     remoteWorkDir: 'ai-drama-studio/jobs',
@@ -113,6 +115,7 @@ test('create and update payloads keep password only in explicit submission paylo
     host: 'gpu.example.invalid',
     port: 22,
     username: 'worker',
+    authMethod: 'password',
     password: 'must-not-be-sent',
     comfyPort: 8188,
     remoteWorkDir: 'ai-drama-studio/jobs',
@@ -120,6 +123,7 @@ test('create and update payloads keep password only in explicit submission paylo
   const replacement = remoteCredentialReplacementPayload(record(), 'replacement-password-value')
   assert.deepEqual(replacement, {
     expectedStateVersion: 0,
+    authMethod: 'password',
     secret: 'replacement-password-value',
   })
   assert.ok(Object.isFrozen(replacement))

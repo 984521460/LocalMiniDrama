@@ -31,6 +31,7 @@
             <el-tag :type="statusType(item.status)">{{ statusLabel(item.status) }}</el-tag>
           </div>
           <dl>
+            <div><dt>认证</dt><dd>{{ authMethodLabel(item.authMethod) }}</dd></div>
             <div><dt>凭据</dt><dd>{{ item.credentialConfigured ? '已配置' : '未配置' }}</dd></div>
             <div><dt>主机指纹</dt><dd>{{ item.hostFingerprint ? '已确认' : '待确认' }}</dd></div>
             <div><dt>ComfyUI</dt><dd>{{ item.comfyHost }}:{{ item.comfyPort }}</dd></div>
@@ -38,7 +39,8 @@
           </dl>
           <div class="card-actions">
             <el-button @click="openEdit(item)">编辑配置</el-button>
-            <el-button @click="openCredential(item)">更新凭据</el-button>
+            <el-button @click="openCredential(item)">管理凭据</el-button>
+            <el-button v-if="item.authMethod === 'publickey'" @click="viewPublicKey(item)">查看公钥</el-button>
             <el-button :loading="probingUid === item.uid" @click="probeHostIdentity(item)">验证主机</el-button>
           </div>
           <div class="remote-tools">
@@ -83,7 +85,13 @@
           <el-form-item label="端口" required><el-input-number v-model="form.port" :min="1" :max="65535" /></el-form-item>
         </div>
         <el-form-item label="用户名" required><el-input v-model="form.username" autocomplete="username" /></el-form-item>
-        <el-form-item v-if="!editing" label="SSH 密码" required>
+        <el-form-item v-if="!editing" label="SSH 认证" required>
+          <el-radio-group v-model="form.authMethod">
+            <el-radio value="publickey">SSH 密钥（推荐）</el-radio>
+            <el-radio value="password">动态密码</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="!editing && form.authMethod === 'password'" label="SSH 密码" required>
           <el-input
             v-model="form.password"
             type="password"
@@ -92,7 +100,18 @@
             placeholder="提交后只保存到 Windows 凭据管理器"
           />
         </el-form-item>
-        <el-alert v-else title="凭据已配置；编辑连接不会读取或回填密码。" type="success" :closable="false" />
+        <el-alert
+          v-else-if="!editing"
+          title="保存时由本机生成 Ed25519 密钥；私钥只写入 Windows 凭据管理器。"
+          type="success"
+          :closable="false"
+        />
+        <el-alert
+          v-else
+          :title="`当前使用${authMethodLabel(editing.authMethod)}；编辑连接不会读取或回填凭据。`"
+          type="success"
+          :closable="false"
+        />
         <div class="form-row">
           <el-form-item label="远端 ComfyUI"><el-input model-value="127.0.0.1" disabled /></el-form-item>
           <el-form-item label="ComfyUI 端口"><el-input-number v-model="form.comfyPort" :min="1" :max="65535" /></el-form-item>
@@ -115,9 +134,15 @@
       :close-on-click-modal="false"
       @closed="resetCredentialForm"
     >
-      <p>系统不会读取旧密码；新密码写入 Windows 凭据管理器后，将移除旧凭据。</p>
+      <p>切换成功后系统会移除旧凭据；任何私钥都不会返回到页面。</p>
       <el-form label-position="top">
-        <el-form-item label="新 SSH 密码" required>
+        <el-form-item label="SSH 认证" required>
+          <el-radio-group v-model="credentialAuthMethod">
+            <el-radio value="publickey">生成 Ed25519 密钥</el-radio>
+            <el-radio value="password">使用动态密码</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="credentialAuthMethod === 'password'" label="新 SSH 密码" required>
           <el-input
             v-model="credentialPassword"
             type="password"
@@ -125,10 +150,48 @@
             autocomplete="new-password"
           />
         </el-form-item>
+        <el-alert
+          v-else
+          title="系统将在本机生成新密钥；仅公开公钥，私钥只写入 Windows 凭据管理器。"
+          type="info"
+          :closable="false"
+        />
       </el-form>
       <template #footer>
         <el-button @click="credentialDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="credentialSaving" @click="saveCredential">更新凭据</el-button>
+        <el-button type="primary" :loading="credentialSaving" @click="saveCredential">
+          {{ credentialAuthMethod === 'publickey' ? '生成并切换' : '更新密码' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="publicKeyDialogVisible"
+      title="SSH 公钥"
+      width="min(680px, calc(100vw - 32px))"
+      :close-on-click-modal="false"
+      @closed="sshPublicKey = null"
+    >
+      <el-alert
+        title="只需把这条公钥加入远端 ~/.ssh/authorized_keys；它可以公开，私钥不会离开 Windows 凭据管理器。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+      <dl v-if="sshPublicKey" class="fingerprint-detail">
+        <div><dt>算法</dt><dd>{{ sshPublicKey.algorithm }}</dd></div>
+        <div><dt>公钥指纹</dt><dd><code>{{ sshPublicKey.fingerprint }}</code></dd></div>
+      </dl>
+      <el-input
+        v-if="sshPublicKey"
+        :model-value="sshPublicKey.publicKey"
+        type="textarea"
+        :rows="4"
+        readonly
+      />
+      <template #footer>
+        <el-button @click="publicKeyDialogVisible = false">关闭</el-button>
+        <el-button type="primary" :disabled="!sshPublicKey" @click="copyPublicKey">复制公钥</el-button>
       </template>
     </el-dialog>
 
@@ -180,7 +243,10 @@ const editing = ref(null)
 const credentialDialogVisible = ref(false)
 const credentialSaving = ref(false)
 const credentialConnection = ref(null)
+const credentialAuthMethod = ref('publickey')
 const credentialPassword = ref('')
+const publicKeyDialogVisible = ref(false)
+const sshPublicKey = ref(null)
 const probingUid = ref(null)
 const hostIdentityDialogVisible = ref(false)
 const hostIdentityCandidate = ref(null)
@@ -201,6 +267,7 @@ const form = reactive({
   host: '',
   port: 22,
   username: '',
+  authMethod: 'publickey',
   password: '',
   comfyPort: 8188,
   remoteWorkDir: 'ai-drama-studio',
@@ -209,7 +276,7 @@ const form = reactive({
 function resetForm() {
   editing.value = null
   Object.assign(form, {
-    name: '', host: '', port: 22, username: '', password: '',
+    name: '', host: '', port: 22, username: '', authMethod: 'publickey', password: '',
     comfyPort: 8188, remoteWorkDir: 'ai-drama-studio',
   })
 }
@@ -226,6 +293,7 @@ function openEdit(item) {
     host: item.host,
     port: item.port,
     username: item.username,
+    authMethod: item.authMethod,
     password: '',
     comfyPort: item.comfyPort,
     remoteWorkDir: item.remoteWorkDir,
@@ -235,11 +303,13 @@ function openEdit(item) {
 
 function resetCredentialForm() {
   credentialConnection.value = null
+  credentialAuthMethod.value = 'publickey'
   credentialPassword.value = ''
 }
 
 function openCredential(item) {
   credentialConnection.value = remoteConnectionView(item)
+  credentialAuthMethod.value = item.authMethod
   credentialPassword.value = ''
   credentialDialogVisible.value = true
 }
@@ -393,12 +463,14 @@ async function save() {
   saving.value = true
   const wasEditing = Boolean(editing.value)
   try {
-    if (editing.value) await remoteConnectionAPI.update(editing.value, form)
-    else await remoteConnectionAPI.create(form)
+    const saved = editing.value
+      ? await remoteConnectionAPI.update(editing.value, form)
+      : await remoteConnectionAPI.create(form)
     form.password = ''
     dialogVisible.value = false
     ElMessage.success(wasEditing ? '连接配置已更新' : '远程连接已创建')
     await load()
+    if (!wasEditing && saved.authMethod === 'publickey') await showPublicKey(saved.uid)
   } catch {
     form.password = ''
     ElMessage.error('连接配置保存失败，请检查字段后重试')
@@ -410,16 +482,45 @@ async function save() {
 async function saveCredential() {
   credentialSaving.value = true
   try {
-    await remoteConnectionAPI.replaceCredential(credentialConnection.value, credentialPassword.value)
+    const updated = await remoteConnectionAPI.replaceCredential(credentialConnection.value, {
+      authMethod: credentialAuthMethod.value,
+      password: credentialPassword.value,
+    })
     credentialPassword.value = ''
     credentialDialogVisible.value = false
     ElMessage.success('SSH 凭据已更新')
     await load()
+    if (updated.authMethod === 'publickey') await showPublicKey(updated.uid)
   } catch {
     credentialPassword.value = ''
     ElMessage.error('SSH 凭据更新失败，请重试')
   } finally {
     credentialSaving.value = false
+  }
+}
+
+async function showPublicKey(connectionUid) {
+  try {
+    sshPublicKey.value = await remoteConnectionAPI.getSshPublicKey(connectionUid)
+    publicKeyDialogVisible.value = true
+  } catch {
+    sshPublicKey.value = null
+    publicKeyDialogVisible.value = false
+    ElMessage.error('SSH 公钥读取失败')
+  }
+}
+
+async function viewPublicKey(item) {
+  await showPublicKey(item.uid)
+}
+
+async function copyPublicKey() {
+  if (!sshPublicKey.value) return
+  try {
+    await navigator.clipboard.writeText(sshPublicKey.value.publicKey)
+    ElMessage.success('SSH 公钥已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动选择公钥文本')
   }
 }
 
@@ -471,6 +572,10 @@ function statusType(status) {
   return ({ ready: 'success', changed: 'danger', error: 'danger', disabled: 'info' })[status] || 'warning'
 }
 
+function authMethodLabel(method) {
+  return method === 'publickey' ? 'SSH 密钥' : '动态密码'
+}
+
 onMounted(() => {
   void load()
   void loadH3Status()
@@ -494,7 +599,7 @@ dl { display: grid; gap: 10px; margin: 20px 0; }
 dl div { display: flex; justify-content: space-between; gap: 16px; }
 dt { color: var(--el-text-color-secondary); }
 dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
-.card-actions { display: flex; gap: 10px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .remote-tools { display: grid; gap: 14px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--el-border-color-lighter); }
 .form-row { display: grid; grid-template-columns: 1fr 180px; gap: 16px; }
 small { display: block; margin-top: 6px; color: var(--el-text-color-secondary); }

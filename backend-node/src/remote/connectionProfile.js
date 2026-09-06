@@ -92,8 +92,12 @@ function username(value) {
 }
 
 function authMethod(value) {
-  if (value !== 'password') fail();
+  if (value !== 'password' && value !== 'publickey') fail();
   return value;
+}
+
+function credentialKindForAuthMethod(value) {
+  return authMethod(value) === 'password' ? 'ssh_password' : 'ssh_private_key';
 }
 
 function secret(value) {
@@ -160,18 +164,20 @@ function createRemoteConnectionRequest(value) {
     'port',
     'username',
     'authMethod',
-    'secret',
     'comfyHost',
     'comfyPort',
     'remoteWorkDir',
-  ]);
+  ], ['secret']);
+  const method = authMethod(input.authMethod);
+  const hasSecret = Object.hasOwn(input, 'secret');
+  if ((method === 'password') !== hasSecret) fail();
   return Object.freeze({
     name: boundedTrimmedString(input.name, 120),
     host: host(input.host),
     port: port(input.port),
     username: username(input.username),
-    authMethod: authMethod(input.authMethod),
-    secret: secret(input.secret),
+    authMethod: method,
+    ...(method === 'password' ? { secret: secret(input.secret) } : {}),
     comfyHost: comfyHost(input.comfyHost),
     comfyPort: port(input.comfyPort),
     remoteWorkDir: remoteWorkDir(input.remoteWorkDir),
@@ -206,10 +212,14 @@ function createRemoteConnectionUpdateRequest(value) {
 }
 
 function createRemoteCredentialReplacementRequest(value) {
-  const input = exactObject(value, ['expectedStateVersion', 'secret']);
+  const input = exactObject(value, ['expectedStateVersion'], ['authMethod', 'secret']);
+  const method = Object.hasOwn(input, 'authMethod') ? authMethod(input.authMethod) : 'password';
+  const hasSecret = Object.hasOwn(input, 'secret');
+  if ((method === 'password') !== hasSecret) fail();
   return Object.freeze({
     expectedStateVersion: stateVersion(input.expectedStateVersion),
-    secret: secret(input.secret),
+    authMethod: method,
+    ...(method === 'password' ? { secret: secret(input.secret) } : {}),
   });
 }
 
@@ -264,7 +274,8 @@ function remoteConnectionEvidenceSha256(value) {
 function publicRemoteConnection(record, credentialDescriptor) {
   const persisted = createRemoteConnectionRecord(record);
   const descriptor = exactObject(credentialDescriptor, ['kind', 'configured']);
-  if (descriptor.kind !== 'ssh_password' || typeof descriptor.configured !== 'boolean') fail();
+  if (descriptor.kind !== credentialKindForAuthMethod(persisted.authMethod)
+    || typeof descriptor.configured !== 'boolean') fail();
   const { credentialRef: _credentialRef, ...publicFields } = persisted;
   return Object.freeze({
     ...publicFields,
@@ -275,6 +286,7 @@ function publicRemoteConnection(record, credentialDescriptor) {
 }
 
 module.exports = {
+  credentialKindForAuthMethod,
   createRemoteConnectionRecord,
   createRemoteConnectionRequest,
   createRemoteConnectionUpdateRequest,

@@ -18,8 +18,15 @@ const REF = `credential:v1:${UUID}`;
 test('credential references are canonical opaque UUIDv4 values', () => {
   assert.equal(createCredentialRef(UUID), REF);
   assert.equal(parseCredentialRef(REF), REF);
-  assert.deepEqual(CREDENTIAL_KINDS, ['api_key', 'provider_token', 'ssh_password', 'ssh_key_passphrase']);
+  assert.deepEqual(CREDENTIAL_KINDS, [
+    'api_key',
+    'provider_token',
+    'ssh_password',
+    'ssh_private_key',
+    'ssh_key_passphrase',
+  ]);
   assert.equal(parseCredentialKind('ssh_password'), 'ssh_password');
+  assert.equal(parseCredentialKind('ssh_private_key'), 'ssh_private_key');
 
   const invalid = [
     '', UUID, `credential:v2:${UUID}`, `credential:v1:${UUID.toUpperCase()}`,

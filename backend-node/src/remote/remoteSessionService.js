@@ -1,8 +1,11 @@
+const { types: { isProxy } } = require('node:util');
+
 const {
   V2RepositoryDataError,
   V2RepositoryNotFoundError,
 } = require('../repositories/v2/errors');
 const {
+  credentialKindForAuthMethod,
   parseRemoteConnectionUid,
   remoteConnectionEvidenceSha256,
 } = require('./connectionProfile');
@@ -123,9 +126,33 @@ function credentialBuffer(value) {
   return null;
 }
 
+function credentialDescriptorMatches(value, record) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || isProxy(value)) return false;
+  let descriptors;
+  let prototype;
+  try {
+    descriptors = Object.getOwnPropertyDescriptors(value);
+    prototype = Object.getPrototypeOf(value);
+  } catch {
+    return false;
+  }
+  const expected = ['ref', 'kind', 'configured'];
+  const keys = Reflect.ownKeys(descriptors);
+  if ((prototype !== Object.prototype && prototype !== null)
+    || keys.length !== expected.length
+    || keys.some((key) => typeof key !== 'string' || !expected.includes(key))) return false;
+  for (const key of expected) {
+    if (!descriptors[key]?.enumerable || !Object.hasOwn(descriptors[key], 'value')) return false;
+  }
+  return descriptors.ref.value === record.credentialRef
+    && descriptors.kind.value === credentialKindForAuthMethod(record.authMethod)
+    && descriptors.configured.value === true;
+}
+
 function createRemoteSessionService({ repository, vault, sshTransport, tunnelManager } = {}) {
   if (!repository || typeof repository !== 'object' || typeof repository.getConnection !== 'function'
     || !vault || typeof vault !== 'object' || typeof vault.read !== 'function'
+    || typeof vault.inspect !== 'function'
     || !sshTransport || typeof sshTransport !== 'object' || typeof sshTransport.connect !== 'function'
     || !tunnelManager || typeof tunnelManager !== 'object' || typeof tunnelManager.open !== 'function') {
     throw new TypeError('Remote session dependencies are invalid');
@@ -145,6 +172,9 @@ function createRemoteSessionService({ repository, vault, sshTransport, tunnelMan
         throw createError('REMOTE_SESSION_NOT_READY');
       }
       try {
+        if (!credentialDescriptorMatches(await vault.inspect(record.credentialRef), record)) {
+          throw createError('REMOTE_SESSION_CREDENTIAL_FAILED');
+        }
         secret = credentialBuffer(await vault.read(record.credentialRef));
       } catch {
         throw createError('REMOTE_SESSION_CREDENTIAL_FAILED');
@@ -161,6 +191,7 @@ function createRemoteSessionService({ repository, vault, sshTransport, tunnelMan
             username: record.username,
           }),
           expectedFingerprint: record.hostFingerprint,
+          authMethod: record.authMethod,
           secret,
         });
       } catch (error) {

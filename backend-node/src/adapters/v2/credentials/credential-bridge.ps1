@@ -44,7 +44,7 @@ $CredentialTypeGeneric = 1
 $CredentialPersistLocalMachine = 2
 $ErrorNotFound = 1168
 $TargetPattern = '^LocalMiniDrama/v1/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-$UsernamePattern = '^(api_key|provider_token|ssh_password|ssh_key_passphrase)$'
+$UsernamePattern = '^(api_key|provider_token|ssh_password|ssh_private_key|ssh_key_passphrase)$'
 
 function Write-BridgeResult {
     param([Parameter(Mandatory = $true)] [hashtable] $Value)

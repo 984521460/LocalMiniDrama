@@ -299,6 +299,9 @@ test('Windows credential layers enforce the 2560-byte native blob limit', async 
     runProcess: async () => ({ code: 0, stdout: '{"ok":true}', stderr: '' }),
   });
   await bridge.write(FIXED_TARGET, 'provider_token', Buffer.alloc(2560, 1));
+  await bridge.write(FIXED_TARGET, 'ssh_private_key', Buffer.from(
+    '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture-only\n-----END OPENSSH PRIVATE KEY-----\n',
+  ));
   await assert.rejects(() => bridge.write(FIXED_TARGET, 'provider_token', Buffer.alloc(2561, 1)));
 });
 
@@ -315,6 +318,30 @@ test('PowerShell native read clears the credential blob before CredFree', () => 
   const freeIndex = readFunction.indexOf('CredFree($credentialPointer)');
   assert.ok(clearIndex >= 0, 'native credential blob must be explicitly overwritten');
   assert.ok(clearIndex < freeIndex, 'native credential blob must be cleared before CredFree');
+});
+
+test('PowerShell bridge admits the SSH private-key kind in both validation layers', async () => {
+  const calls = [];
+  const bridge = new PowerShellCredentialBridge({
+    platform: 'win32',
+    scriptPath: 'C:\\trusted\\credential-bridge.ps1',
+    runProcess: async (request) => {
+      calls.push(JSON.parse(request.input));
+      return { code: 0, stdout: '{"ok":true}', stderr: '' };
+    },
+  });
+  const privateKey = Buffer.from(
+    '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture-only\n-----END OPENSSH PRIVATE KEY-----\n',
+  );
+  await bridge.write(FIXED_TARGET, 'ssh_private_key', privateKey);
+  assert.equal(calls[0].username, 'ssh_private_key');
+  assert.equal(calls[0].secretBase64, privateKey.toString('base64'));
+
+  const script = fs.readFileSync(path.join(
+    __dirname,
+    '../src/adapters/v2/credentials/credential-bridge.ps1',
+  ), 'utf8');
+  assert.match(script, /\|ssh_private_key\|/u);
 });
 
 test('PowerShell bridge keeps secrets out of process arguments and validates responses', async () => {
