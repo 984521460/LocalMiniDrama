@@ -177,8 +177,9 @@ export function remoteConnectionCreatePayload(value) {
 export function remoteConnectionUpdatePayload(record, value) {
   const current = remoteConnectionView(record)
   const input = exactObject(value, [
-    'name', 'host', 'port', 'username', 'comfyPort', 'remoteWorkDir',
+    'name', 'host', 'port', 'username', 'password', 'comfyPort', 'remoteWorkDir',
   ])
+  if (input.password !== '') fail()
   return Object.freeze({
     expectedStateVersion: current.stateVersion,
     name: text(input.name, 120),

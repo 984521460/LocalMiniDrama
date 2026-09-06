@@ -101,12 +101,22 @@ test('create and update payloads keep password only in explicit submission paylo
     host: 'gpu.example.invalid',
     port: 22,
     username: 'worker',
+    password: '',
     comfyPort: 8188,
     remoteWorkDir: 'ai-drama-studio/jobs',
   })
   assert.equal(update.expectedStateVersion, 0)
   assert.equal(Object.hasOwn(update, 'password'), false)
   assert.equal(Object.hasOwn(update, 'secret'), false)
+  assert.throws(() => remoteConnectionUpdatePayload(record(), {
+    name: 'Renamed',
+    host: 'gpu.example.invalid',
+    port: 22,
+    username: 'worker',
+    password: 'must-not-be-sent',
+    comfyPort: 8188,
+    remoteWorkDir: 'ai-drama-studio/jobs',
+  }))
   const replacement = remoteCredentialReplacementPayload(record(), 'replacement-password-value')
   assert.deepEqual(replacement, {
     expectedStateVersion: 0,
