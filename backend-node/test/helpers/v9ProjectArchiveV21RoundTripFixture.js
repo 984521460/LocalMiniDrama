@@ -19,6 +19,7 @@ const {
 const { createLocalMediaExportFixture } = require('./v8LocalMediaFixture');
 const { uid: v8Uid } = require('./v8AudioFixture');
 const { uid } = require('./v2RepositoryDatabase');
+const { seedArchiveLocalRecovery } = require('./archiveLocalRecoveryFixture');
 
 const CREDENTIAL_REF = `credential:v1:${uid(19990)}`;
 
@@ -722,6 +723,7 @@ async function seedProjectArchiveV21RoundTripFixture(t, database, storageRoot) {
     },
   });
   addLegacyRecords(database, fixture);
+  await seedArchiveLocalRecovery(t, fixture, storageRoot);
   const promptFixture = createPromptSemanticFixture(fixture, 19010);
   const { voiceProfile } = addVoiceAndBgm(fixture, storageRoot);
   addGenerationHistory(fixture, promptFixture, storageRoot);

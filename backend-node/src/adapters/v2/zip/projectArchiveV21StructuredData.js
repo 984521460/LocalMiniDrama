@@ -2,6 +2,9 @@
 
 const { types } = require('node:util');
 
+const { characterCandidateSourceSha256 } = require('../../../characterCandidates/execution/source');
+const { projectLocalRecoveryItem } = require('../../../remoteAssets/localRecoveryItem');
+
 const { archiveError, isProjectArchiveError } = require('./errors');
 const {
   assertProjectStructuredDomainEvidence,
@@ -87,6 +90,15 @@ const STRUCTURED_RECORD_SPECS = Object.freeze({
     'asset_version_uid', 'logical_uri', 'relative_path', 'content_sha256',
     'byte_length', 'width', 'height', 'created_at_epoch_ms',
   ]),
+  localRecoveryImportAttempts: spec('local_recovery_import_attempts', [
+    'operation_uid', 'drama_uid', 'character_uid', 'package_sha256',
+    'manifest_sha256', 'remote_task_uid', 'source_json', 'source_sha256',
+    'state', 'error_code', 'attempt_count', 'created_at_epoch_ms', 'updated_at_epoch_ms',
+  ], { source_json: 'object' }),
+  localRecoveryPackages: spec('local_recovery_packages', [
+    'uid', 'drama_uid', 'character_uid', 'package_sha256', 'manifest_sha256',
+    'remote_task_uid', 'source_json', 'source_sha256', 'items_json', 'created_at',
+  ], { source_json: 'object', items_json: 'array' }),
   characterIdentityLockEvents: spec('character_identity_lock_events', [
     'uid', 'character_uid', 'candidate_uid', 'identity_version_uid', 'operation',
     'state_version', 'changed_at_epoch_ms',
@@ -166,6 +178,8 @@ const OWNER_FILTERS = Object.freeze({
   characterCandidateResults: 'EXISTS (SELECT 1 FROM character_candidate_batches AS batch JOIN characters AS owner ON owner.uid = batch.character_uid JOIN dramas AS drama ON drama.id = owner.drama_id WHERE batch.uid = row.batch_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)',
   characterCandidateExecutions: 'row.drama_uid = @dramaUid',
   characterCandidateExecutionItems: 'EXISTS (SELECT 1 FROM character_candidate_executions AS execution WHERE execution.operation_uid = row.operation_uid AND execution.drama_uid = @dramaUid)',
+  localRecoveryImportAttempts: "row.drama_uid = @dramaUid AND row.state = 'succeeded'",
+  localRecoveryPackages: 'row.drama_uid = @dramaUid',
   characterIdentityLockEvents: "EXISTS (SELECT 1 FROM characters AS owner JOIN dramas AS drama ON drama.id = owner.drama_id WHERE owner.uid = row.character_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)",
   characterReferencePackages: "EXISTS (SELECT 1 FROM characters AS owner JOIN dramas AS drama ON drama.id = owner.drama_id WHERE owner.uid = row.character_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)",
   characterReferencePackageItems: 'EXISTS (SELECT 1 FROM character_reference_packages AS package JOIN characters AS owner ON owner.uid = package.character_uid JOIN dramas AS drama ON drama.id = owner.drama_id WHERE package.uid = row.package_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)',
@@ -322,6 +336,7 @@ function recordIdentity(name, row) {
   if (Object.hasOwn(row, 'uid')) return row.uid;
   if (name === 'characterCandidateExecutions') return row.operation_uid;
   if (name === 'characterCandidateExecutionItems') return `${row.operation_uid}:${row.ordinal}`;
+  if (name === 'localRecoveryImportAttempts') return row.operation_uid;
   if (name === 'characterReferencePackageExecutions') return row.operation_uid;
   if (name === 'shotContinuityCharacterRefs' || name === 'shotContinuityPropRefs') {
     return `${row.snapshot_uid}:${row.ordinal}`;
@@ -601,6 +616,65 @@ function assertReferences(records, dramaUid) {
     }
   }
 
+  const localAttemptByUid = new Map(
+    records.localRecoveryImportAttempts.map((row) => [row.operation_uid, row]),
+  );
+  if (localAttemptByUid.size !== records.localRecoveryPackages.length) invalidManifest();
+  for (const attempt of records.localRecoveryImportAttempts) {
+    let sourceSha256;
+    try { sourceSha256 = characterCandidateSourceSha256(attempt.source_json); } catch {
+      invalidManifest();
+    }
+    if (attempt.drama_uid !== dramaUid || attempt.state !== 'succeeded'
+      || attempt.error_code !== null || attempt.attempt_count < 1
+      || sourceSha256 !== attempt.source_sha256
+      || attempt.source_json.dramaUid !== attempt.drama_uid
+      || attempt.source_json.characterUid !== attempt.character_uid) invalidManifest();
+  }
+  for (const packageRecord of records.localRecoveryPackages) {
+    const attempt = localAttemptByUid.get(packageRecord.uid);
+    let sourceSha256;
+    try { sourceSha256 = characterCandidateSourceSha256(packageRecord.source_json); } catch {
+      invalidManifest();
+    }
+    if (!attempt || packageRecord.drama_uid !== dramaUid
+      || packageRecord.drama_uid !== attempt.drama_uid
+      || packageRecord.character_uid !== attempt.character_uid
+      || packageRecord.package_sha256 !== attempt.package_sha256
+      || packageRecord.manifest_sha256 !== attempt.manifest_sha256
+      || packageRecord.remote_task_uid !== attempt.remote_task_uid
+      || packageRecord.source_sha256 !== attempt.source_sha256
+      || sourceSha256 !== packageRecord.source_sha256
+      || packageRecord.source_json.dramaUid !== packageRecord.drama_uid
+      || packageRecord.source_json.characterUid !== packageRecord.character_uid
+      || packageRecord.items_json.length < 1 || packageRecord.items_json.length > 16) {
+      invalidManifest();
+    }
+    for (let index = 0; index < packageRecord.items_json.length; index += 1) {
+      let item;
+      try {
+        item = projectLocalRecoveryItem(packageRecord.items_json[index],
+          packageRecord.character_uid, packageRecord.uid, index);
+      } catch { invalidManifest(); }
+      const keys = [
+        'ordinal', 'assetUid', 'assetVersionUid', 'logicalUri', 'relativePath',
+        'sha256', 'byteLength', 'width', 'height', 'originalName', 'originalSha256',
+      ];
+      exactObjectDescriptors(item, keys);
+      const relativePath = `characters/${packageRecord.character_uid}/local-recoveries/${packageRecord.uid}/${index}.png`;
+      if (item.ordinal !== index || !UUID_V4.test(item.assetUid)
+        || !UUID_V4.test(item.assetVersionUid) || item.logicalUri !== `asset://${relativePath}`
+        || item.relativePath !== relativePath || !/^[0-9a-f]{64}$/u.test(item.sha256)
+        || !/^[0-9a-f]{64}$/u.test(item.originalSha256)
+        || typeof item.originalName !== 'string' || item.originalName.length < 1
+        || item.originalName.length > 128
+        || !Number.isSafeInteger(item.byteLength) || item.byteLength < 1
+        || item.byteLength > 16 * 1024 * 1024
+        || !Number.isSafeInteger(item.width) || item.width < 1
+        || !Number.isSafeInteger(item.height) || item.height < 1) invalidManifest();
+    }
+  }
+
   const licenseByUid = new Map(records.bgmLicenses.map((row) => [row.uid, row]));
   for (const row of records.bgmTracks) {
     const license = licenseByUid.get(row.license_uid);
@@ -655,6 +729,7 @@ function orderBy(name) {
   }
   if (name === 'characterCandidateExecutions') return 'row.operation_uid';
   if (name === 'characterCandidateExecutionItems') return 'row.operation_uid, row.ordinal';
+  if (name === 'localRecoveryImportAttempts') return 'row.operation_uid';
   if (name === 'characterReferencePackageExecutions') return 'row.operation_uid';
   return 'row.uid';
 }
@@ -672,6 +747,13 @@ function parseRow(name, row) {
       }
     }
     record[column] = value;
+  }
+  if (name === 'localRecoveryPackages') {
+    try {
+      record.items_json = record.items_json.map((item, index) => (
+        projectLocalRecoveryItem(item, record.character_uid, record.uid, index)
+      ));
+    } catch { invalidManifest(); }
   }
   return record;
 }

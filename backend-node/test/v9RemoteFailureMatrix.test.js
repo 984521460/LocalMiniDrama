@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const { Writable } = require('node:stream');
 
 const { createRemoteTaskRetryClassification } = require('../src/remote/remoteRetryPolicy');
 const {
@@ -21,6 +22,18 @@ async function submittedTask(fixture) {
 
 test('P9-03 disk exhaustion during download removes the partial file and requires reconciliation', async (t) => {
   const fixture = await createCoordinatorTransferFailureFixture(t, 'download_disk_full');
+  const originalWriteStream = fs.createWriteStream;
+  let diskFaultHits = 0;
+  t.after(() => { fs.createWriteStream = originalWriteStream; });
+  fs.createWriteStream = (filename, options) => {
+    if (String(filename).startsWith(fixture.localRoot + path.sep)) {
+      return new Writable({ write(_chunk, _encoding, callback) {
+        diskFaultHits += 1;
+        callback(Object.assign(new Error('synthetic disk full'), { code: 'ENOSPC' }));
+      } });
+    }
+    return originalWriteStream(filename, options);
+  };
   const content = Buffer.from('synthetic remote video bytes');
   const remoteRelativePath = `ai-drama-studio/jobs/${fixture.taskUid}/output/result.mp4`;
   const remotePath = path.join(
@@ -35,6 +48,7 @@ test('P9-03 disk exhaustion during download removes the partial file and require
     fixture.coordinator.execute(fixture.taskUid, fixture.executeRequest),
     { code: 'REMOTE_TASK_UNEXPECTED' },
   );
+  assert.ok(diskFaultHits > 0);
   assert.equal(fs.existsSync(path.join(
     fixture.localRoot, ...fixture.localOutputRelativePath.split('/'),
   )), false);

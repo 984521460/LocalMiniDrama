@@ -1,6 +1,9 @@
 const { createHash, randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pipeline } = require('node:stream/promises');
+const { Transform } = require('node:stream');
+const { acquireDownloadOwnership } = require('./downloadOwnership');
 const { types: { isProxy } } = require('node:util');
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -137,6 +140,21 @@ function safeFileStat(stats) {
   }
 }
 
+function sameOpenedFile(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size;
+}
+
+function sameRemoteSnapshot(left, right) {
+  if (!safeFileStat(left) || !safeFileStat(right) || left.size !== right.size) return false;
+  // ssh2 ATTRS uses seconds in mtime; local transports expose mtimeMs.
+  for (const field of ['mtime', 'mtimeMs', 'modifyTime']) {
+    if (Number.isFinite(left[field]) && Number.isFinite(right[field])) {
+      return left[field] === right[field];
+    }
+  }
+  return false;
+}
+
 async function ensureRemoteDirectories(sftp, directorySegments, baseSegmentCount) {
   for (let index = 1; index <= directorySegments.length; index += 1) {
     const current = directorySegments.slice(0, index).join('/');
@@ -259,7 +277,7 @@ async function localDestination(localRoot, segments) {
   return target;
 }
 
-function transferInput(value) {
+function transferInput(value, { optionalHash = false } = {}) {
   const input = exactObject(value, [
     'session',
     'localRelativePath',
@@ -282,7 +300,8 @@ function transferInput(value) {
     localFileSegments,
     remoteSegments,
     baseSegmentCount: workSegments.length,
-    expectedSha256: expectedHash(input.expectedSha256),
+    expectedSha256: optionalHash && input.expectedSha256 === null
+      ? null : expectedHash(input.expectedSha256),
   });
 }
 
@@ -349,7 +368,7 @@ function scopedTransferInput(value) {
   return Object.freeze({
     session: input.session,
     localFileSegments: relativeSegments(input.localRelativePath),
-    expectedSha256: expectedHash(input.expectedSha256),
+    expectedSha256: input.expectedSha256 === null ? null : expectedHash(input.expectedSha256),
     ...scopedRemoteSegments(input),
   });
 }
@@ -360,6 +379,138 @@ function assertBoundedRemoteFile(stats, maxBytes) {
     throw createError('SFTP_TRANSFER_IO_FAILED');
   }
   return size;
+}
+
+function assertRemoteFile(stats) {
+  if (!safeFileStat(stats) || !Number.isSafeInteger(stats.size) || stats.size < 1) {
+    throw createError('SFTP_TRANSFER_IO_FAILED');
+  }
+  return stats.size;
+}
+
+async function discardUnsafePartial(filename) {
+  try {
+    const stats = await fs.promises.lstat(filename);
+    if (!stats.isFile() || stats.isSymbolicLink()) {
+      throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+    }
+    await fs.promises.unlink(filename);
+  } catch (error) {
+    if (isMissing(error)) return;
+    throw error;
+  }
+}
+
+async function downloadRemoteOnce({
+  sftp, remotePath, target, remoteStats, expectedSha256, allowResume,
+}) {
+  const expectedBytes = remoteStats.size;
+  const temporary = path.join(path.dirname(target), `.${path.basename(target)}.part`);
+  const privateFile = `${temporary}.${randomUUID()}`;
+  let lock;
+  let handle;
+  let offset = 0;
+  let preservePartial = false;
+  try {
+    try { lock = await acquireDownloadOwnership({ target, temporary, privateFile, allowResume,
+      binding: createHash('sha256').update(JSON.stringify([remotePath, expectedSha256, expectedBytes])).digest('hex'),
+    }); } catch {
+      throw createError('SFTP_TRANSFER_CONFLICT');
+    }
+    let before = null;
+    try { before = await fs.promises.lstat(temporary, { bigint: true }); } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    if (before) {
+      if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n
+        || before.size < 0n || before.size > BigInt(expectedBytes)) {
+        throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+      }
+    }
+    // Never write through a pre-existing pathname, even after lstat/fstat:
+    // another local name may be hard-linked to it between those checks.
+    handle = await fs.promises.open(privateFile, 'wx+');
+    if (before) {
+      const prior = await fs.promises.open(temporary, 'r');
+      try {
+        const opened = await prior.stat({ bigint: true });
+        if (!opened.isFile() || opened.nlink !== 1n || !sameOpenedFile(before, opened)) {
+          throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+        }
+        if (allowResume && opened.size > 0n) {
+          const buffer = Buffer.alloc(64 * 1024);
+          while (offset < Number(opened.size)) {
+            const { bytesRead } = await prior.read(buffer, 0,
+              Math.min(buffer.length, Number(opened.size) - offset), offset);
+            if (!bytesRead) throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+            await handle.write(buffer, 0, bytesRead, offset);
+            offset += bytesRead;
+          }
+        }
+        const current = await fs.promises.lstat(temporary, { bigint: true });
+        if (current.nlink !== 1n || current.isSymbolicLink()
+          || !sameOpenedFile(before, current)
+          || !sameOpenedFile(before, await prior.stat({ bigint: true }))) {
+          throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+        }
+      } finally { await prior.close(); }
+      await fs.promises.unlink(temporary);
+    }
+    if (offset < expectedBytes) {
+      let received = offset;
+      let overflow = false;
+      const limit = new Transform({
+        transform(chunk, encoding, callback) {
+          if (chunk.length > expectedBytes - received) {
+            overflow = true;
+            callback(createError('SFTP_TRANSFER_IO_FAILED'));
+          } else {
+            received += chunk.length;
+            callback(null, chunk);
+          }
+        },
+      });
+      const remoteStream = sftp.createReadStream(remotePath, offset === 0 ? undefined : { start: offset });
+      const localStream = fs.createWriteStream(privateFile, {
+        fd: handle.fd, start: offset, flags: 'r+', autoClose: false,
+      });
+      try { await pipeline(remoteStream, limit, localStream); } catch (error) {
+        preservePartial = allowResume && !overflow;
+        throw error;
+      }
+      await handle.sync();
+    }
+    const completed = await handle.stat({ bigint: true });
+    if (completed.size !== BigInt(expectedBytes)) throw createError('SFTP_TRANSFER_IO_FAILED');
+    await handle.close();
+    handle = null;
+    const localHash = await hashReadable(fs.createReadStream(privateFile));
+    if (localHash.bytes !== expectedBytes
+      || (expectedSha256 !== null && localHash.sha256 !== expectedSha256)) {
+      throw createError('SFTP_TRANSFER_HASH_MISMATCH');
+    }
+    const after = await lstatMaybe(sftp, remotePath);
+    if (!sameRemoteSnapshot(remoteStats, after)) {
+      throw createError('SFTP_TRANSFER_IO_FAILED');
+    }
+    const finalStats = await fs.promises.lstat(privateFile);
+    if (!finalStats.isFile() || finalStats.isSymbolicLink() || finalStats.nlink !== 1) {
+      throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+    }
+    await fs.promises.link(privateFile, target);
+    return Object.freeze({ sha256: localHash.sha256, bytes: localHash.bytes });
+  } finally {
+    try { await handle?.close(); } catch { /* cleanup below */ }
+    if (lock) {
+      try {
+        if (preservePartial) await fs.promises.link(privateFile, temporary);
+      } finally {
+        try {
+          await fs.promises.unlink(privateFile).catch((error) => { if (!isMissing(error)) throw error; });
+        } finally { await lock.release(); }
+      }
+    }
+  }
 }
 
 function translate(error) {
@@ -429,9 +580,8 @@ function createSftpTransfer({ localRoot } = {}) {
 
   async function downloadFile(value) {
     let sftp;
-    let temporaryLocalPath;
     try {
-      const input = transferInput(value);
+      const input = transferInput(value, { optionalHash: true });
       const target = await localDestination(localRoot, input.localFileSegments);
       sftp = await input.session.sftp();
       const remotePath = input.remoteSegments.join('/');
@@ -448,22 +598,11 @@ function createSftpTransfer({ localRoot } = {}) {
       if (remoteReal !== baseReal && !remoteReal.startsWith(`${baseReal}/`)) {
         throw createError('SFTP_TRANSFER_PATH_UNSAFE');
       }
-      const remoteHash = await hashReadable(sftp.createReadStream(remotePath));
-      if (remoteHash.sha256 !== input.expectedSha256) {
-        throw createError('SFTP_TRANSFER_HASH_MISMATCH');
-      }
-      temporaryLocalPath = path.join(
-        path.dirname(target),
-        `.${path.basename(target)}.${randomUUID()}.part`,
-      );
-      await call(sftp, 'fastGet', remotePath, temporaryLocalPath);
-      const localHash = await hashReadable(fs.createReadStream(temporaryLocalPath));
-      if (localHash.sha256 !== input.expectedSha256 || localHash.bytes !== remoteHash.bytes) {
-        throw createError('SFTP_TRANSFER_HASH_MISMATCH');
-      }
-      await fs.promises.link(temporaryLocalPath, target);
-      await fs.promises.unlink(temporaryLocalPath);
-      temporaryLocalPath = null;
+      assertRemoteFile(remoteStats);
+      const localHash = await downloadRemoteOnce({
+        sftp, remotePath, target, remoteStats,
+        expectedSha256: input.expectedSha256, allowResume: input.expectedSha256 !== null,
+      });
       return Object.freeze({
         localRelativePath: input.localFileSegments.join('/'),
         sha256: localHash.sha256,
@@ -472,9 +611,6 @@ function createSftpTransfer({ localRoot } = {}) {
     } catch (error) {
       throw translate(error);
     } finally {
-      if (temporaryLocalPath) {
-        try { await fs.promises.unlink(temporaryLocalPath); } catch { /* best-effort temp cleanup */ }
-      }
       try { sftp?.end?.(); } catch { /* bounded session cleanup */ }
     }
   }
@@ -552,7 +688,6 @@ function createSftpTransfer({ localRoot } = {}) {
 
   async function downloadScopedFile(value) {
     let sftp;
-    let temporaryLocalPath;
     try {
       const input = scopedTransferInput(value);
       const target = await localDestination(localRoot, input.localFileSegments);
@@ -563,10 +698,8 @@ function createSftpTransfer({ localRoot } = {}) {
         input.remoteSegments.slice(0, -1),
         input.baseSegmentCount,
       );
-      const expectedBytes = assertBoundedRemoteFile(
-        await lstatMaybe(sftp, remotePath),
-        input.maxBytes,
-      );
+      const remoteStats = await lstatMaybe(sftp, remotePath);
+      assertBoundedRemoteFile(remoteStats, input.maxBytes);
       const baseReal = path.posix.normalize(await call(
         sftp,
         'realpath',
@@ -576,22 +709,10 @@ function createSftpTransfer({ localRoot } = {}) {
       if (remoteReal !== baseReal && !remoteReal.startsWith(`${baseReal}/`)) {
         throw createError('SFTP_TRANSFER_PATH_UNSAFE');
       }
-      const remoteHash = await hashReadable(sftp.createReadStream(remotePath));
-      if (remoteHash.sha256 !== input.expectedSha256 || remoteHash.bytes !== expectedBytes) {
-        throw createError('SFTP_TRANSFER_HASH_MISMATCH');
-      }
-      temporaryLocalPath = path.join(
-        path.dirname(target),
-        `.${path.basename(target)}.${randomUUID()}.part`,
-      );
-      await call(sftp, 'fastGet', remotePath, temporaryLocalPath);
-      const localHash = await hashReadable(fs.createReadStream(temporaryLocalPath));
-      if (localHash.sha256 !== input.expectedSha256 || localHash.bytes !== expectedBytes) {
-        throw createError('SFTP_TRANSFER_HASH_MISMATCH');
-      }
-      await fs.promises.link(temporaryLocalPath, target);
-      await fs.promises.unlink(temporaryLocalPath);
-      temporaryLocalPath = null;
+      const localHash = await downloadRemoteOnce({
+        sftp, remotePath, target, remoteStats,
+        expectedSha256: input.expectedSha256, allowResume: input.expectedSha256 !== null,
+      });
       return Object.freeze({
         localRelativePath: input.localFileSegments.join('/'),
         sha256: localHash.sha256,
@@ -600,9 +721,6 @@ function createSftpTransfer({ localRoot } = {}) {
     } catch (error) {
       throw translate(error);
     } finally {
-      if (temporaryLocalPath) {
-        try { await fs.promises.unlink(temporaryLocalPath); } catch { /* best-effort temp cleanup */ }
-      }
       try { sftp?.end?.(); } catch { /* bounded session cleanup */ }
     }
   }

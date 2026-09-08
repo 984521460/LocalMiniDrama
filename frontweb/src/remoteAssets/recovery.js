@@ -33,7 +33,7 @@ const ITEM_KEYS = Object.freeze([
 ])
 const RECOVERY_KEYS = Object.freeze([
   'schemaVersion', 'operationUid', 'requestSha256', 'request', 'sourceSha256', 'source',
-  'state', 'quarantineStatus', 'manifestSha256', 'manifest', 'itemCount', 'errorCode',
+  'sourceCurrent', 'state', 'quarantineStatus', 'manifestSha256', 'manifest', 'itemCount', 'errorCode',
   'createdAtEpochMs', 'updatedAtEpochMs', 'items',
 ])
 
@@ -158,7 +158,7 @@ function recoveryView(value) {
   const request = remoteAssetRecoveryRequestView(input.request)
   if (input.schemaVersion !== 'remote-asset-recovery.v1'
     || input.operationUid !== request.operationUid || !STATES.has(input.state)
-    || input.quarantineStatus !== 'unapproved') invalid()
+    || typeof input.sourceCurrent !== 'boolean' || input.quarantineStatus !== 'unapproved') invalid()
   hash(input.requestSha256); hash(input.sourceSha256)
   const source = sourceView(input.source, request)
   const createdAtEpochMs = integer(input.createdAtEpochMs, 0, 253402300799999)

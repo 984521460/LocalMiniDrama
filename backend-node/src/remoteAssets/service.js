@@ -27,6 +27,10 @@ const {
   parseRemoteAssetRecoveryRequest,
   remoteAssetRecoveryRequestSha256,
 } = require('./recoveryRequest');
+const {
+  createQuarantineAssetInstaller,
+  QuarantineAssetInstallerError,
+} = require('./quarantineAssetInstaller');
 
 const MANIFEST_MAX_BYTES = 256 * 1024;
 const TASK_SCOPE = 'character-candidates';
@@ -81,16 +85,13 @@ function createRemoteAssetRecoveryService({
     throw new TypeError('Remote asset recovery dependencies are invalid');
   }
   const openSession = exactMethod(sessionService, 'openSession', 'Remote asset recovery session is invalid');
-  const inspectScopedRemoteFile = exactMethod(
-    transfer, 'inspectScopedRemoteFile', 'Remote asset recovery transfer is invalid',
-  );
   const downloadScopedFile = exactMethod(
     transfer, 'downloadScopedFile', 'Remote asset recovery transfer is invalid',
   );
   const readBounded = exactMethod(storage, 'readBounded', 'Remote asset recovery storage is invalid');
-  const write = exactMethod(storage, 'write', 'Remote asset recovery storage is invalid');
   const remove = exactMethod(storage, 'remove', 'Remote asset recovery storage is invalid');
   const resolver = createCharacterCandidateSourceResolver({ repositories });
+  const installer = createQuarantineAssetInstaller({ repositories, storage, createUid });
   const active = new Map();
 
   function stagingLocator(operationUid, name) {
@@ -149,7 +150,7 @@ function createRemoteAssetRecoveryService({
   async function terminal(recovery) {
     if (recovery.state === 'succeeded') {
       await verifyLocal(recovery);
-      return Object.freeze({ recovery });
+      return Object.freeze({ recovery: historyProjection(recovery) });
     }
     if (recovery.state === 'failed') fail(recovery.errorCode);
     if (recovery.state === 'submission_unknown') {
@@ -171,6 +172,14 @@ function createRemoteAssetRecoveryService({
       }
       throw error;
     }
+  }
+
+  function historyProjection(recovery) {
+    let sourceCurrent = false;
+    try {
+      sourceCurrent = resolver.resolve(recovery.request).sourceSha256 === recovery.sourceSha256;
+    } catch { /* historical recovery remains readable after source drift */ }
+    return Object.freeze({ ...recovery, sourceCurrent });
   }
 
   function currentConnection(request) {
@@ -216,6 +225,7 @@ function createRemoteAssetRecoveryService({
   }
 
   async function run(request) {
+    const requestSha256 = remoteAssetRecoveryRequestSha256(request);
     const prior = (() => {
       try { return repositories.remoteAssetRecoveries.get(request.operationUid); } catch (error) {
         if (error instanceof V2RepositoryNotFoundError) return null;
@@ -223,25 +233,38 @@ function createRemoteAssetRecoveryService({
         throw error;
       }
     })();
+    const retryable = prior?.state === 'failed'
+      && prior.errorCode === 'REMOTE_ASSET_RECOVERY_REMOTE_UNAVAILABLE';
     if (prior) {
-      const done = await terminal(prior);
-      if (done) return done;
-      fail('REMOTE_ASSET_RECOVERY_IN_PROGRESS');
+      if (prior.requestSha256 !== requestSha256) {
+        fail('REMOTE_ASSET_RECOVERY_CONFLICT');
+      }
+      if (!retryable) {
+        const done = await terminal(prior);
+        if (done) return done;
+        fail('REMOTE_ASSET_RECOVERY_IN_PROGRESS');
+      }
     }
 
     const connection = currentConnection(request);
     const source = currentSource(request);
-    const requestSha256 = remoteAssetRecoveryRequestSha256(request);
     let reservation;
     try {
-      reservation = repositories.remoteAssetRecoveries.reserve({
-        request,
-        requestSha256,
-        source: source.source,
-        sourceSha256: source.sourceSha256,
-      });
+      reservation = retryable
+        ? Object.freeze({
+          created: true,
+          recovery: repositories.remoteAssetRecoveries.retryTransfer(request.operationUid),
+        })
+        : repositories.remoteAssetRecoveries.reserve({
+          request,
+          requestSha256,
+          source: source.source,
+          sourceSha256: source.sourceSha256,
+        });
     } catch (error) {
-      if (error instanceof V2RepositoryConflictError) fail('REMOTE_ASSET_RECOVERY_CONFLICT');
+      if (error instanceof V2RepositoryConflictError) {
+        fail(retryable ? 'REMOTE_ASSET_RECOVERY_IN_PROGRESS' : 'REMOTE_ASSET_RECOVERY_CONFLICT');
+      }
       if (error instanceof V2RepositoryDataError) fail('REMOTE_ASSET_RECOVERY_DATA_INVALID');
       throw error;
     }
@@ -250,7 +273,6 @@ function createRemoteAssetRecoveryService({
     if (!reservation.created) fail('REMOTE_ASSET_RECOVERY_IN_PROGRESS');
 
     let opened;
-    const installed = [];
     const staged = [];
     try {
       opened = await openSession(request.connectionUid, request.connectionEvidenceSha256);
@@ -265,38 +287,30 @@ function createRemoteAssetRecoveryService({
     let manifest;
     try {
       currentSource(request, source.sourceSha256);
-      const inspected = await inspectScopedRemoteFile({
-        session: opened.session,
-        remoteWorkDir: connection.remoteWorkDir,
-        taskScope: TASK_SCOPE,
-        taskUid: request.remoteTaskUid,
-        relativePath: 'manifest.json',
-        maxBytes: MANIFEST_MAX_BYTES,
-      });
       const locator = stagingLocator(request.operationUid, 'manifest.json');
-      await downloadScopedFile({
+      const transferred = await downloadScopedFile({
         session: opened.session,
         localRelativePath: locator.relativePath,
         remoteWorkDir: connection.remoteWorkDir,
         taskScope: TASK_SCOPE,
         taskUid: request.remoteTaskUid,
         relativePath: 'manifest.json',
-        expectedSha256: inspected.sha256,
+        expectedSha256: null,
         maxBytes: MANIFEST_MAX_BYTES,
       });
       staged.push(locator);
       let manifestBytes;
       try {
         manifestBytes = await readBounded(locator, MANIFEST_MAX_BYTES);
-        if (!Buffer.isBuffer(manifestBytes) || manifestBytes.length !== inspected.bytes
-          || createHash('sha256').update(manifestBytes).digest('hex') !== inspected.sha256) {
+        if (!Buffer.isBuffer(manifestBytes) || manifestBytes.length !== transferred.bytes
+          || createHash('sha256').update(manifestBytes).digest('hex') !== transferred.sha256) {
           throw new TypeError();
         }
         const text = manifestBytes.toString('utf8');
         if (!Buffer.from(text, 'utf8').equals(manifestBytes)) throw new TypeError();
         manifest = parseRemoteAssetRecoveryManifestJson(text, {
           remoteTaskUid: request.remoteTaskUid,
-          sourceManifestSha256: inspected.sha256,
+          sourceManifestSha256: transferred.sha256,
           characterName: source.source.characterName,
         });
       } finally {
@@ -309,12 +323,10 @@ function createRemoteAssetRecoveryService({
       const code = error instanceof RemoteAssetRecoveryManifestError || error instanceof TypeError
         ? 'REMOTE_ASSET_RECOVERY_MANIFEST_INVALID'
         : transferFailureCode(error, true);
-      return handleFailure(request, [...staged, ...installed], code);
+      return handleFailure(request, staged, code);
     }
 
-    const evidence = [];
-    for (let index = 0; index < manifest.items.length; index += 1) {
-      const expected = manifest.items[index];
+    const itemLoaders = manifest.items.map((expected, index) => async () => {
       const rawLocator = stagingLocator(request.operationUid, `item-${index}.remote`);
       let rawBytes;
       try {
@@ -336,77 +348,71 @@ function createRemoteAssetRecoveryService({
           throw new TypeError();
         }
         const normalized = await normalizeImage(rawBytes, expected.width, expected.height);
-        const locator = outputLocator(request, index);
-        await write(locator, normalized.bytes);
-        installed.push(locator);
         if (!await clean([rawLocator])) throw new TypeError('Output staging cleanup failed');
         staged.splice(staged.indexOf(rawLocator), 1);
-        evidence[index] = Object.freeze({
-          ordinal: index,
-          remoteRelativePath: expected.remoteRelativePath,
-          remoteSha256: expected.remoteSha256,
-          remoteByteLength: transferred.bytes,
-          assetUid: createUid(),
-          assetVersionUid: createUid(),
-          logicalUri: locator.logicalUri,
-          relativePath: locator.relativePath,
-          contentSha256: normalized.contentSha256,
-          byteLength: normalized.bytes.length,
+        return Object.freeze({
+          bytes: normalized.bytes,
           width: normalized.width,
           height: normalized.height,
+          mimeType: 'image/png',
+          durationMs: null,
+          source: Object.freeze({
+            remoteRelativePath: expected.remoteRelativePath,
+            remoteSha256: expected.remoteSha256,
+            remoteByteLength: transferred.bytes,
+          }),
         });
-      } catch (error) {
-        try { await opened.session.close(); } catch { /* read-only session close */ }
-        rawBytes?.fill?.(0);
-        const code = error instanceof TypeError
-          ? 'REMOTE_ASSET_RECOVERY_OUTPUT_INVALID'
-          : transferFailureCode(error);
-        return handleFailure(request, [...staged, ...installed], code);
       } finally {
         rawBytes?.fill?.(0);
       }
-    }
-    try { await opened.session.close(); } catch { /* remote work was read-only */ }
+    });
 
     let committed;
     try {
-      committed = repositories.withTransaction((scoped) => {
-        const current = createCharacterCandidateSourceResolver({ repositories: scoped }).resolve(request);
-        if (current.sourceSha256 !== source.sourceSha256) throw new CharacterCandidateSourceError();
-        const liveConnection = scoped.remote.getConnection(request.connectionUid);
-        if (liveConnection.status !== 'ready'
-          || remoteConnectionEvidenceSha256(liveConnection) !== request.connectionEvidenceSha256) {
-          throw new TypeError('Remote connection evidence changed');
-        }
-        for (let index = 0; index < evidence.length; index += 1) {
-          const item = evidence[index];
-          scoped.assets.create({
-            uid: item.assetUid,
-            ownerType: 'character',
-            ownerUid: request.characterUid,
-            assetType: 'remote_recovery',
-            status: 'draft',
-          });
-          scoped.assets.addVersion({
-            uid: item.assetVersionUid,
-            assetUid: item.assetUid,
-            storageProvider: 'local',
-            logicalUri: item.logicalUri,
-            relativePath: item.relativePath,
-            sha256: item.contentSha256,
-            mimeType: 'image/png',
-            width: item.width,
-            height: item.height,
-            durationMs: null,
-            parentUid: null,
-            status: 'ready',
-          });
-        }
-        return scoped.remoteAssetRecoveries.complete(request.operationUid, manifest, evidence);
+      const installedResult = await installer.install({
+        ownerType: 'character',
+        ownerUid: request.characterUid,
+        assetType: 'remote_recovery',
+        items: itemLoaders,
+        destination: (index) => outputLocator(request, index),
+        complete(scoped, evidence) {
+          const current = createCharacterCandidateSourceResolver({ repositories: scoped }).resolve(request);
+          if (current.sourceSha256 !== source.sourceSha256) throw new CharacterCandidateSourceError();
+          const liveConnection = scoped.remote.getConnection(request.connectionUid);
+          if (liveConnection.status !== 'ready'
+            || remoteConnectionEvidenceSha256(liveConnection) !== request.connectionEvidenceSha256) {
+            throw new TypeError('Remote connection evidence changed');
+          }
+          return scoped.remoteAssetRecoveries.complete(
+            request.operationUid,
+            manifest,
+            evidence.map((item) => Object.freeze({
+              ordinal: item.ordinal,
+              remoteRelativePath: item.remoteRelativePath,
+              remoteSha256: item.remoteSha256,
+              remoteByteLength: item.remoteByteLength,
+              assetUid: item.assetUid,
+              assetVersionUid: item.assetVersionUid,
+              logicalUri: item.logicalUri,
+              relativePath: item.relativePath,
+              contentSha256: item.contentSha256,
+              byteLength: item.byteLength,
+              width: item.width,
+              height: item.height,
+            })),
+          );
+        },
       });
+      committed = installedResult.result;
     } catch (error) {
-      const cleaned = await clean(installed);
-      if (error instanceof CharacterCandidateSourceError) {
+      try { await opened.session.close(); } catch { /* remote work was read-only */ }
+      const stagedClean = await clean(staged);
+      if (!(error instanceof QuarantineAssetInstallerError) || error.committed) {
+        return fail('REMOTE_ASSET_RECOVERY_DATA_INVALID');
+      }
+      const cleaned = error.cleanupComplete && stagedClean;
+      const cause = error.cause;
+      if (cause instanceof CharacterCandidateSourceError) {
         transition(
           request.operationUid,
           cleaned ? 'fail' : 'markUnknown',
@@ -416,11 +422,15 @@ function createRemoteAssetRecoveryService({
           ? 'REMOTE_ASSET_RECOVERY_SOURCE_STALE'
           : 'REMOTE_ASSET_RECOVERY_SUBMISSION_UNKNOWN');
       }
-      transition(request.operationUid, 'markUnknown');
-      return fail('REMOTE_ASSET_RECOVERY_SUBMISSION_UNKNOWN');
+      const code = cause instanceof TypeError
+        ? 'REMOTE_ASSET_RECOVERY_OUTPUT_INVALID'
+        : transferFailureCode(cause);
+      transition(request.operationUid, cleaned ? 'fail' : 'markUnknown', cleaned ? code : undefined);
+      return fail(cleaned ? code : 'REMOTE_ASSET_RECOVERY_SUBMISSION_UNKNOWN');
     }
+    try { await opened.session.close(); } catch { /* remote work was read-only */ }
     await verifyLocal(committed);
-    return Object.freeze({ recovery: committed });
+    return Object.freeze({ recovery: historyProjection(committed) });
   }
 
   function validatedUid(value) {
@@ -444,7 +454,12 @@ function createRemoteAssetRecoveryService({
         }
         return running.promise;
       }
-      const promise = run(request).finally(() => active.delete(request.operationUid));
+      const lease = repositories.recoveryActivity.acquire(`remote/${request.operationUid}`);
+      if (!lease) return Promise.reject(new RemoteAssetRecoveryError('REMOTE_ASSET_RECOVERY_IN_PROGRESS'));
+      const promise = run(request).finally(() => {
+        active.delete(request.operationUid);
+        lease.release();
+      });
       active.set(request.operationUid, Object.freeze({ digest, promise }));
       return promise;
     },
@@ -453,7 +468,7 @@ function createRemoteAssetRecoveryService({
       try {
         const recovery = repositories.remoteAssetRecoveries.get(validatedUid(operationUid));
         await verifyLocal(recovery);
-        return Object.freeze({ recovery });
+        return Object.freeze({ recovery: historyProjection(recovery) });
       } catch (error) {
         if (isRemoteAssetRecoveryError(error)) throw error;
         if (error instanceof V2RepositoryNotFoundError) fail('REMOTE_ASSET_RECOVERY_NOT_FOUND');
@@ -474,13 +489,50 @@ function createRemoteAssetRecoveryService({
           schemaVersion: 'remote-asset-recovery-list.v1',
           dramaUid,
           characterUid,
-          recoveries,
+          recoveries: Object.freeze(recoveries.map(historyProjection)),
         });
       } catch (error) {
         if (isRemoteAssetRecoveryError(error)) throw error;
         if (error instanceof V2RepositoryDataError) fail('REMOTE_ASSET_RECOVERY_DATA_INVALID');
         throw error;
       }
+    },
+
+    async recoverInterrupted() {
+      let recoveredCount = 0;
+      let failedCount = 0;
+      let recoveries;
+      try { recoveries = repositories.remoteAssetRecoveries.listReserved(); } catch {
+        return Object.freeze({ recoveredCount: 0, failedCount: 1 });
+      }
+      for (const recovery of recoveries) {
+        const lease = repositories.recoveryActivity.acquire(`remote/${recovery.operationUid}`);
+        if (!lease) continue;
+        try {
+        if (repositories.remoteAssetRecoveries.get(recovery.operationUid).state !== 'reserved') continue;
+        const locators = [stagingLocator(recovery.operationUid, 'manifest.json')];
+        for (let index = 0; index < 16; index += 1) {
+          locators.push(stagingLocator(recovery.operationUid, `item-${index}.remote`));
+          locators.push(outputLocator(recovery.request, index));
+        }
+        const cleaned = await clean(locators);
+        try {
+          if (cleaned) {
+            repositories.remoteAssetRecoveries.fail(
+              recovery.operationUid,
+              'REMOTE_ASSET_RECOVERY_REMOTE_UNAVAILABLE',
+            );
+            recoveredCount += 1;
+          } else {
+            repositories.remoteAssetRecoveries.markUnknown(recovery.operationUid);
+            failedCount += 1;
+          }
+        } catch {
+          failedCount += 1;
+        }
+        } finally { lease.release(); }
+      }
+      return Object.freeze({ recoveredCount, failedCount });
     },
   });
 }

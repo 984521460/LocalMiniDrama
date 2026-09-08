@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion", "operationUid", "requestSha256", "request", "sourceSha256",
-    "source", "state", "quarantineStatus", "manifestSha256", "manifest", "itemCount",
+    "source", "sourceCurrent", "state", "quarantineStatus", "manifestSha256", "manifest", "itemCount",
     "errorCode", "createdAtEpochMs", "updatedAtEpochMs", "items"
   ],
   "properties": {
@@ -16,6 +16,7 @@
     "request": { "$ref": "remote-asset-recovery-request.schema.json" },
     "sourceSha256": { "$ref": "#/$defs/sha256" },
     "source": { "$ref": "#/$defs/source" },
+    "sourceCurrent": { "type": "boolean" },
     "state": { "enum": ["reserved", "succeeded", "failed", "submission_unknown"] },
     "quarantineStatus": { "const": "unapproved" },
     "manifestSha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },

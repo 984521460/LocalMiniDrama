@@ -6,6 +6,7 @@ const test = require('node:test');
 const express = require('express');
 
 const remoteAssetRecoveryRoutes = require('../src/routes/v2/remoteAssetRecoveries');
+const { LocalPackageImportError } = require('../src/remoteAssets/localPackageImportService');
 const { createMigratedV2Database, insertDrama, uid } = require('./helpers/v2RepositoryDatabase');
 
 async function listen(t, database, runtime) {
@@ -29,6 +30,16 @@ test('remote asset recovery route binds legacy drama and character paths to the 
   const expected = { recovery: { state: 'succeeded', quarantineStatus: 'unapproved' } };
   const runtime = {
     async execute(value) { calls.push(['execute', value]); return expected; },
+    async importPackage(input, bytes) {
+      assert.equal(input.characterUid, characterUid);
+      assert.equal(bytes.toString(), 'fixture-zip');
+      return { uid: uid(590) };
+    },
+    async listPackages(dramaUidValue, characterUidValue) {
+      assert.equal(dramaUidValue, dramaUid);
+      assert.equal(characterUidValue, characterUid);
+      return [];
+    },
     async get(value) { calls.push(['get', value]); return expected; },
     async list(value) {
       calls.push(['list', value]);
@@ -71,4 +82,40 @@ test('remote asset recovery route binds legacy drama and character paths to the 
   });
   assert.equal(drifted.status, 400);
   assert.equal((await drifted.json()).error.code, 'REMOTE_ASSET_RECOVERY_INPUT_INVALID');
+  const form = new FormData();
+  form.append('package', new Blob(['fixture-zip']), 'fixture.zip');
+  form.append('extractionResultUid', uid(503));
+  form.append('characterFactId', 'character-alan');
+  const imported = await fetch(`${base}/dramas/1/characters/${characterUid}/local-recovery-packages`, {
+    method: 'POST', body: form,
+  });
+  assert.equal(imported.status, 200);
+  assert.equal((await imported.json()).data.record.uid, uid(590));
+  const packages = await fetch(`${base}/dramas/1/characters/${characterUid}/local-recovery-packages`);
+  assert.equal(packages.status, 200);
+  assert.deepEqual((await packages.json()).data.records, []);
+
+  runtime.importPackage = async () => {
+    throw new LocalPackageImportError('LOCAL_PACKAGE_IMPORT_CONFLICT');
+  };
+  const conflictForm = new FormData();
+  conflictForm.append('package', new Blob(['fixture-zip']), 'fixture.zip');
+  conflictForm.append('extractionResultUid', uid(503));
+  conflictForm.append('characterFactId', 'character-alan');
+  const conflict = await fetch(`${base}/dramas/1/characters/${characterUid}/local-recovery-packages`, {
+    method: 'POST', body: conflictForm,
+  });
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).error.code, 'LOCAL_PACKAGE_IMPORT_CONFLICT');
+
+  const extraForm = new FormData();
+  extraForm.append('package', new Blob(['fixture-zip']), 'fixture.zip');
+  extraForm.append('extractionResultUid', uid(503));
+  extraForm.append('characterFactId', 'character-alan');
+  extraForm.append('unexpected', 'value');
+  const extra = await fetch(`${base}/dramas/1/characters/${characterUid}/local-recovery-packages`, {
+    method: 'POST', body: extraForm,
+  });
+  assert.equal(extra.status, 400);
+  assert.equal((await extra.json()).error.code, 'LOCAL_PACKAGE_IMPORT_INPUT_INVALID');
 });

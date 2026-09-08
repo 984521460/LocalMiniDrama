@@ -385,3 +385,29 @@ validated and filtered by that exact name before any item is downloaded. Migrati
 35 rejects pre-existing successful records that lack the same character binding
 and installs an additional update guard, so one recovery cannot attach another
 character's group even when upgrading a database that already applied migration 34.
+
+Migration `0036_local_recovery_packages.sql` records verified offline recovery
+packages and their normalized draft AssetVersions without pretending that the
+source came from a live SSH session. Package, manifest, approved character fact,
+original image digest, normalized image digest, and local path remain bound while
+the recovered material stays explicitly unapproved.
+
+Migration `0037_local_recovery_import_attempts.sql` adds the durable reservation
+ledger used before offline package files are installed. Existing successful v36
+rows are backfilled one-for-one without rewriting them. Interrupted reservations
+can be cleaned and retried with the same identity; incomplete cleanup becomes
+submission-unknown instead of silently duplicating records or regenerating media.
+
+Migration `0038_remote_asset_recovery_transfer_retry.sql` permits only a failed
+read-only transfer with `REMOTE_ASSET_RECOVERY_REMOTE_UNAVAILABLE` to return to
+its existing reservation. Request, approved source, connection evidence and
+remote task identity remain immutable, so retry repeats transport only and never
+submits new generation work.
+
+Migration `0039_recovery_activity_ownership.sql` adds a machine-local, transient
+activity table for offline imports and remote recoveries. Execution and startup
+cleanup acquire the same key before touching reservation state or media files.
+An active process excludes other instances; only a demonstrably absent process
+can be reclaimed. Permission failures and PID reuse conservatively retain the
+claim. Claims are released in finally blocks and are intentionally excluded from
+portable project archives. This does not authorize generation or content review.

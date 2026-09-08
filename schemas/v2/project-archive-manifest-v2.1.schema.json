@@ -182,7 +182,9 @@
       ],
       "dependentRequired": {
         "characterCandidateExecutions": ["characterCandidateExecutionItems"],
-        "characterCandidateExecutionItems": ["characterCandidateExecutions"]
+        "characterCandidateExecutionItems": ["characterCandidateExecutions"],
+        "localRecoveryImportAttempts": ["localRecoveryPackages"],
+        "localRecoveryPackages": ["localRecoveryImportAttempts"]
       },
       "properties": {
         "narrativeResults": { "$ref": "#/$defs/recordRows" },
@@ -198,6 +200,8 @@
         "characterCandidateResults": { "$ref": "#/$defs/recordRows" },
         "characterCandidateExecutions": { "$ref": "#/$defs/characterCandidateExecutionRows" },
         "characterCandidateExecutionItems": { "$ref": "#/$defs/characterCandidateExecutionItemRows" },
+        "localRecoveryImportAttempts": { "$ref": "#/$defs/recordRows" },
+        "localRecoveryPackages": { "$ref": "#/$defs/recordRows" },
         "characterIdentityLockEvents": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackages": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackageItems": { "$ref": "#/$defs/recordRows" },

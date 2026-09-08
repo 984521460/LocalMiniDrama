@@ -7,6 +7,8 @@ const REQUIRED_TABLES = Object.freeze([
   'audio_tts_submissions', 'bgm_tracks', 'canvas_edges', 'canvas_nodes', 'export_runs',
   'character_candidate_execution_items', 'character_candidate_executions',
   'character_reference_package_executions',
+  'local_recovery_import_attempts', 'local_recovery_packages',
+  'recovery_activity_ownership',
   'media_export_run_seals', 'mvp_benchmark_external_authorizations', 'mvp_benchmark_sessions',
   'mvp_benchmark_external_authorization_request_seals',
   'mvp_benchmark_execution_reservations', 'mvp_benchmark_live_environment_attestations',
@@ -18,10 +20,11 @@ const REQUIRED_TABLES = Object.freeze([
   'mvp_benchmark_resource_release_obligation_seals',
   'mvp_benchmark_resource_release_receipts',
   'mvp_benchmark_resource_release_receipt_seals',
-  'narrative_results', 'narrative_task_executions', 'remote_connections', 'source_documents',
+  'narrative_results', 'narrative_task_executions', 'remote_asset_recoveries',
+  'remote_asset_recovery_items', 'remote_connections', 'source_documents',
   'voice_profiles', 'workflow_definitions', 'workflow_runs',
 ]);
-const REQUIRED_TABLE_PLACEHOLDERS = '?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?';
+const REQUIRED_TABLE_PLACEHOLDERS = REQUIRED_TABLES.map(() => '?').join(',');
 const REQUIRED_VIEW = 'mvp_benchmark_execution_ready_sessions';
 const REQUIRED_TRIGGERS = Object.freeze([
   'v2_audio_tts_execution_evidence_validate_insert',
@@ -33,9 +36,14 @@ const REQUIRED_TRIGGERS = Object.freeze([
   'v2_mvp_benchmark_external_authorization_request_seals_validate_insert',
   'v2_mvp_benchmark_external_authorization_request_seals_immutable_update',
   'v2_mvp_benchmark_external_authorization_request_seals_append_only',
+  'local_recovery_import_attempts_validate_update',
+  'local_recovery_packages_require_attempt',
+  'v2_remote_asset_recoveries_validate_update',
+  'v2_remote_asset_recoveries_character_binding_update',
 ]);
+const REQUIRED_TRIGGER_PLACEHOLDERS = REQUIRED_TRIGGERS.map(() => '?').join(',');
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 35;
+const EXPECTED_MIGRATION_VERSION = 39;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);
@@ -54,7 +62,7 @@ function createMvpBenchmarkReadinessRepository(database) {
         `).pluck(),
         triggerCount: database.prepare(`
           SELECT count(*) AS count FROM sqlite_schema
-          WHERE type='trigger' AND name IN (?,?,?,?,?,?,?,?,?)
+          WHERE type='trigger' AND name IN (${REQUIRED_TRIGGER_PLACEHOLDERS})
         `).pluck(),
         readyConnection: database.prepare(`
           SELECT EXISTS(
@@ -80,51 +88,10 @@ function createMvpBenchmarkReadinessRepository(database) {
   function inspect() {
     try {
       const current = getStatements();
-      const tableCount = current.tableCount.get(
-        REQUIRED_TABLES[0],
-        REQUIRED_TABLES[1],
-        REQUIRED_TABLES[2],
-        REQUIRED_TABLES[3],
-        REQUIRED_TABLES[4],
-        REQUIRED_TABLES[5],
-        REQUIRED_TABLES[6],
-        REQUIRED_TABLES[7],
-        REQUIRED_TABLES[8],
-        REQUIRED_TABLES[9],
-        REQUIRED_TABLES[10],
-        REQUIRED_TABLES[11],
-        REQUIRED_TABLES[12],
-        REQUIRED_TABLES[13],
-        REQUIRED_TABLES[14],
-        REQUIRED_TABLES[15],
-        REQUIRED_TABLES[16],
-        REQUIRED_TABLES[17],
-        REQUIRED_TABLES[18],
-        REQUIRED_TABLES[19],
-        REQUIRED_TABLES[20],
-        REQUIRED_TABLES[21],
-        REQUIRED_TABLES[22],
-        REQUIRED_TABLES[23],
-        REQUIRED_TABLES[24],
-        REQUIRED_TABLES[25],
-        REQUIRED_TABLES[26],
-        REQUIRED_TABLES[27],
-        REQUIRED_TABLES[28],
-        REQUIRED_TABLES[29],
-        REQUIRED_TABLES[30],
-        REQUIRED_TABLES[31],
-        REQUIRED_TABLES[32],
-        REQUIRED_TABLES[33],
-        REQUIRED_TABLES[34],
-      );
+      const tableCount = current.tableCount.get(...REQUIRED_TABLES);
       const readyConnection = current.readyConnection.get();
       const viewCount = current.viewCount.get(REQUIRED_VIEW);
-      const triggerCount = current.triggerCount.get(
-        REQUIRED_TRIGGERS[0], REQUIRED_TRIGGERS[1], REQUIRED_TRIGGERS[2],
-        REQUIRED_TRIGGERS[3], REQUIRED_TRIGGERS[4],
-        REQUIRED_TRIGGERS[5], REQUIRED_TRIGGERS[6], REQUIRED_TRIGGERS[7],
-        REQUIRED_TRIGGERS[8],
-      );
+      const triggerCount = current.triggerCount.get(...REQUIRED_TRIGGERS);
       const migrationSummary = current.migrationSummary.get();
       const remoteAuthenticationColumnCount = current.remoteAuthenticationColumnCount.get();
       return Object.freeze({

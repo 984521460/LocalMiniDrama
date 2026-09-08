@@ -19,8 +19,11 @@ const {
   snapshotInput,
 } = require('./helpers/v5ContinuityFixtures');
 const { createNarrativeStalenessService } = require('../src/narrative/staleness');
+const { seedArchiveLocalRecovery } = require('./helpers/archiveLocalRecoveryFixture');
 
 const EXPECTED_TABLES = Object.freeze([
+  'local_recovery_import_attempts',
+  'local_recovery_packages',
   'narrative_results',
   'narrative_review_events',
   'narrative_stale_events',
@@ -90,9 +93,10 @@ test('hostile structured archive roots fail closed without executing proxy traps
   assert.equal(reads, 0);
 });
 
-test('2.1 structured evidence exports every P9-04B domain without credential references', (t) => {
+test('2.1 structured evidence exports every P9-04B domain without credential references', async (t) => {
   const fixture = seedContinuityFixture(t);
   const { database, dramaUid, repositories } = fixture;
+  await seedArchiveLocalRecovery(t, fixture);
   repositories.shotContinuitySnapshots.create(snapshotInput(fixture));
 
   const voiceVersion = repositories.characterVersions.create({

@@ -168,6 +168,10 @@ test('a complete migrated project round-trips through a clean database as normal
   const source = createDatabase(t);
   const sourceStorage = createStorage(t, 'archive-v21-round-trip-source');
   const fixture = await seedProjectArchiveV21RoundTripFixture(t, source, sourceStorage);
+  const activity = fixture.repositories.recoveryActivity.acquire('remote/10000000-0000-4000-8000-000000000099');
+  assert.ok(activity);
+  const owner = source.prepare('SELECT owner_pid,owner_token FROM recovery_activity_ownership').get();
+  assert.equal(owner.owner_pid, process.pid);
   const firstExport = projectZipService.exportDrama(
     source,
     { storage: { local_path: sourceStorage } },
@@ -176,6 +180,9 @@ test('a complete migrated project round-trips through a clean database as normal
   );
   const firstArchive = readProjectArchive(firstExport.buffer);
   const firstManifest = parseProjectManifestV21(firstArchive.manifestData);
+  activity.release();
+  assert.equal(JSON.stringify(firstManifest).includes(owner.owner_token), false);
+  assert.equal(JSON.stringify(firstManifest).includes('owner_pid'), false);
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   ajv.addSchema(baseManifestSchema);
   const validateSchema = ajv.compile(manifestV21Schema);

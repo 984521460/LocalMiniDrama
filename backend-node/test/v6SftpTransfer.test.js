@@ -3,6 +3,7 @@ const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { Transform } = require('node:stream');
 const test = require('node:test');
 
 const { createSftpTransfer } = require('../src/remote/sftpTransfer');
@@ -46,8 +47,8 @@ class LocalSftp {
     fs.copyFile(this.local(remotePath), localPath, callback);
   }
 
-  createReadStream(remotePath) {
-    return fs.createReadStream(this.local(remotePath));
+  createReadStream(remotePath, options) {
+    return fs.createReadStream(this.local(remotePath), options);
   }
 
   rename(from, to, callback) {
@@ -255,4 +256,102 @@ test('scoped recovery download is bounded inside a named job family', async (t) 
     relativePath: 'manifest.json',
     maxBytes: content.length - 1,
   }), { code: 'SFTP_TRANSFER_IO_FAILED' });
+});
+
+test('SFTP download transfers payload bytes over the network only once', async (t) => {
+  const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lmd-sftp-local-'));
+  const remoteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lmd-sftp-remote-'));
+  t.after(() => {
+    fs.rmSync(localRoot, { force: true, recursive: true });
+    fs.rmSync(remoteRoot, { force: true, recursive: true });
+  });
+  const content = Buffer.alloc(1024 * 1024, 0x5a);
+  const remoteFile = path.join(
+    remoteRoot, 'ai-drama-studio', 'jobs', TASK_UID, 'output', 'result.mp4',
+  );
+  fs.mkdirSync(path.dirname(remoteFile), { recursive: true });
+  fs.writeFileSync(remoteFile, content);
+  let remoteBytesRead = 0;
+  const sftp = new LocalSftp(remoteRoot);
+  const createReadStream = sftp.createReadStream.bind(sftp);
+  sftp.createReadStream = (remotePath, options) => {
+    const stream = createReadStream(remotePath, options);
+    stream.on('data', (chunk) => { remoteBytesRead += chunk.length; });
+    return stream;
+  };
+  const fastGet = sftp.fastGet.bind(sftp);
+  sftp.fastGet = (remotePath, localPath, callback) => {
+    remoteBytesRead += fs.statSync(sftp.local(remotePath)).size;
+    fastGet(remotePath, localPath, callback);
+  };
+
+  const transfer = createSftpTransfer({ localRoot });
+  const result = await transfer.downloadFile({
+    session: createSession(sftp),
+    localRelativePath: 'downloads/result.mp4',
+    remoteWorkDir: 'ai-drama-studio',
+    taskUid: TASK_UID,
+    relativePath: 'output/result.mp4',
+    expectedSha256: sha256(content),
+  });
+  assert.equal(result.sha256, sha256(content));
+  assert.equal(result.bytes, content.length);
+  assert.equal(remoteBytesRead, content.length);
+});
+
+test('SFTP download resumes a verified partial after a disconnected stream', async (t) => {
+  const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lmd-sftp-local-'));
+  const remoteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lmd-sftp-remote-'));
+  t.after(() => {
+    fs.rmSync(localRoot, { force: true, recursive: true });
+    fs.rmSync(remoteRoot, { force: true, recursive: true });
+  });
+  const content = Buffer.alloc(1024 * 1024, 0x3c);
+  const remoteFile = path.join(
+    remoteRoot, 'ai-drama-studio', 'jobs', TASK_UID, 'output', 'resumable.mp4',
+  );
+  fs.mkdirSync(path.dirname(remoteFile), { recursive: true });
+  fs.writeFileSync(remoteFile, content);
+  const transfer = createSftpTransfer({ localRoot });
+  const first = new LocalSftp(remoteRoot);
+  const createFirstStream = first.createReadStream.bind(first);
+  first.createReadStream = (remotePath, options) => {
+    let interrupted = false;
+    const breaker = new Transform({
+      transform(chunk, encoding, callback) {
+        if (interrupted) return callback(new Error('synthetic disconnect'));
+        interrupted = true;
+        this.push(chunk.subarray(0, Math.max(1, Math.floor(chunk.length / 2))));
+        return callback(new Error('synthetic disconnect'));
+      },
+    });
+    return createFirstStream(remotePath, options).pipe(breaker);
+  };
+  const request = {
+    session: createSession(first),
+    localRelativePath: 'downloads/resumable.mp4',
+    remoteWorkDir: 'ai-drama-studio',
+    taskUid: TASK_UID,
+    relativePath: 'output/resumable.mp4',
+    expectedSha256: sha256(content),
+  };
+  await assert.rejects(transfer.downloadFile(request), { code: 'SFTP_TRANSFER_IO_FAILED' });
+  const partialPath = path.join(localRoot, 'downloads', '.resumable.mp4.part');
+  const partialBytes = fs.statSync(partialPath).size;
+  assert.ok(partialBytes > 0 && partialBytes < content.length);
+
+  let resumedNetworkBytes = 0;
+  const second = new LocalSftp(remoteRoot);
+  const createSecondStream = second.createReadStream.bind(second);
+  second.createReadStream = (remotePath, options) => {
+    const stream = createSecondStream(remotePath, options);
+    stream.on('data', (chunk) => { resumedNetworkBytes += chunk.length; });
+    return stream;
+  };
+  const result = await transfer.downloadFile({ ...request, session: createSession(second) });
+  assert.equal(result.sha256, sha256(content));
+  assert.equal(result.bytes, content.length);
+  assert.equal(resumedNetworkBytes, content.length - partialBytes);
+  assert.deepEqual(fs.readFileSync(path.join(localRoot, 'downloads', 'resumable.mp4')), content);
+  assert.equal(fs.existsSync(partialPath), false);
 });

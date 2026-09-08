@@ -12,7 +12,8 @@ const FAMILY_SPECS = Object.freeze([
   Object.freeze({ name: 'narrative_task_executions', dependency: 'narrativeExecutions', method: 'recoverInterrupted' }),
   Object.freeze({ name: 'character_candidate_executions', dependency: 'characterCandidateExecutions', method: 'recoverInterrupted' }),
   Object.freeze({ name: 'character_reference_package_executions', dependency: 'characterReferencePackageExecutions', method: 'recoverInterrupted' }),
-  Object.freeze({ name: 'remote_asset_recoveries', dependency: 'remoteAssetRecoveries', method: 'recoverInterrupted' }),
+  Object.freeze({ name: 'local_recovery_imports', dependency: 'localRecoveryImports', method: 'recoverInterrupted', remote: true }),
+  Object.freeze({ name: 'remote_asset_recoveries', dependency: 'remoteAssetRecoveries', method: 'recoverInterrupted', remote: true }),
   Object.freeze({ name: 'benchmark_releases', dependency: 'benchmarkReleases', method: 'recoverOpen', remote: true }),
   Object.freeze({ name: 'remote_tasks', dependency: 'remoteTasks', method: 'recoverAll', remote: true }),
 ]);

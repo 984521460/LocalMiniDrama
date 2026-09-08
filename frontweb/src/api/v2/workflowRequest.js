@@ -15,6 +15,13 @@ const workflowJsonTextTransport = axios.create({
   transformResponse: [(value) => value],
 })
 
+const workflowFormJsonTextTransport = axios.create({
+  baseURL: '/api/v1',
+  timeout: 600000,
+  responseType: 'text',
+  transformResponse: [(value) => value],
+})
+
 const JSON_STRINGIFY = JSON.stringify
 
 function invalid() {
@@ -121,6 +128,13 @@ export const workflowJsonTextRequest = Object.freeze({
   },
   async delete(url) {
     return dataJsonText(await workflowJsonTextTransport.delete(url))
+  },
+})
+
+export const workflowFormJsonTextRequest = Object.freeze({
+  async post(url, form) {
+    if (!(form instanceof FormData)) invalid()
+    return dataJsonText(await workflowFormJsonTextTransport.post(url, form))
   },
 })
 

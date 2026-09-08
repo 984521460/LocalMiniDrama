@@ -55,6 +55,7 @@ function response(requestValue = request()) {
         characterFactName: '阿澜',
         characterFactDescription: '二十岁的黑发剑客',
       },
+      sourceCurrent: true,
       state: 'succeeded',
       quarantineStatus: 'unapproved',
       manifestSha256: sha('f'),

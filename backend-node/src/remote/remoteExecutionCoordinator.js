@@ -481,21 +481,14 @@ function createRemoteExecutionCoordinator(options) {
     try {
       const phase = await heartbeatPhase(task, executionPermit, () => withSession(
         task.connectionUid, task.connectionEvidenceSha256, async (opened) => {
-        const remote = await configured.transfer.inspectRemoteFile({
-          session: opened.session,
-          remoteWorkDir: opened.connection.remoteWorkDir,
-          taskUid: task.uid,
-          relativePath: output.remoteRelativePath,
-        });
-        await configured.transfer.downloadFile({
+        return configured.transfer.downloadFile({
           session: opened.session,
           localRelativePath,
           remoteWorkDir: opened.connection.remoteWorkDir,
           taskUid: task.uid,
           relativePath: output.remoteRelativePath,
-          expectedSha256: remote.sha256,
+          expectedSha256: null,
         });
-        return remote;
       }));
       task = phase.task;
       measured = phase.result;

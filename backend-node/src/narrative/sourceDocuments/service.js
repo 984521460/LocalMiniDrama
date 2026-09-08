@@ -150,7 +150,7 @@ function createSourceDocumentService({ repositories, createUid = randomUUID } = 
           sourceType: inspected.sourceType,
           originalName: inspected.originalName,
           encoding: inspected.encoding,
-          contentSha256: inspected.contentSha256,
+          contentSha256: inspected.normalizedTextSha256,
           fullText: inspected.text,
         },
         blocks,

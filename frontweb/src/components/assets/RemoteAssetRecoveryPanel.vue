@@ -45,7 +45,10 @@
     <div v-for="record in succeeded" :key="record.operationUid" class="recovery-record">
       <div class="recovery-record-title">
         <strong>已保存 {{ record.items.length }} 项本地恢复素材</strong>
-        <span>{{ record.manifest.sourceFormat }} · {{ shortHash(record.manifest.sourceManifestSha256) }}</span>
+        <span>
+          <el-tag v-if="!record.sourceCurrent" type="info" size="small">来源已变更，仅供查看</el-tag>
+          {{ record.manifest.sourceFormat }} · {{ shortHash(record.manifest.sourceManifestSha256) }}
+        </span>
       </div>
       <div class="recovery-grid">
         <figure v-for="item in record.items" :key="item.assetVersionUid">

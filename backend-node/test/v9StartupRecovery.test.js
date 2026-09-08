@@ -28,7 +28,10 @@ function coordinatorForBoundary({
     characterReferencePackageExecutions: {
       recoverInterrupted() { return { recoveredCount: 0 }; },
     },
-    remoteAssetRecoveries: { recoverInterrupted() { return { recoveredCount: 0 }; } },
+    localRecoveryImports: { async recoverInterrupted() { return remoteResult; } },
+    remoteAssetRecoveries: {
+      async recoverInterrupted() { return { recoveredCount: 0, failedCount: 0 }; },
+    },
     benchmarkReleases: { recoverOpen() { return benchmarkResult; } },
     remoteTasks: { async recoverAll() { return remoteResult; } },
     log: { info() {}, warn() {} },
@@ -53,8 +56,17 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
     characterReferencePackageExecutions: {
       recoverInterrupted() { calls.push('character-reference-package'); return { recoveredCount: 8 }; },
     },
+    localRecoveryImports: {
+      async recoverInterrupted() {
+        calls.push('local-recovery-import');
+        return { recoveredCount: 1, failedCount: 0 };
+      },
+    },
     remoteAssetRecoveries: {
-      recoverInterrupted() { calls.push('remote-asset-recovery'); return { recoveredCount: 9 }; },
+      async recoverInterrupted() {
+        calls.push('remote-asset-recovery');
+        return { recoveredCount: 9, failedCount: 0 };
+      },
     },
     benchmarkReleases: {
       recoverOpen() {
@@ -76,7 +88,8 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
   assert.strictEqual(second, first);
   assert.deepEqual(calls, [
     'legacy-async', 'legacy-video', 'workflow', 'media', 'h3', 'tts', 'narrative',
-    'character-candidate', 'character-reference-package', 'remote-asset-recovery',
+    'character-candidate', 'character-reference-package', 'local-recovery-import',
+    'remote-asset-recovery',
     'benchmark-release', 'remote',
   ]);
   assert.equal(first.schemaVersion, 'startup-recovery.v1');
@@ -87,6 +100,7 @@ test('P9-01 coordinator isolates families and returns only bounded aggregate evi
     'narrative_task_executions',
     'character_candidate_executions',
     'character_reference_package_executions',
+    'local_recovery_imports',
     'remote_asset_recoveries',
     'benchmark_releases', 'remote_tasks',
   ]);

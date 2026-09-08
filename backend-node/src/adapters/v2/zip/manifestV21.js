@@ -468,6 +468,23 @@ function assertMediaEvidence(records, structured) {
   for (let index = 0; index < structured.characterReferencePackageItems.length; index += 1) {
     assertSnapshot(structured.characterReferencePackageItems[index]);
   }
+  for (let packageIndex = 0; packageIndex < structured.localRecoveryPackages.length; packageIndex += 1) {
+    const packageRecord = structured.localRecoveryPackages[packageIndex];
+    for (let itemIndex = 0; itemIndex < packageRecord.items_json.length; itemIndex += 1) {
+      const item = packageRecord.items_json[itemIndex];
+      const asset = mapGet(assets, item.assetUid);
+      const version = mapGet(versions, item.assetVersionUid);
+      if (!asset || !version || version.asset_uid !== asset.uid
+        || asset.owner_type !== 'character' || asset.owner_uid !== packageRecord.character_uid
+        || asset.asset_type !== 'local_recovery' || asset.status !== 'draft'
+        || asset.current_version_uid !== null || version.storage_provider !== 'local'
+        || version.logical_uri !== item.logicalUri || version.relative_path !== item.relativePath
+        || version.sha256 !== item.sha256 || version.mime_type !== 'image/png'
+        || version.width !== item.width || version.height !== item.height
+        || version.duration_ms !== null || version.parent_uid !== null
+        || version.status !== 'ready') invalidManifest();
+    }
+  }
   for (let index = 0; index < structured.bgmTracks.length; index += 1) {
     const row = structured.bgmTracks[index];
     const asset = mapGet(assets, row.asset_uid);
@@ -519,6 +536,8 @@ function assertStructuredBaseReferences(records, structured, legacyRecords) {
     structured.characterCandidateBatches,
     structured.characterCandidateResults,
     structured.characterCandidateExecutions,
+    structured.localRecoveryImportAttempts,
+    structured.localRecoveryPackages,
     structured.characterIdentityLockEvents,
     structured.characterReferencePackages,
     structured.characterReferencePackageItems,
@@ -563,25 +582,35 @@ function normalizeCharacterCandidateExecutionGroups(root) {
     descriptors,
     'characterReferencePackageExecutions',
   );
-  if (hasExecutions !== hasItems) return root;
-  if (hasExecutions && hasReferenceExecutions) return root;
+  const hasLocalAttempts = safeHasOwn(descriptors, 'localRecoveryImportAttempts');
+  const hasLocalPackages = safeHasOwn(descriptors, 'localRecoveryPackages');
+  if (hasExecutions !== hasItems || hasLocalAttempts !== hasLocalPackages) return root;
+  if (hasExecutions && hasReferenceExecutions && hasLocalAttempts) return root;
 
   const names = apply(REFLECT_OWN_KEYS, Reflect, [STRUCTURED_RECORD_SPECS]);
   const actual = apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
-  const missingCount = (hasExecutions ? 0 : 2) + (hasReferenceExecutions ? 0 : 1);
+  const missingCount = (hasExecutions ? 0 : 2) + (hasReferenceExecutions ? 0 : 1)
+    + (hasLocalAttempts ? 0 : 2);
   if (actual.length !== names.length - missingCount) return root;
   const normalized = apply(OBJECT_CREATE, Object, [null]);
   for (let index = 0; index < names.length; index += 1) {
     const name = names[index];
     if (name === 'characterCandidateExecutions'
       || name === 'characterCandidateExecutionItems'
-      || name === 'characterReferencePackageExecutions') {
+      || name === 'characterReferencePackageExecutions'
+      || name === 'localRecoveryImportAttempts'
+      || name === 'localRecoveryPackages') {
       if ((name === 'characterCandidateExecutions' || name === 'characterCandidateExecutionItems')
         && hasExecutions) {
         normalized[name] = descriptors[name].value;
         continue;
       }
       if (name === 'characterReferencePackageExecutions' && hasReferenceExecutions) {
+        normalized[name] = descriptors[name].value;
+        continue;
+      }
+      if ((name === 'localRecoveryImportAttempts' || name === 'localRecoveryPackages')
+        && hasLocalAttempts) {
         normalized[name] = descriptors[name].value;
         continue;
       }

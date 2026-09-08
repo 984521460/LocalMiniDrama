@@ -218,7 +218,12 @@ function createApp({
     characterCandidateExecutions: recoveryRepositories.characterCandidateExecutions,
     characterReferencePackageExecutions:
       recoveryRepositories.characterReferencePackageExecutions,
-    remoteAssetRecoveries: recoveryRepositories.remoteAssetRecoveries,
+    localRecoveryImports: Object.freeze({
+      recoverInterrupted: remoteRuntime.remoteAssetRecoveries.recoverLocalPackageImports,
+    }),
+    remoteAssetRecoveries: Object.freeze({
+      recoverInterrupted: remoteRuntime.remoteAssetRecoveries.recoverRemoteAssetRecoveries,
+    }),
     benchmarkReleases: recoveryRepositories.mvpBenchmarkExecutionAccounting,
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,

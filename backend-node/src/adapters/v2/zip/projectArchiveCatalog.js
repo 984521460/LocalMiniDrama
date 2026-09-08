@@ -60,6 +60,8 @@ const REQUIRED_V21_TABLES = Object.freeze([
   'character_candidate_results',
   'character_candidate_executions',
   'character_candidate_execution_items',
+  'local_recovery_import_attempts',
+  'local_recovery_packages',
   'character_identity_lock_events',
   'character_reference_packages',
   'character_reference_package_items',
@@ -91,6 +93,7 @@ const NEEDS_REBIND_FIELDS = Object.freeze([
 ]);
 
 const EXCLUDED_TABLES = Object.freeze([
+  'recovery_activity_ownership',
   'ai_service_configs',
   'remote_connections',
   'remote_tasks',

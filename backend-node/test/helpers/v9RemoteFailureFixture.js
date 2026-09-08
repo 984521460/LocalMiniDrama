@@ -64,7 +64,7 @@ function partialFiles(root) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute);
-      else if (entry.name.endsWith('.part')) found.push(absolute);
+      else if (/[.]part(?:[.]|$)/u.test(entry.name)) found.push(absolute);
     }
   };
   visit(root);

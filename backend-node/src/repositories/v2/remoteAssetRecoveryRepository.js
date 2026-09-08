@@ -67,6 +67,10 @@ function createRemoteAssetRecoveryRepository(database) {
     WHERE drama_uid=? AND character_uid=?
     ORDER BY created_at_epoch_ms DESC, operation_uid DESC LIMIT 50
   `);
+  const listReservedRows = database.prepare(`
+    SELECT operation_uid FROM remote_asset_recoveries
+    WHERE state='reserved' ORDER BY created_at_epoch_ms,operation_uid
+  `);
   const insert = database.prepare(`
     INSERT INTO remote_asset_recoveries
       (operation_uid,drama_uid,character_uid,source_selection_uid,
@@ -112,6 +116,12 @@ function createRemoteAssetRecoveryRepository(database) {
     SET state='submission_unknown', error_code='REMOTE_ASSET_RECOVERY_SUBMISSION_UNKNOWN',
         updated_at_epoch_ms=unixepoch('now') * 1000
     WHERE state='reserved'
+  `);
+  const retryTransferRow = database.prepare(`
+    UPDATE remote_asset_recoveries
+    SET state='reserved',error_code=NULL,updated_at_epoch_ms=unixepoch('now') * 1000
+    WHERE operation_uid=? AND state='failed'
+      AND error_code='REMOTE_ASSET_RECOVERY_REMOTE_UNAVAILABLE'
   `);
 
   function mapItems(recovery, manifest, rows) {
@@ -272,6 +282,10 @@ function createRemoteAssetRecoveryRepository(database) {
       return Object.freeze(listRows.all(dramaUid, characterUid).map((row) => get(row.operation_uid)));
     },
 
+    listReserved() {
+      return Object.freeze(listReservedRows.all().map((row) => get(row.operation_uid)));
+    },
+
     markUnknown(operationUid) {
       executeWrite(ENTITY, 'marked unknown', () => {
         if (unknownRow.run({ operationUid }).changes !== 1) {
@@ -283,6 +297,15 @@ function createRemoteAssetRecoveryRepository(database) {
 
     recoverInterrupted() {
       return Object.freeze({ recoveredCount: recoverRows.run().changes });
+    },
+
+    retryTransfer(operationUid) {
+      executeWrite(ENTITY, 'retried', () => {
+        if (retryTransferRow.run(operationUid).changes !== 1) {
+          throw new V2RepositoryConflictError(ENTITY, 'retried');
+        }
+      });
+      return get(operationUid);
     },
 
     reserve({ request, requestSha256, source, sourceSha256 }) {

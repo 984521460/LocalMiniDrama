@@ -86,6 +86,7 @@
       :drama-uid="dramaUid"
       :selection="selected"
     />
+    <LocalRecoveryPackagePanel :drama-id="dramaId" :selection="selected" />
 
     <CharacterCandidateHistory
       ref="historyPanel"
@@ -110,6 +111,7 @@ import CharacterReferencePackageCard from './CharacterReferencePackageCard.vue'
 import CharacterCandidateHistory from './CharacterCandidateHistory.vue'
 import CharacterReferencePackageHistory from './CharacterReferencePackageHistory.vue'
 import RemoteAssetRecoveryPanel from './RemoteAssetRecoveryPanel.vue'
+import LocalRecoveryPackagePanel from './LocalRecoveryPackagePanel.vue'
 import { useCharacterCandidateExecution } from '@/composables/useCharacterCandidateExecution.js'
 import {
   useCharacterReferencePackageExecution,

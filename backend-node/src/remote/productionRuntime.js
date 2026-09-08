@@ -20,6 +20,8 @@ const { createH3RemoteModelCatalog } = require('./h3EnvironmentProfile');
 const {
   createProductionRemoteAssetRecoveryService,
 } = require('../remoteAssets');
+const { createLocalPackageImportService } = require('../remoteAssets/localPackageImportService');
+const { LocalStorageProvider } = require('../adapters/v2/storage/localStorageProvider');
 
 const DEPENDENCY_KEYS = Object.freeze([
   'credentialVault', 'sshTransport', 'tunnelManager', 'comfyClientFactory',
@@ -102,6 +104,9 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
     transfer,
     localRoot,
   });
+  const localPackageImport = createLocalPackageImportService({
+    repositories, storage: new LocalStorageProvider({ projectRoot: localRoot }),
+  });
   const outputVerifier = createRemoteOutputVerifier({
     h3Inspector: configured.h3Inspector ?? createH3LocalVideoInspector({ localRoot }),
   });
@@ -138,6 +143,10 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
       remoteTasks,
     }),
     remoteAssetRecoveries: Object.freeze({
+      importPackage: localPackageImport.execute,
+      listPackages: localPackageImport.list,
+      recoverLocalPackageImports: localPackageImport.recoverInterrupted,
+      recoverRemoteAssetRecoveries: remoteAssetRecovery.recoverInterrupted,
       execute: remoteAssetRecovery.execute,
       get: remoteAssetRecovery.get,
       list: remoteAssetRecovery.list,

@@ -8,6 +8,7 @@ const test = require('node:test');
 const AdmZip = require('adm-zip');
 const Ajv = require('ajv/dist/2020');
 const Database = require('better-sqlite3');
+const sharp = require('sharp');
 
 const { runMigrationsAndEnsure } = require('../src/db/migrate');
 const { createV2Repositories } = require('../src/repositories/v2');
@@ -16,8 +17,13 @@ const { validateRunAggregate } = require('../src/workflows/runState');
 const createDramaRoutes = require('../src/routes/drama');
 const projectZipService = require('../src/services/projectZipService');
 const { createProjectImportMediaStaging } = require('../src/services/projectImportMediaStaging');
+const { LocalStorageProvider } = require('../src/adapters/v2/storage/localStorageProvider');
+const { createNarrativeExecutionService } = require('../src/narrative/execution');
+const { createNarrativeReviewService } = require('../src/narrative/reviews');
+const { createLocalPackageImportService } = require('../src/remoteAssets/localPackageImportService');
 
 const manifestSchema = require('../../schemas/v2/project-archive-manifest.schema.json');
+const manifestV21Schema = require('../../schemas/v2/project-archive-manifest-v2.1.schema.json');
 const fixtureProject = fs.readFileSync(
   path.join(__dirname, 'fixtures', 'minimal-project', 'project.json'),
   'utf8',
@@ -424,7 +430,7 @@ test('startup migration keeps v1 ZIP import compatible and installs the v2 ledge
   const result = projectZipService.importDrama(database, { storage: { local_path: storage } }, createLog(), createV1Zip());
 
   assert.equal(result.title, 'Phase 0 最小迁移样例');
-  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 35);
+  assert.equal(database.prepare('SELECT count(*) AS count FROM schema_migrations').get().count, 39);
   assert.equal(database.prepare('SELECT count(*) AS count FROM source_documents').get().count, 0);
 });
 
@@ -470,6 +476,207 @@ test('v2 project ZIP preserves portable project data through export and clean-da
   ]) {
     assert.equal(destination.prepare(`SELECT count(*) AS count FROM ${table}`).get().count > 0, true, table);
   }
+});
+
+test('v2.1 project ZIP preserves local recovery source evidence and normalized media', async (t) => {
+  const source = createDatabase(t);
+  const sourceStorage = createStorage(t);
+  const log = createLog();
+  const importedV1 = projectZipService.importDrama(
+    source,
+    { storage: { local_path: sourceStorage } },
+    log,
+    createV1Zip(),
+  );
+  const drama = source.prepare('SELECT id,uid FROM dramas WHERE id=?').get(importedV1.drama_id);
+  const character = source.prepare(`
+    SELECT uid,name FROM characters WHERE drama_id=? AND deleted_at IS NULL ORDER BY id LIMIT 1
+  `).get(drama.id);
+  const documentUid = crypto.randomUUID();
+  const blockUid = crypto.randomUUID();
+  const selectionUid = crypto.randomUUID();
+  const extractionUid = crypto.randomUUID();
+  const text = `${character.name}站在雨中的车站。`;
+  const textSha = sha256(text);
+  const repositories = createV2Repositories(source);
+  repositories.sources.createDocumentWithBlocks({
+    document: {
+      uid: documentUid,
+      dramaUid: drama.uid,
+      sourceType: 'txt',
+      originalName: 'archive-recovery.txt',
+      encoding: 'utf-8',
+      contentSha256: textSha,
+      fullText: text,
+    },
+    blocks: [{
+      uid: blockUid,
+      ordinal: 0,
+      headingPath: [],
+      charStart: 0,
+      charEnd: Array.from(text).length,
+      text,
+      textSha256: textSha,
+    }],
+  });
+  repositories.sources.createSelection({
+    uid: selectionUid,
+    documentUid,
+    startBlockUid: blockUid,
+    endBlockUid: blockUid,
+    startOffset: 0,
+    endOffset: Array.from(text).length,
+    selectedTextSha256: textSha,
+  });
+  const execution = await createNarrativeExecutionService({
+    repositories,
+    provider: Object.freeze({
+      scope: 'configured-text',
+      isAvailable: () => true,
+      generate: () => ({
+        model: { provider: 'synthetic', name: 'archive-fixture' },
+        parameters: { temperature: 0 },
+        promptVersion: 'narrative-extraction.v1',
+        rawResponse: JSON.stringify({
+          schemaVersion: 'novel-extraction.v1',
+          characters: [{
+            factId: 'archive-character',
+            name: character.name,
+            description: '车站中的角色。',
+            evidence: [{
+              blockUid,
+              startOffset: 0,
+              endOffset: Array.from(text).length,
+              quote: text,
+            }],
+          }],
+          scenes: [], props: [], relationships: [], events: [], dialogue: [],
+        }),
+      }),
+    }),
+    assetOwnership: Object.freeze({ accepts() { return true; } }),
+  }).execute({
+    schemaVersion: 'narrative-execution-request.v1',
+    operationUid: extractionUid,
+    dramaUid: drama.uid,
+    sourceSelectionUid: selectionUid,
+    resultType: 'extraction',
+    upstreamResultUid: null,
+    upstreamResultHash: null,
+    upstreamEnvelopeHash: null,
+    upstreamApprovalRef: null,
+    durationBudget: null,
+    style: null,
+    assetVersions: [],
+  });
+  createNarrativeReviewService({ repositories }).reviewResult({
+    resultUid: execution.result.uid,
+    decision: 'approve',
+    comment: 'archive recovery fixture approval',
+  });
+  const png = await sharp({
+    create: { width: 256, height: 256, channels: 3, background: '#345678' },
+  }).png().toBuffer();
+  const remoteOperationUid = crypto.randomUUID();
+  const packageName = 'archive-character-1.png';
+  const zip = new AdmZip();
+  zip.addFile('manifest.json', Buffer.from(JSON.stringify({
+    schemaVersion: 'project-character-candidate-emergency-run.v1',
+    runUid: crypto.randomUUID(),
+    checkpoint: 'archive-fixture.safetensors',
+    width: 256,
+    height: 256,
+    sampler: 'euler',
+    scheduler: 'normal',
+    steps: 20,
+    cfg: 6,
+    items: [{
+      slug: 'archive-character',
+      name: character.name,
+      operationUid: remoteOperationUid,
+      ordinal: 0,
+      seed: 1,
+      promptSha256: 'a'.repeat(64),
+      promptId: crypto.randomUUID(),
+      state: 'succeeded',
+      filename: 'actual-output-name.png',
+      subfolder: `character-candidates/${remoteOperationUid}`,
+      type: 'output',
+      bytes: png.length,
+      sha256: crypto.createHash('sha256').update(png).digest('hex'),
+      localPackageName: packageName,
+      verifiedWidth: 256,
+      verifiedHeight: 256,
+    }],
+  })));
+  zip.addFile(packageName, png);
+  const localService = createLocalPackageImportService({
+    // Persist the exact pre-37 item contract to exercise archive compatibility.
+    repositories: { ...repositories, withTransaction(callback) {
+      return repositories.withTransaction((scoped) => callback({ ...scoped,
+        localRecoveryPackages: { ...scoped.localRecoveryPackages,
+          complete(operationUid, items) {
+            return scoped.localRecoveryPackages.complete(operationUid,
+              items.map(({ logicalUri, ...legacyItem }) => legacyItem));
+          },
+        },
+      }));
+    } },
+    storage: new LocalStorageProvider({ projectRoot: sourceStorage }),
+  });
+  const localRecord = await localService.execute({
+    dramaUid: drama.uid,
+    characterUid: character.uid,
+    extractionResultUid: execution.result.uid,
+    characterFactId: 'archive-character',
+  }, zip.toBuffer());
+  assert.equal(Object.hasOwn(JSON.parse(source.prepare(
+    'SELECT items_json FROM local_recovery_packages',
+  ).pluck().get())[0], 'logicalUri'), false);
+
+  const exported = projectZipService.exportDrama(
+    source,
+    { storage: { local_path: sourceStorage } },
+    log,
+    drama.id,
+  );
+  const firstManifest = readV2Manifest(exported.buffer);
+  const validate = new Ajv({ allErrors: true, strict: true })
+    .addSchema(manifestSchema)
+    .compile(manifestV21Schema);
+  assert.equal(validate(firstManifest), true, JSON.stringify(validate.errors));
+  assert.equal(firstManifest.structuredRecords.localRecoveryImportAttempts.length, 1);
+  assert.equal(firstManifest.structuredRecords.localRecoveryPackages.length, 1);
+  assert.equal(firstManifest.structuredRecords.localRecoveryPackages[0].uid, localRecord.uid);
+
+  const destination = createDatabase(t);
+  const destinationStorage = createStorage(t);
+  const restored = projectZipService.importDrama(
+    destination,
+    { storage: { local_path: destinationStorage } },
+    log,
+    exported.buffer,
+  );
+  assert.equal(destination.prepare('SELECT count(*) FROM local_recovery_import_attempts').pluck().get(), 1);
+  assert.equal(destination.prepare('SELECT count(*) FROM local_recovery_packages').pluck().get(), 1);
+  const restoredRelativePath = JSON.parse(destination.prepare(
+    'SELECT items_json FROM local_recovery_packages',
+  ).pluck().get())[0].relativePath;
+  assert.equal(fs.existsSync(path.join(destinationStorage, ...restoredRelativePath.split('/'))), true);
+  const secondManifest = readV2Manifest(projectZipService.exportDrama(
+    destination,
+    { storage: { local_path: destinationStorage } },
+    log,
+    restored.drama_id,
+  ).buffer);
+  assert.deepEqual(
+    secondManifest.structuredRecords.localRecoveryImportAttempts,
+    firstManifest.structuredRecords.localRecoveryImportAttempts,
+  );
+  assert.deepEqual(
+    secondManifest.structuredRecords.localRecoveryPackages,
+    firstManifest.structuredRecords.localRecoveryPackages,
+  );
 });
 
 test('v2 project ZIP replays every legal workflow and node run state without weakening initial inserts', (t) => {

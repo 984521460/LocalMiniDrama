@@ -38,6 +38,7 @@ const STRUCTURED_ORDER = Object.freeze([
   'characterCostumeVersions', 'characterVoiceVersions', 'sceneVersions', 'propVersions',
   'characterCandidateResults', 'characterCandidateBatches',
   'characterCandidateExecutions', 'characterCandidateExecutionItems',
+  'localRecoveryImportAttempts', 'localRecoveryPackages',
   'characterIdentityLockEvents',
   'characterReferencePackageItems', 'characterReferencePackages',
   'characterReferencePackageExecutions',

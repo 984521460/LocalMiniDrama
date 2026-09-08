@@ -163,11 +163,12 @@ function selectedOutput(state, input) {
   }
   const matches = state.outputs.filter((entry) => entry?.nodeId === OUTPUT_NODE_ID);
   const expectedSubfolder = `character-candidates/${input.operationUid}`;
-  const expectedFileName = `${input.ordinal}_00001_.png`;
+  const expectedFileName = new RegExp(`^${input.ordinal}_[0-9]{5,}_[.]png$`, 'u');
   if (matches.length !== 1 || matches[0].mediaKind !== 'image'
     || matches[0].storageType !== 'output'
     || matches[0].subfolder !== expectedSubfolder
-    || matches[0].fileName !== expectedFileName) {
+    || typeof matches[0].fileName !== 'string' || matches[0].fileName.length > 128
+    || !expectedFileName.test(matches[0].fileName)) {
     throw new TypeError('Remote ComfyUI image output is invalid');
   }
   return matches[0];

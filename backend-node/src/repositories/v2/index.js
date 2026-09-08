@@ -1,4 +1,5 @@
 const { types: { isPromise } } = require('node:util');
+const { createRecoveryActivityRepository } = require('./recoveryActivityRepository');
 
 const { createAssetRepository } = require('./assetRepository');
 const { createAudioTtsSubmissionStore } = require('../../audio/audioTtsSubmissionStore');
@@ -46,6 +47,7 @@ const {
 } = require('./errors');
 const { createRemoteRepository } = require('./remoteRepository');
 const { createRemoteAssetRecoveryRepository } = require('./remoteAssetRecoveryRepository');
+const { createLocalRecoveryPackageRepository } = require('./localRecoveryPackageRepository');
 const { createProjectArchiveRepository } = require('./projectArchiveRepository');
 const { createNarrativeReviewRepository } = require('./narrativeReviewRepository');
 const { createNarrativeExecutionRepository } = require('./narrativeExecutionRepository');
@@ -158,8 +160,29 @@ function createLazyRemoteAssetRecoveryRepository(database) {
     fail(...args) { return getTarget().fail(...args); },
     get(...args) { return getTarget().get(...args); },
     listByCharacter(...args) { return getTarget().listByCharacter(...args); },
+    listReserved(...args) { return getTarget().listReserved(...args); },
     markUnknown(...args) { return getTarget().markUnknown(...args); },
     recoverInterrupted(...args) { return getTarget().recoverInterrupted(...args); },
+    reserve(...args) { return getTarget().reserve(...args); },
+    retryTransfer(...args) { return getTarget().retryTransfer(...args); },
+  });
+}
+
+function createLazyLocalRecoveryPackageRepository(database) {
+  let target;
+  function getTarget() {
+    if (!target) target = createLocalRecoveryPackageRepository(database);
+    return target;
+  }
+  return Object.freeze({
+    complete(...args) { return getTarget().complete(...args); },
+    fail(...args) { return getTarget().fail(...args); },
+    get(...args) { return getTarget().get(...args); },
+    getAttempt(...args) { return getTarget().getAttempt(...args); },
+    getByIdentity(...args) { return getTarget().getByIdentity(...args); },
+    listByCharacter(...args) { return getTarget().listByCharacter(...args); },
+    listReserved(...args) { return getTarget().listReserved(...args); },
+    markUnknown(...args) { return getTarget().markUnknown(...args); },
     reserve(...args) { return getTarget().reserve(...args); },
   });
 }
@@ -430,6 +453,7 @@ function createV2Repositories(database) {
     workflows,
   });
   const audioTtsSubmissions = createAudioTtsSubmissionStore(database, { audioModeIntents });
+  const localRecoveryPackages = createLazyLocalRecoveryPackageRepository(database);
   const mvpBenchmarkSessions = createLazyMvpBenchmarkSessionRepository(database, {
     assets,
     audioModeIntents,
@@ -481,6 +505,7 @@ function createV2Repositories(database) {
     sessions: mvpBenchmarkSessions,
   });
   const aggregates = {
+    recoveryActivity: createRecoveryActivityRepository(database),
     assets,
     audioModeIntents,
     audioTtsSubmissions,
@@ -493,6 +518,7 @@ function createV2Repositories(database) {
     comfyManifests,
     generationHistory,
     h3GenerationIntents,
+    localRecoveryPackages,
     mediaExportRuns,
     mvpBenchmarkExternalAuthorizations,
     mvpBenchmarkExecutionAccounting,
