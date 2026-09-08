@@ -6,6 +6,7 @@ const { types: { isProxy } } = require('node:util');
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const SEGMENT = /^[A-Za-z0-9._-]{1,128}$/u;
+const TASK_SCOPE = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 const MESSAGES = Object.freeze({
   SFTP_TRANSFER_INPUT_INVALID: 'SFTP transfer input is invalid',
   SFTP_TRANSFER_PATH_UNSAFE: 'SFTP transfer path is unsafe',
@@ -160,6 +161,22 @@ async function ensureRemoteDirectories(sftp, directorySegments, baseSegmentCount
   }
 }
 
+async function verifyRemoteDirectories(sftp, directorySegments, baseSegmentCount) {
+  for (let index = 1; index <= directorySegments.length; index += 1) {
+    if (!safeDirectoryStat(await lstatMaybe(sftp, directorySegments.slice(0, index).join('/')))) {
+      throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+    }
+  }
+  const base = directorySegments.slice(0, baseSegmentCount).join('/');
+  const parent = directorySegments.join('/');
+  const baseReal = path.posix.normalize(await call(sftp, 'realpath', base));
+  const parentReal = path.posix.normalize(await call(sftp, 'realpath', parent));
+  if (!baseReal.startsWith('/') || !parentReal.startsWith('/')
+    || (parentReal !== baseReal && !parentReal.startsWith(`${baseReal}/`))) {
+    throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+  }
+}
+
 async function verifiedRemoteFile(sftp, remoteSegments, baseSegmentCount) {
   const remotePath = remoteSegments.join('/');
   const stats = await lstatMaybe(sftp, remotePath);
@@ -285,6 +302,64 @@ function remoteFileInput(value) {
     remoteSegments,
     baseSegmentCount: workSegments.length,
   });
+}
+
+function maximumBytes(value) {
+  if (!Number.isSafeInteger(value) || value < 1 || value > 64 * 1024 * 1024) {
+    throw createError('SFTP_TRANSFER_INPUT_INVALID');
+  }
+  return value;
+}
+
+function scopedRemoteSegments(input) {
+  const workSegments = relativeSegments(input.remoteWorkDir, 256);
+  if (typeof input.taskScope !== 'string' || !TASK_SCOPE.test(input.taskScope)) {
+    throw createError('SFTP_TRANSFER_INPUT_INVALID');
+  }
+  const fileSegments = relativeSegments(input.relativePath);
+  const remoteSegments = [
+    ...workSegments, 'jobs', input.taskScope, taskUid(input.taskUid), ...fileSegments,
+  ];
+  if (remoteSegments.join('/').length > 2048) throw createError('SFTP_TRANSFER_INPUT_INVALID');
+  return Object.freeze({
+    remoteSegments,
+    baseSegmentCount: workSegments.length,
+    maxBytes: maximumBytes(input.maxBytes),
+  });
+}
+
+function scopedRemoteFileInput(value) {
+  const input = exactObject(value, [
+    'session', 'remoteWorkDir', 'taskScope', 'taskUid', 'relativePath', 'maxBytes',
+  ]);
+  if (!input.session || typeof input.session !== 'object' || typeof input.session.sftp !== 'function') {
+    throw createError('SFTP_TRANSFER_INPUT_INVALID');
+  }
+  return Object.freeze({ session: input.session, ...scopedRemoteSegments(input) });
+}
+
+function scopedTransferInput(value) {
+  const input = exactObject(value, [
+    'session', 'localRelativePath', 'remoteWorkDir', 'taskScope', 'taskUid',
+    'relativePath', 'expectedSha256', 'maxBytes',
+  ]);
+  if (!input.session || typeof input.session !== 'object' || typeof input.session.sftp !== 'function') {
+    throw createError('SFTP_TRANSFER_INPUT_INVALID');
+  }
+  return Object.freeze({
+    session: input.session,
+    localFileSegments: relativeSegments(input.localRelativePath),
+    expectedSha256: expectedHash(input.expectedSha256),
+    ...scopedRemoteSegments(input),
+  });
+}
+
+function assertBoundedRemoteFile(stats, maxBytes) {
+  const size = stats?.size;
+  if (!safeFileStat(stats) || !Number.isSafeInteger(size) || size < 1 || size > maxBytes) {
+    throw createError('SFTP_TRANSFER_IO_FAILED');
+  }
+  return size;
 }
 
 function translate(error) {
@@ -437,7 +512,108 @@ function createSftpTransfer({ localRoot } = {}) {
     }
   }
 
-  return Object.freeze({ downloadFile, inspectRemoteFile, uploadFile });
+  async function inspectScopedRemoteFile(value) {
+    let sftp;
+    try {
+      const input = scopedRemoteFileInput(value);
+      sftp = await input.session.sftp();
+      const remotePath = input.remoteSegments.join('/');
+      await verifyRemoteDirectories(
+        sftp,
+        input.remoteSegments.slice(0, -1),
+        input.baseSegmentCount,
+      );
+      const expectedBytes = assertBoundedRemoteFile(
+        await lstatMaybe(sftp, remotePath),
+        input.maxBytes,
+      );
+      const baseReal = path.posix.normalize(await call(
+        sftp,
+        'realpath',
+        input.remoteSegments.slice(0, input.baseSegmentCount).join('/'),
+      ));
+      const remoteReal = path.posix.normalize(await call(sftp, 'realpath', remotePath));
+      if (remoteReal !== baseReal && !remoteReal.startsWith(`${baseReal}/`)) {
+        throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+      }
+      const measured = await hashReadable(sftp.createReadStream(remotePath));
+      if (measured.bytes !== expectedBytes) throw createError('SFTP_TRANSFER_IO_FAILED');
+      return Object.freeze({
+        remoteRelativePath: remotePath,
+        sha256: measured.sha256,
+        bytes: measured.bytes,
+      });
+    } catch (error) {
+      throw translate(error);
+    } finally {
+      try { sftp?.end?.(); } catch { /* bounded session cleanup */ }
+    }
+  }
+
+  async function downloadScopedFile(value) {
+    let sftp;
+    let temporaryLocalPath;
+    try {
+      const input = scopedTransferInput(value);
+      const target = await localDestination(localRoot, input.localFileSegments);
+      sftp = await input.session.sftp();
+      const remotePath = input.remoteSegments.join('/');
+      await verifyRemoteDirectories(
+        sftp,
+        input.remoteSegments.slice(0, -1),
+        input.baseSegmentCount,
+      );
+      const expectedBytes = assertBoundedRemoteFile(
+        await lstatMaybe(sftp, remotePath),
+        input.maxBytes,
+      );
+      const baseReal = path.posix.normalize(await call(
+        sftp,
+        'realpath',
+        input.remoteSegments.slice(0, input.baseSegmentCount).join('/'),
+      ));
+      const remoteReal = path.posix.normalize(await call(sftp, 'realpath', remotePath));
+      if (remoteReal !== baseReal && !remoteReal.startsWith(`${baseReal}/`)) {
+        throw createError('SFTP_TRANSFER_PATH_UNSAFE');
+      }
+      const remoteHash = await hashReadable(sftp.createReadStream(remotePath));
+      if (remoteHash.sha256 !== input.expectedSha256 || remoteHash.bytes !== expectedBytes) {
+        throw createError('SFTP_TRANSFER_HASH_MISMATCH');
+      }
+      temporaryLocalPath = path.join(
+        path.dirname(target),
+        `.${path.basename(target)}.${randomUUID()}.part`,
+      );
+      await call(sftp, 'fastGet', remotePath, temporaryLocalPath);
+      const localHash = await hashReadable(fs.createReadStream(temporaryLocalPath));
+      if (localHash.sha256 !== input.expectedSha256 || localHash.bytes !== expectedBytes) {
+        throw createError('SFTP_TRANSFER_HASH_MISMATCH');
+      }
+      await fs.promises.link(temporaryLocalPath, target);
+      await fs.promises.unlink(temporaryLocalPath);
+      temporaryLocalPath = null;
+      return Object.freeze({
+        localRelativePath: input.localFileSegments.join('/'),
+        sha256: localHash.sha256,
+        bytes: localHash.bytes,
+      });
+    } catch (error) {
+      throw translate(error);
+    } finally {
+      if (temporaryLocalPath) {
+        try { await fs.promises.unlink(temporaryLocalPath); } catch { /* best-effort temp cleanup */ }
+      }
+      try { sftp?.end?.(); } catch { /* bounded session cleanup */ }
+    }
+  }
+
+  return Object.freeze({
+    downloadFile,
+    downloadScopedFile,
+    inspectRemoteFile,
+    inspectScopedRemoteFile,
+    uploadFile,
+  });
 }
 
 module.exports = { SftpTransferError, createSftpTransfer };

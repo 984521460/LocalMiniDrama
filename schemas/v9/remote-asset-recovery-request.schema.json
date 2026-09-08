@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/remote-asset-recovery-request.schema.json",
+  "title": "Remote asset recovery request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "operationUid", "dramaUid", "characterUid",
+    "extractionResultUid", "characterFactId", "connectionUid",
+    "connectionEvidenceSha256", "remoteTaskUid"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "remote-asset-recovery-request.v1" },
+    "operationUid": { "$ref": "#/$defs/uid" },
+    "dramaUid": { "$ref": "#/$defs/uid" },
+    "characterUid": { "$ref": "#/$defs/uid" },
+    "extractionResultUid": { "$ref": "#/$defs/uid" },
+    "characterFactId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$" },
+    "connectionUid": { "$ref": "#/$defs/uid" },
+    "connectionEvidenceSha256": { "$ref": "#/$defs/sha256" },
+    "remoteTaskUid": { "$ref": "#/$defs/uid" }
+  },
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$comment": "Runtime additionally replays the current approved extraction fact and the exact ready remote-connection evidence before opening a read-only session."
+}

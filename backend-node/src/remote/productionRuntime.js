@@ -17,6 +17,9 @@ const { createH3LocalVideoInspector } = require('../h3/localVideoInspector');
 const { createH3GenerationHistoryService } = require('../h3/generationHistoryService');
 const { createRemoteOutputVerifier } = require('./outputVerifier');
 const { createH3RemoteModelCatalog } = require('./h3EnvironmentProfile');
+const {
+  createProductionRemoteAssetRecoveryService,
+} = require('../remoteAssets');
 
 const DEPENDENCY_KEYS = Object.freeze([
   'credentialVault', 'sshTransport', 'tunnelManager', 'comfyClientFactory',
@@ -93,6 +96,12 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
       : {}),
   });
   const transfer = createSftpTransfer({ localRoot });
+  const remoteAssetRecovery = createProductionRemoteAssetRecoveryService({
+    repositories,
+    sessionService: remoteSessionService,
+    transfer,
+    localRoot,
+  });
   const outputVerifier = createRemoteOutputVerifier({
     h3Inspector: configured.h3Inspector ?? createH3LocalVideoInspector({ localRoot }),
   });
@@ -127,6 +136,11 @@ function createProductionRemoteRuntime({ database, localRoot, dependencies = {} 
       remoteCoordinator,
       remoteEnvironment,
       remoteTasks,
+    }),
+    remoteAssetRecoveries: Object.freeze({
+      execute: remoteAssetRecovery.execute,
+      get: remoteAssetRecovery.get,
+      list: remoteAssetRecovery.list,
     }),
   });
 }

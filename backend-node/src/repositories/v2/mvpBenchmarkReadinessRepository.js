@@ -35,7 +35,7 @@ const REQUIRED_TRIGGERS = Object.freeze([
   'v2_mvp_benchmark_external_authorization_request_seals_append_only',
 ]);
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 33;
+const EXPECTED_MIGRATION_VERSION = 34;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);

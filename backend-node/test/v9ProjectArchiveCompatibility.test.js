@@ -100,6 +100,8 @@ test('project archive catalog classifies every current record table and keeps lo
     'ai_service_configs',
     'remote_connections',
     'remote_tasks',
+    'remote_asset_recoveries',
+    'remote_asset_recovery_items',
     'h3_api_submissions',
     'h3_generation_intents',
     'audio_mode_intents',

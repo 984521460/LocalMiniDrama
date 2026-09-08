@@ -218,6 +218,7 @@ function createApp({
     characterCandidateExecutions: recoveryRepositories.characterCandidateExecutions,
     characterReferencePackageExecutions:
       recoveryRepositories.characterReferencePackageExecutions,
+    remoteAssetRecoveries: recoveryRepositories.remoteAssetRecoveries,
     benchmarkReleases: recoveryRepositories.mvpBenchmarkExecutionAccounting,
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,

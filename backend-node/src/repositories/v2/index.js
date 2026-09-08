@@ -45,6 +45,7 @@ const {
   V2RepositoryNotFoundError,
 } = require('./errors');
 const { createRemoteRepository } = require('./remoteRepository');
+const { createRemoteAssetRecoveryRepository } = require('./remoteAssetRecoveryRepository');
 const { createProjectArchiveRepository } = require('./projectArchiveRepository');
 const { createNarrativeReviewRepository } = require('./narrativeReviewRepository');
 const { createNarrativeExecutionRepository } = require('./narrativeExecutionRepository');
@@ -143,6 +144,23 @@ function createLazyNarrativeExecutionRepository(database) {
     reserve(...args) {
       return getTarget().reserve(...args);
     },
+  });
+}
+
+function createLazyRemoteAssetRecoveryRepository(database) {
+  let target;
+  function getTarget() {
+    if (!target) target = createRemoteAssetRecoveryRepository(database);
+    return target;
+  }
+  return Object.freeze({
+    complete(...args) { return getTarget().complete(...args); },
+    fail(...args) { return getTarget().fail(...args); },
+    get(...args) { return getTarget().get(...args); },
+    listByCharacter(...args) { return getTarget().listByCharacter(...args); },
+    markUnknown(...args) { return getTarget().markUnknown(...args); },
+    recoverInterrupted(...args) { return getTarget().recoverInterrupted(...args); },
+    reserve(...args) { return getTarget().reserve(...args); },
   });
 }
 
@@ -487,6 +505,7 @@ function createV2Repositories(database) {
     narrativeExecutions,
     projectArchives: createLazyProjectArchiveRepository(database),
     remote,
+    remoteAssetRecoveries: createLazyRemoteAssetRecoveryRepository(database),
     runs,
     scenePropVersions,
     shotContinuitySnapshots,

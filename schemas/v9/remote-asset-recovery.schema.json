@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local-mini-drama.invalid/schemas/v9/remote-asset-recovery.schema.json",
+  "title": "Remote asset recovery record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "operationUid", "requestSha256", "request", "sourceSha256",
+    "source", "state", "quarantineStatus", "manifestSha256", "manifest", "itemCount",
+    "errorCode", "createdAtEpochMs", "updatedAtEpochMs", "items"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "remote-asset-recovery.v1" },
+    "operationUid": { "$ref": "#/$defs/uid" },
+    "requestSha256": { "$ref": "#/$defs/sha256" },
+    "request": { "$ref": "remote-asset-recovery-request.schema.json" },
+    "sourceSha256": { "$ref": "#/$defs/sha256" },
+    "source": { "$ref": "#/$defs/source" },
+    "state": { "enum": ["reserved", "succeeded", "failed", "submission_unknown"] },
+    "quarantineStatus": { "const": "unapproved" },
+    "manifestSha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+    "manifest": { "oneOf": [{ "$ref": "#/$defs/manifest" }, { "type": "null" }] },
+    "itemCount": { "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 16 }, { "type": "null" }] },
+    "errorCode": {
+      "enum": [
+        null,
+        "REMOTE_ASSET_RECOVERY_SOURCE_STALE",
+        "REMOTE_ASSET_RECOVERY_MANIFEST_INVALID",
+        "REMOTE_ASSET_RECOVERY_OUTPUT_INVALID",
+        "REMOTE_ASSET_RECOVERY_REMOTE_UNAVAILABLE",
+        "REMOTE_ASSET_RECOVERY_SUBMISSION_UNKNOWN"
+      ]
+    },
+    "createdAtEpochMs": { "$ref": "#/$defs/time" },
+    "updatedAtEpochMs": { "$ref": "#/$defs/time" },
+    "items": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/item" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "succeeded" } } },
+      "then": {
+        "properties": {
+          "manifestSha256": { "$ref": "#/$defs/sha256" },
+          "manifest": { "$ref": "#/$defs/manifest" },
+          "itemCount": { "type": "integer", "minimum": 1, "maximum": 16 },
+          "errorCode": { "type": "null" },
+          "items": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/item" } }
+        }
+      },
+      "else": {
+        "properties": {
+          "manifestSha256": { "type": "null" },
+          "manifest": { "type": "null" },
+          "itemCount": { "type": "null" },
+          "items": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "reserved" } } },
+      "then": { "properties": { "errorCode": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "failed" } } },
+      "then": {
+        "properties": {
+          "errorCode": {
+            "enum": [
+              "REMOTE_ASSET_RECOVERY_SOURCE_STALE",
+              "REMOTE_ASSET_RECOVERY_MANIFEST_INVALID",
+              "REMOTE_ASSET_RECOVERY_OUTPUT_INVALID",
+              "REMOTE_ASSET_RECOVERY_REMOTE_UNAVAILABLE"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "submission_unknown" } } },
+      "then": { "properties": { "errorCode": { "const": "REMOTE_ASSET_RECOVERY_SUBMISSION_UNKNOWN" } } }
+    }
+  ],
+  "$defs": {
+    "uid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "time": { "type": "integer", "minimum": 0, "maximum": 253402300799999 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "dramaUid", "characterUid", "characterName", "characterDescription",
+        "characterPersonality", "characterAppearance", "sourceSelectionUid", "extractionResultUid",
+        "extractionResultHash", "extractionEnvelopeHash", "extractionApprovalRef",
+        "characterFactId", "characterFactName", "characterFactDescription"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "character-candidate-source.v1" },
+        "dramaUid": { "$ref": "#/$defs/uid" },
+        "characterUid": { "$ref": "#/$defs/uid" },
+        "characterName": { "type": "string", "minLength": 1 },
+        "characterDescription": { "type": ["string", "null"] },
+        "characterPersonality": { "type": ["string", "null"] },
+        "characterAppearance": { "type": ["string", "null"] },
+        "sourceSelectionUid": { "$ref": "#/$defs/uid" },
+        "extractionResultUid": { "$ref": "#/$defs/uid" },
+        "extractionResultHash": { "$ref": "#/$defs/sha256" },
+        "extractionEnvelopeHash": { "$ref": "#/$defs/sha256" },
+        "extractionApprovalRef": { "type": "string", "pattern": "^review:v1:[0-9a-f-]{36}$" },
+        "characterFactId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$" },
+        "characterFactName": { "type": "string" },
+        "characterFactDescription": { "type": "string" }
+      }
+    },
+    "manifestItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "remoteRelativePath", "remoteSha256", "width", "height"],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "remoteRelativePath": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "remoteSha256": { "$ref": "#/$defs/sha256" },
+        "width": { "type": "integer", "minimum": 256, "maximum": 2048 },
+        "height": { "type": "integer", "minimum": 256, "maximum": 2048 }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "remoteTaskUid", "sourceFormat", "sourceManifestSha256", "items"],
+      "properties": {
+        "schemaVersion": { "const": "remote-asset-recovery-manifest.v1" },
+        "remoteTaskUid": { "$ref": "#/$defs/uid" },
+        "sourceFormat": { "enum": ["standard.v1", "legacy.character-candidates.v1"] },
+        "sourceManifestSha256": { "$ref": "#/$defs/sha256" },
+        "items": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/manifestItem" } }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal", "remoteRelativePath", "remoteSha256", "remoteByteLength", "assetUid",
+        "assetVersionUid", "logicalUri", "relativePath", "contentSha256", "byteLength",
+        "width", "height", "createdAtEpochMs"
+      ],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "remoteRelativePath": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "remoteSha256": { "$ref": "#/$defs/sha256" },
+        "remoteByteLength": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+        "assetUid": { "$ref": "#/$defs/uid" },
+        "assetVersionUid": { "$ref": "#/$defs/uid" },
+        "logicalUri": { "type": "string", "pattern": "^asset://characters/[0-9a-f-]{36}/remote-recoveries/[0-9a-f-]{36}/[0-9]+$" },
+        "relativePath": { "type": "string", "pattern": "^characters/[0-9a-f-]{36}/remote-recoveries/[0-9a-f-]{36}/[0-9]+\\.png$" },
+        "contentSha256": { "$ref": "#/$defs/sha256" },
+        "byteLength": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+        "width": { "type": "integer", "minimum": 256, "maximum": 2048 },
+        "height": { "type": "integer", "minimum": 256, "maximum": 2048 },
+        "createdAtEpochMs": { "$ref": "#/$defs/time" }
+      }
+    }
+  },
+  "$comment": "JSON Schema covers the public shape. Runtime and SQLite additionally bind all hashes, approved source facts, connection evidence, manifest ordinals, local AssetVersions, exact paths, dimensions, timestamps, and append-only transitions. Recovery records are always unapproved quarantine evidence."
+}

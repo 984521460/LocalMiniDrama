@@ -81,6 +81,12 @@
       </el-button>
     </div>
 
+    <RemoteAssetRecoveryPanel
+      :drama-id="dramaId"
+      :drama-uid="dramaUid"
+      :selection="selected"
+    />
+
     <CharacterCandidateHistory
       ref="historyPanel"
       :drama-id="dramaId"
@@ -103,6 +109,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import CharacterReferencePackageCard from './CharacterReferencePackageCard.vue'
 import CharacterCandidateHistory from './CharacterCandidateHistory.vue'
 import CharacterReferencePackageHistory from './CharacterReferencePackageHistory.vue'
+import RemoteAssetRecoveryPanel from './RemoteAssetRecoveryPanel.vue'
 import { useCharacterCandidateExecution } from '@/composables/useCharacterCandidateExecution.js'
 import {
   useCharacterReferencePackageExecution,

@@ -67,6 +67,14 @@ const {
   parseCharacterCandidateExecutionRequest,
 } = require('../../characterCandidates/execution/request');
 const {
+  parseRemoteAssetRecoveryRequest,
+  remoteAssetRecoveryRequestSha256,
+} = require('../../remoteAssets/recoveryRequest');
+const {
+  canonicalRemoteAssetRecoveryManifest,
+  parseStoredRemoteAssetRecoveryManifestJson,
+} = require('../../remoteAssets/recoveryManifest');
+const {
   characterReferencePackageExecutionRequestSha256,
 } = require('../../characterCandidates/referencePackage/request');
 const {
@@ -256,6 +264,27 @@ function characterCandidateParametersSha256Sql(value) {
         || parsed.cfg < 0 || parsed.cfg > 30
         || typeof parsed.negativePromptSha256 !== 'string'
         || !/^[0-9a-f]{64}$/u.test(parsed.negativePromptSha256))) return null;
+    return createHash('sha256').update(value, 'utf8').digest('hex');
+  } catch {
+    return null;
+  }
+}
+
+function remoteAssetRecoveryRequestSha256Sql(value) {
+  const parsed = canonicalJson(value, 16 * 1024);
+  if (parsed === null) return null;
+  try {
+    return remoteAssetRecoveryRequestSha256(parseRemoteAssetRecoveryRequest(parsed));
+  } catch {
+    return null;
+  }
+}
+
+function remoteAssetRecoveryManifestSha256Sql(value) {
+  if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > 256 * 1024) return null;
+  try {
+    const parsed = parseStoredRemoteAssetRecoveryManifestJson(value);
+    if (canonicalRemoteAssetRecoveryManifest(parsed) !== value) return null;
     return createHash('sha256').update(value, 'utf8').digest('hex');
   } catch {
     return null;
@@ -1141,6 +1170,16 @@ function mvpBenchmarkH3TerminalEvidence(
 
 function registerV2SqlFunctions(database) {
   database.function(
+    'remote_asset_recovery_request_sha256',
+    { deterministic: true },
+    remoteAssetRecoveryRequestSha256Sql,
+  );
+  database.function(
+    'remote_asset_recovery_manifest_sha256',
+    { deterministic: true },
+    remoteAssetRecoveryManifestSha256Sql,
+  );
+  database.function(
     'character_candidate_execution_request_sha256',
     { deterministic: true },
     characterCandidateExecutionRequestSha256Sql,
@@ -1413,5 +1452,7 @@ module.exports = Object.freeze({
   mvpBenchmarkSessionRecordValid,
   mvpBenchmarkSessionSourceGraphValid,
   narrativeExecutionRequestSha256Sql,
+  remoteAssetRecoveryManifestSha256Sql,
+  remoteAssetRecoveryRequestSha256Sql,
   registerV2SqlFunctions,
 });

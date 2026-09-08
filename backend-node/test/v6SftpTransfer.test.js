@@ -191,3 +191,68 @@ test('SFTP transfer rejects traversal, hash drift, and symbolic remote directori
     expectedSha256: sha256(Buffer.from('payload')),
   }), { code: 'SFTP_TRANSFER_PATH_UNSAFE' });
 });
+
+test('scoped recovery download is bounded inside a named job family', async (t) => {
+  const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lmd-sftp-local-'));
+  const remoteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lmd-sftp-remote-'));
+  t.after(() => {
+    fs.rmSync(localRoot, { force: true, recursive: true });
+    fs.rmSync(remoteRoot, { force: true, recursive: true });
+  });
+  const content = Buffer.from('remote recovery manifest');
+  const remoteFile = path.join(
+    remoteRoot, 'ai-drama-studio', 'jobs', 'character-candidates', TASK_UID, 'manifest.json',
+  );
+  fs.mkdirSync(path.dirname(remoteFile), { recursive: true });
+  fs.writeFileSync(remoteFile, content);
+  const transfer = createSftpTransfer({ localRoot });
+
+  const inspected = await transfer.inspectScopedRemoteFile({
+    session: createSession(new LocalSftp(remoteRoot)),
+    remoteWorkDir: 'ai-drama-studio',
+    taskScope: 'character-candidates',
+    taskUid: TASK_UID,
+    relativePath: 'manifest.json',
+    maxBytes: 1024,
+  });
+  assert.deepEqual(inspected, {
+    remoteRelativePath: `ai-drama-studio/jobs/character-candidates/${TASK_UID}/manifest.json`,
+    sha256: sha256(content),
+    bytes: content.length,
+  });
+  assert.deepEqual(await transfer.downloadScopedFile({
+    session: createSession(new LocalSftp(remoteRoot)),
+    localRelativePath: `.remote-recoveries/${TASK_UID}/manifest.json`,
+    remoteWorkDir: 'ai-drama-studio',
+    taskScope: 'character-candidates',
+    taskUid: TASK_UID,
+    relativePath: 'manifest.json',
+    expectedSha256: sha256(content),
+    maxBytes: 1024,
+  }), {
+    localRelativePath: `.remote-recoveries/${TASK_UID}/manifest.json`,
+    sha256: sha256(content),
+    bytes: content.length,
+  });
+  assert.deepEqual(
+    fs.readFileSync(path.join(localRoot, '.remote-recoveries', TASK_UID, 'manifest.json')),
+    content,
+  );
+
+  await assert.rejects(transfer.inspectScopedRemoteFile({
+    session: createSession(new LocalSftp(remoteRoot)),
+    remoteWorkDir: 'ai-drama-studio',
+    taskScope: '../escape',
+    taskUid: TASK_UID,
+    relativePath: 'manifest.json',
+    maxBytes: 1024,
+  }), { code: 'SFTP_TRANSFER_INPUT_INVALID' });
+  await assert.rejects(transfer.inspectScopedRemoteFile({
+    session: createSession(new LocalSftp(remoteRoot)),
+    remoteWorkDir: 'ai-drama-studio',
+    taskScope: 'character-candidates',
+    taskUid: TASK_UID,
+    relativePath: 'manifest.json',
+    maxBytes: content.length - 1,
+  }), { code: 'SFTP_TRANSFER_IO_FAILED' });
+});

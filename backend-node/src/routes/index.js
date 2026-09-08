@@ -32,6 +32,7 @@ const shotContinuitySnapshotRoutes = require('./v2/shotContinuitySnapshots');
 const generationHistoryRoutes = require('./v2/generationHistory');
 const remoteConnectionRoutes = require('./v2/remoteConnections');
 const remoteExecutionRoutes = require('./v2/remoteExecution');
+const remoteAssetRecoveryRoutes = require('./v2/remoteAssetRecoveries');
 const h3Routes = require('./v2/h3');
 const voiceProfileRoutes = require('./v2/voiceProfiles');
 const mediaExportRoutes = require('./v2/mediaExports');
@@ -93,6 +94,11 @@ function setupRouter(cfg, db, log, runtime = {}) {
   );
   const remoteConnections = remoteConnectionRoutes(log, runtime.remoteConnections, db);
   const remoteExecution = remoteExecutionRoutes(log, runtime.remoteExecution, db);
+  const remoteAssetRecoveries = remoteAssetRecoveryRoutes(
+    db,
+    log,
+    runtime.remoteAssetRecoveries,
+  );
   const h3 = h3Routes(log, db, runtime.h3);
   const voiceProfiles = voiceProfileRoutes(log, runtime.voiceProfiles, db);
   const mediaExports = mediaExportRoutes(log, runtime.mediaExports, db);
@@ -113,6 +119,7 @@ function setupRouter(cfg, db, log, runtime = {}) {
   r.use('/v2', generationHistory);
   r.use('/v2', remoteConnections);
   r.use('/v2', remoteExecution);
+  r.use('/v2', remoteAssetRecoveries);
   r.use('/v2', h3);
   r.use('/v2', voiceProfiles);
   r.use('/v2', mediaExports);

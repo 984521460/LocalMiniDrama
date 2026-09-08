@@ -367,3 +367,13 @@ opaque credential reference. Connection evidence, H3 intent validation, MVP
 authorization, readiness, attestation, and reservation guards all bind the
 effective method. Private keys remain exclusively in the credential vault;
 the migration neither reads credentials nor performs SSH or external work.
+
+Migration `0034_remote_asset_recoveries.sql` adds an append-only quarantine for
+assets that already exist in a bounded remote character-candidate job directory.
+Each recovery is reserved before SSH reads, binds the current approved extraction
+fact and ready connection evidence, and can succeed only after a canonical remote
+manifest and every downloaded PNG have been hash-checked and materialized as local
+draft `remote_recovery` Assets. Recovered media is intentionally not a character
+candidate batch, cannot be identity-locked, and requires a later human decision.
+Interrupted work becomes `submission_unknown`; the migration performs no SSH,
+Vault, Provider, GPU, billing, publication, or instance operation.
