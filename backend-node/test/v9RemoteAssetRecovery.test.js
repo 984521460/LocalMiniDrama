@@ -156,14 +156,23 @@ test('remote asset recovery manifest normalizes standard and legacy character jo
   const standard = parseRemoteAssetRecoveryManifest({
     schemaVersion: 'remote-asset-recovery-manifest.v1',
     remoteTaskUid: uid(6),
+    characterName: '阿澜',
     assets: [
       { ordinal: 0, relativePath: 'outputs/lin-che-1.png', sha256: sha('c'), width: 1024, height: 1024 },
       { ordinal: 1, relativePath: 'outputs/lin-che-2.png', sha256: sha('d'), width: 1024, height: 1024 },
     ],
-  }, { remoteTaskUid: uid(6), sourceManifestSha256 });
+  }, { remoteTaskUid: uid(6), sourceManifestSha256, characterName: '阿澜' });
   assert.equal(standard.sourceFormat, 'standard.v1');
   assert.equal(standard.items.length, 2);
   assert.equal(standard.items[0].remoteRelativePath, 'outputs/lin-che-1.png');
+  assert.throws(() => parseRemoteAssetRecoveryManifest({
+    schemaVersion: 'remote-asset-recovery-manifest.v1',
+    remoteTaskUid: uid(6),
+    characterName: '夏弦',
+    assets: [
+      { ordinal: 0, relativePath: 'outputs/xia-xian-1.png', sha256: sha('c'), width: 1024, height: 1024 },
+    ],
+  }, { remoteTaskUid: uid(6), sourceManifestSha256, characterName: '阿澜' }));
 
   const legacy = parseRemoteAssetRecoveryManifest({
     runUid: uid(6),
@@ -180,8 +189,9 @@ test('remote asset recovery manifest normalizes standard and legacy character jo
         file: 'lin-che-1.png', subfolder: 'outputs', sha256: sha('f'),
       },
     ],
-  }, { remoteTaskUid: uid(6), sourceManifestSha256 });
+  }, { remoteTaskUid: uid(6), sourceManifestSha256, characterName: '林澈' });
   assert.equal(legacy.sourceFormat, 'legacy.character-candidates.v1');
+  assert.equal(legacy.characterName, '林澈');
   assert.equal(legacy.items[0].remoteRelativePath, 'outputs/lin-che-1.png');
   assert.equal(
     JSON.parse(canonicalRemoteAssetRecoveryManifest(legacy)).sourceManifestSha256,
@@ -192,21 +202,69 @@ test('remote asset recovery manifest normalizes standard and legacy character jo
     schemaVersion: 'remote-asset-recovery-manifest.v1',
     remoteTaskUid: uid(6),
     assets: [{ ordinal: 0, relativePath: '../secret', sha256: sha('c'), width: 1024, height: 1024 }],
-  }, { remoteTaskUid: uid(6), sourceManifestSha256 }));
+  }, { remoteTaskUid: uid(6), sourceManifestSha256, characterName: '阿澜' }));
   assert.throws(() => parseRemoteAssetRecoveryManifest({
     schemaVersion: 'remote-asset-recovery-manifest.v1',
     remoteTaskUid: uid(999),
     assets: [{ ordinal: 0, relativePath: 'safe.png', sha256: sha('c'), width: 1024, height: 1024 }],
-  }, { remoteTaskUid: uid(6), sourceManifestSha256 }));
+  }, { remoteTaskUid: uid(6), sourceManifestSha256, characterName: '阿澜' }));
 });
 
-test('migration 34 creates append-only quarantined recovery evidence', (t) => {
+test('legacy recovery selects only the approved character from a multi-character task', () => {
+  const sourceManifestSha256 = sha('9');
+  const shared = {
+    seed: 1,
+    promptSha256: sha('8'),
+    promptId: uid(21),
+    subfolder: 'outputs',
+    sha256: sha('7'),
+  };
+  const manifest = {
+    runUid: uid(6),
+    checkpoint: 'animagine-xl-4.0-opt.safetensors',
+    size: '1024x1024',
+    steps: 28,
+    cfg: 6,
+    sampler: 'euler_ancestral',
+    scheduler: 'normal',
+    items: [
+      { ...shared, name: '林澈', slug: 'lin-che', ordinal: 0, file: 'lin-che-1.png' },
+      { ...shared, name: '林澈', slug: 'lin-che', ordinal: 1, file: 'lin-che-2.png' },
+      { ...shared, name: '夏弦', slug: 'xia-xian', ordinal: 0, file: 'xia-xian-1.png' },
+      { ...shared, name: '夏弦', slug: 'xia-xian', ordinal: 1, file: 'xia-xian-2.png' },
+    ],
+  };
+  const selected = parseRemoteAssetRecoveryManifest(manifest, {
+    remoteTaskUid: uid(6), sourceManifestSha256, characterName: '夏弦',
+  });
+  assert.equal(selected.characterName, '夏弦');
+  assert.deepEqual(selected.items.map((item) => ({
+    ordinal: item.ordinal, path: item.remoteRelativePath,
+  })), [
+    { ordinal: 0, path: 'outputs/xia-xian-1.png' },
+    { ordinal: 1, path: 'outputs/xia-xian-2.png' },
+  ]);
+  assert.throws(() => parseRemoteAssetRecoveryManifest(manifest, {
+    remoteTaskUid: uid(6), sourceManifestSha256, characterName: '不存在',
+  }));
+  const invalidUnselected = structuredClone(manifest);
+  invalidUnselected.items[0].sha256 = 'Z'.repeat(64);
+  assert.throws(() => parseRemoteAssetRecoveryManifest(invalidUnselected, {
+    remoteTaskUid: uid(6), sourceManifestSha256, characterName: '夏弦',
+  }));
+});
+
+test('migrations 34 and 35 create append-only character-bound recovery evidence', (t) => {
   const database = createMigratedV2Database(t);
-  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 34);
+  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 35);
   assert.equal(database.prepare(`
     SELECT count(*) FROM sqlite_master
     WHERE type='table' AND name IN ('remote_asset_recoveries','remote_asset_recovery_items')
   `).pluck().get(), 2);
+  assert.equal(database.prepare(`
+    SELECT count(*) FROM sqlite_master
+    WHERE type='trigger' AND name='v2_remote_asset_recoveries_character_binding_update'
+  `).pluck().get(), 1);
   const repository = createV2Repositories(database).remoteAssetRecoveries;
   assert.equal(typeof repository.reserve, 'function');
   assert.equal(typeof repository.complete, 'function');
@@ -243,6 +301,7 @@ test('recovery downloads a remote manifest and seals normalized PNGs as local qu
   const manifestBytes = Buffer.from(JSON.stringify({
     schemaVersion: 'remote-asset-recovery-manifest.v1',
     remoteTaskUid,
+    characterName: '阿澜',
     assets: pngs.map((bytes, ordinal) => ({
       ordinal,
       relativePath: `outputs/candidate-${ordinal}.png`,
@@ -341,6 +400,18 @@ test('recovery downloads a remote manifest and seals normalized PNGs as local qu
   assert.throws(() => database.prepare(`
     DELETE FROM remote_asset_recoveries WHERE operation_uid=?
   `).run(operationUid), /append-only/u);
+
+  const wrongManifestJson = canonicalRemoteAssetRecoveryManifest({
+    ...first.recovery.manifest,
+    characterName: '夏弦',
+  });
+  database.exec('DROP TRIGGER v2_remote_asset_recoveries_validate_update');
+  assert.throws(() => database.prepare(`
+    UPDATE remote_asset_recoveries
+    SET manifest_json=?, manifest_sha256=?, updated_at_epoch_ms=unixepoch('now') * 1000
+    WHERE operation_uid=?
+  `).run(wrongManifestJson, sha256(Buffer.from(wrongManifestJson, 'utf8')), operationUid),
+  /character binding invalid/u);
 
   const damaged = first.recovery.items[0];
   fs.writeFileSync(path.join(localRoot, ...damaged.relativePath.split('/')), Buffer.from('tampered'));

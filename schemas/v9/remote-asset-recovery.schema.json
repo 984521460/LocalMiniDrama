@@ -129,10 +129,11 @@
     "manifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "remoteTaskUid", "sourceFormat", "sourceManifestSha256", "items"],
+      "required": ["schemaVersion", "remoteTaskUid", "characterName", "sourceFormat", "sourceManifestSha256", "items"],
       "properties": {
         "schemaVersion": { "const": "remote-asset-recovery-manifest.v1" },
         "remoteTaskUid": { "$ref": "#/$defs/uid" },
+        "characterName": { "type": "string", "minLength": 1, "maxLength": 1024 },
         "sourceFormat": { "enum": ["standard.v1", "legacy.character-candidates.v1"] },
         "sourceManifestSha256": { "$ref": "#/$defs/sha256" },
         "items": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/manifestItem" } }
@@ -163,5 +164,5 @@
       }
     }
   },
-  "$comment": "JSON Schema covers the public shape. Runtime and SQLite additionally bind all hashes, approved source facts, connection evidence, manifest ordinals, local AssetVersions, exact paths, dimensions, timestamps, and append-only transitions. Recovery records are always unapproved quarantine evidence."
+  "$comment": "JSON Schema covers the public shape. Runtime and SQLite additionally bind all hashes, approved source facts, exact character name, connection evidence, manifest ordinals, local AssetVersions, exact paths, dimensions, timestamps, and append-only transitions. Legacy multi-character manifests are fully validated and filtered by the approved character name before download. Recovery records are always unapproved quarantine evidence."
 }

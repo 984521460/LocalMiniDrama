@@ -8,7 +8,7 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const SEGMENT = /^[A-Za-z0-9._-]{1,128}$/u;
 const JSON_PARSE = JSON.parse;
 const JSON_STRINGIFY = JSON.stringify;
-const STANDARD_KEYS = Object.freeze(['schemaVersion', 'remoteTaskUid', 'assets']);
+const STANDARD_KEYS = Object.freeze(['schemaVersion', 'remoteTaskUid', 'characterName', 'assets']);
 const STANDARD_ITEM_KEYS = Object.freeze(['ordinal', 'relativePath', 'sha256', 'width', 'height']);
 const LEGACY_KEYS = Object.freeze([
   'runUid', 'checkpoint', 'size', 'steps', 'cfg', 'sampler', 'scheduler', 'items',
@@ -17,7 +17,8 @@ const LEGACY_ITEM_KEYS = Object.freeze([
   'name', 'slug', 'ordinal', 'seed', 'promptSha256', 'promptId', 'file', 'subfolder', 'sha256',
 ]);
 const STORED_KEYS = Object.freeze([
-  'schemaVersion', 'remoteTaskUid', 'sourceFormat', 'sourceManifestSha256', 'items',
+  'schemaVersion', 'remoteTaskUid', 'characterName', 'sourceFormat',
+  'sourceManifestSha256', 'items',
 ]);
 const STORED_ITEM_KEYS = Object.freeze([
   'ordinal', 'remoteRelativePath', 'remoteSha256', 'width', 'height',
@@ -90,6 +91,22 @@ function dimension(value) {
   return value;
 }
 
+function characterName(value) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 1024
+    || value !== value.trim() || Buffer.byteLength(value, 'utf8') > 1024
+    || /[\u0000\u007f]/u.test(value)) invalid();
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      if (index + 1 >= value.length) invalid();
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) invalid();
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) invalid();
+  }
+  return value;
+}
+
 function remotePath(value) {
   if (typeof value !== 'string' || value !== value.trim() || value.length < 1
     || value.length > 1024 || value.includes('\0') || value.includes('\\')
@@ -102,10 +119,11 @@ function remotePath(value) {
 }
 
 function sourceContext(value) {
-  const input = exactObject(value, ['remoteTaskUid', 'sourceManifestSha256']);
+  const input = exactObject(value, ['remoteTaskUid', 'sourceManifestSha256', 'characterName']);
   return Object.freeze({
     remoteTaskUid: uid(input.remoteTaskUid),
     sourceManifestSha256: hash(input.sourceManifestSha256),
+    characterName: characterName(input.characterName),
   });
 }
 
@@ -137,10 +155,12 @@ function normalizeItems(values, mapper) {
 
 function normalizeStandard(value, context) {
   const input = exactObject(value, STANDARD_KEYS);
-  if (input.schemaVersion !== SCHEMA_VERSION || uid(input.remoteTaskUid) !== context.remoteTaskUid) invalid();
+  if (input.schemaVersion !== SCHEMA_VERSION || uid(input.remoteTaskUid) !== context.remoteTaskUid
+    || characterName(input.characterName) !== context.characterName) invalid();
   return Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     remoteTaskUid: context.remoteTaskUid,
+    characterName: context.characterName,
     sourceFormat: 'standard.v1',
     sourceManifestSha256: context.sourceManifestSha256,
     items: normalizeItems(input.assets, (candidate) => {
@@ -165,40 +185,62 @@ function normalizeLegacy(value, context) {
     || typeof input.sampler !== 'string' || input.sampler.length < 1
     || typeof input.scheduler !== 'string' || input.scheduler.length < 1) invalid();
   const dimensions = size(input.size);
+  const raw = denseArray(input.items);
+  const selected = [];
+  const paths = new Set();
+  const identities = new Set();
+  for (let index = 0; index < raw.length; index += 1) {
+    const item = exactObject(raw[index], LEGACY_ITEM_KEYS);
+    if (typeof item.file !== 'string' || !SEGMENT.test(item.file)
+      || typeof item.subfolder !== 'string'
+      || (item.subfolder !== '' && remotePath(item.subfolder) !== item.subfolder)
+      || !Number.isSafeInteger(item.ordinal) || item.ordinal < 0 || item.ordinal > 15
+      || !Number.isSafeInteger(item.seed) || item.seed < 0 || item.seed > 4_294_967_295
+      || typeof item.slug !== 'string' || !SEGMENT.test(item.slug)
+      || typeof item.promptSha256 !== 'string' || !SHA256.test(item.promptSha256)
+      || typeof item.promptId !== 'string' || item.promptId.length < 1 || item.promptId.length > 128) {
+      invalid();
+    }
+    const name = characterName(item.name);
+    const itemSha256 = hash(item.sha256);
+    const itemPath = remotePath(
+      item.subfolder === '' ? item.file : `${item.subfolder}/${item.file}`,
+    );
+    const identity = `${name}\u0000${item.ordinal}`;
+    if (paths.has(itemPath) || identities.has(identity)) invalid();
+    paths.add(itemPath);
+    identities.add(identity);
+    if (name === context.characterName) {
+      selected.push(Object.freeze({
+        ordinal: selected.length,
+        remoteRelativePath: itemPath,
+        remoteSha256: itemSha256,
+        width: dimensions.width,
+        height: dimensions.height,
+      }));
+    }
+  }
+  if (selected.length < 1) invalid();
   return Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     remoteTaskUid: context.remoteTaskUid,
+    characterName: context.characterName,
     sourceFormat: 'legacy.character-candidates.v1',
     sourceManifestSha256: context.sourceManifestSha256,
-    items: normalizeItems(input.items, (candidate) => {
-      const item = exactObject(candidate, LEGACY_ITEM_KEYS);
-      if (typeof item.file !== 'string' || !SEGMENT.test(item.file)
-        || typeof item.subfolder !== 'string'
-        || (item.subfolder !== '' && remotePath(item.subfolder) !== item.subfolder)
-        || !Number.isSafeInteger(item.seed) || item.seed < 0 || item.seed > 4_294_967_295
-        || typeof item.name !== 'string' || item.name.length < 1
-        || typeof item.slug !== 'string' || !SEGMENT.test(item.slug)
-        || typeof item.promptSha256 !== 'string' || !SHA256.test(item.promptSha256)
-        || typeof item.promptId !== 'string' || item.promptId.length < 1 || item.promptId.length > 128) invalid();
-      return {
-        ordinal: item.ordinal,
-        remoteRelativePath: remotePath(item.subfolder === '' ? item.file : `${item.subfolder}/${item.file}`),
-        remoteSha256: hash(item.sha256),
-        width: dimensions.width,
-        height: dimensions.height,
-      };
-    }),
+    items: Object.freeze(selected),
   });
 }
 
 function normalizeStored(value, context) {
   const input = exactObject(value, STORED_KEYS);
   if (input.schemaVersion !== SCHEMA_VERSION || uid(input.remoteTaskUid) !== context.remoteTaskUid
+    || characterName(input.characterName) !== context.characterName
     || hash(input.sourceManifestSha256) !== context.sourceManifestSha256
     || !['standard.v1', 'legacy.character-candidates.v1'].includes(input.sourceFormat)) invalid();
   return Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     remoteTaskUid: context.remoteTaskUid,
+    characterName: context.characterName,
     sourceFormat: input.sourceFormat,
     sourceManifestSha256: context.sourceManifestSha256,
     items: normalizeItems(input.items, (candidate) => {
@@ -228,6 +270,7 @@ function canonicalRemoteAssetRecoveryManifest(value) {
   const parsed = normalizeStored(value, {
     remoteTaskUid: value?.remoteTaskUid,
     sourceManifestSha256: value?.sourceManifestSha256,
+    characterName: value?.characterName,
   });
   const encode = (item) => Reflect.apply(JSON_STRINGIFY, JSON, [item]);
   const items = parsed.items.map((item) => (
@@ -236,6 +279,7 @@ function canonicalRemoteAssetRecoveryManifest(value) {
   )).join(',');
   return `{"schemaVersion":${encode(parsed.schemaVersion)}`
     + `,"remoteTaskUid":${encode(parsed.remoteTaskUid)}`
+    + `,"characterName":${encode(parsed.characterName)}`
     + `,"sourceFormat":${encode(parsed.sourceFormat)}`
     + `,"sourceManifestSha256":${encode(parsed.sourceManifestSha256)}`
     + `,"items":[${items}]}`;
@@ -255,6 +299,7 @@ function parseStoredRemoteAssetRecoveryManifestJson(value) {
   const normalized = normalizeStored(parsed, {
     remoteTaskUid: parsed?.remoteTaskUid,
     sourceManifestSha256: parsed?.sourceManifestSha256,
+    characterName: parsed?.characterName,
   });
   if (canonicalRemoteAssetRecoveryManifest(normalized) !== value) invalid();
   return normalized;

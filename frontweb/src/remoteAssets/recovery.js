@@ -20,7 +20,8 @@ const SOURCE_KEYS = Object.freeze([
   'characterFactDescription',
 ])
 const MANIFEST_KEYS = Object.freeze([
-  'schemaVersion', 'remoteTaskUid', 'sourceFormat', 'sourceManifestSha256', 'items',
+  'schemaVersion', 'remoteTaskUid', 'characterName', 'sourceFormat',
+  'sourceManifestSha256', 'items',
 ])
 const MANIFEST_ITEM_KEYS = Object.freeze([
   'ordinal', 'remoteRelativePath', 'remoteSha256', 'width', 'height',
@@ -132,10 +133,11 @@ function sourceView(value, request) {
   return Object.freeze({ ...input })
 }
 
-function manifestView(value, request) {
+function manifestView(value, request, source) {
   const input = exact(value, MANIFEST_KEYS)
   if (input.schemaVersion !== 'remote-asset-recovery-manifest.v1'
     || input.remoteTaskUid !== request.remoteTaskUid
+    || input.characterName !== source.characterName
     || !['standard.v1', 'legacy.character-candidates.v1'].includes(input.sourceFormat)) invalid()
   hash(input.sourceManifestSha256)
   const raw = dense(input.items, 16)
@@ -166,7 +168,7 @@ function recoveryView(value) {
   const items = []
   if (input.state === 'succeeded') {
     hash(input.manifestSha256)
-    manifest = manifestView(input.manifest, request)
+    manifest = manifestView(input.manifest, request, source)
     if (input.itemCount !== rawItems.length || input.itemCount !== manifest.items.length
       || input.errorCode !== null || input.itemCount < 1) invalid()
     for (let ordinal = 0; ordinal < rawItems.length; ordinal += 1) {

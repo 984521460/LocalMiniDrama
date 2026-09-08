@@ -200,6 +200,7 @@ function createRemoteAssetRecoveryRepository(database) {
       : createHash('sha256').update(row.manifest_json, 'utf8').digest('hex');
     if ((row.state === 'succeeded'
       && (!manifest || manifest.remoteTaskUid !== request.remoteTaskUid
+        || manifest.characterName !== source.characterName
         || manifestSha256 !== row.manifest_sha256
         || manifest.sourceManifestSha256 === null))
       || (row.state !== 'succeeded'

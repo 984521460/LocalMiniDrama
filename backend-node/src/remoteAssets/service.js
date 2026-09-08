@@ -297,6 +297,7 @@ function createRemoteAssetRecoveryService({
         manifest = parseRemoteAssetRecoveryManifestJson(text, {
           remoteTaskUid: request.remoteTaskUid,
           sourceManifestSha256: inspected.sha256,
+          characterName: source.source.characterName,
         });
       } finally {
         manifestBytes?.fill?.(0);

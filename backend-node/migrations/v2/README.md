@@ -377,3 +377,11 @@ draft `remote_recovery` Assets. Recovered media is intentionally not a character
 candidate batch, cannot be identity-locked, and requires a later human decision.
 Interrupted work becomes `submission_unknown`; the migration performs no SSH,
 Vault, Provider, GPU, billing, publication, or instance operation.
+
+Migration `0035_remote_asset_recovery_character_binding.sql` hardens recovery
+ownership without rewriting migration 34. Runtime normalized manifests preserve
+the current approved character name; a legacy multi-character manifest is fully
+validated and filtered by that exact name before any item is downloaded. Migration
+35 rejects pre-existing successful records that lack the same character binding
+and installs an additional update guard, so one recovery cannot attach another
+character's group even when upgrading a database that already applied migration 34.

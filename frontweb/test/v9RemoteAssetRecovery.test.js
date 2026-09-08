@@ -61,6 +61,7 @@ function response(requestValue = request()) {
       manifest: {
         schemaVersion: 'remote-asset-recovery-manifest.v1',
         remoteTaskUid: requestValue.remoteTaskUid,
+        characterName: '阿澜',
         sourceFormat: 'standard.v1',
         sourceManifestSha256: sha('1'),
         items: [{
@@ -110,6 +111,9 @@ test('recovery views bind exact request, manifest, and quarantined local asset r
   rebound.recovery.items[0].assetUid = uid(99)
   rebound.recovery.items[0].relativePath = 'characters/other.png'
   assert.throws(() => remoteAssetRecoveryResponseView(rebound))
+  const wrongCharacter = structuredClone(response())
+  wrongCharacter.recovery.manifest.characterName = '夏弦'
+  assert.throws(() => remoteAssetRecoveryResponseView(wrongCharacter))
   const invalidFailure = structuredClone(response())
   invalidFailure.recovery.state = 'failed'
   invalidFailure.recovery.manifestSha256 = null

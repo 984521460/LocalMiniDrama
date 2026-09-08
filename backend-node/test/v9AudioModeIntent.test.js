@@ -171,7 +171,7 @@ test('migration twenty preserves the prepared audio mode intent store', (t) => {
   const database = createMigratedV2Database(t);
   assert.equal(
     database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(),
-    34,
+    35,
   );
   assert.equal(
     database.prepare(`
