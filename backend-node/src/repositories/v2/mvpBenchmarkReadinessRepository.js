@@ -43,7 +43,7 @@ const REQUIRED_TRIGGERS = Object.freeze([
 ]);
 const REQUIRED_TRIGGER_PLACEHOLDERS = REQUIRED_TRIGGERS.map(() => '?').join(',');
 const EXPECTED_FIRST_MIGRATION_VERSION = 1;
-const EXPECTED_MIGRATION_VERSION = 39;
+const EXPECTED_MIGRATION_VERSION = 40;
 
 function createMvpBenchmarkReadinessRepository(database) {
   assertDatabase(database);

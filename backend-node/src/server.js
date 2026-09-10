@@ -1,7 +1,10 @@
 const { loadConfig } = require('./config/index.js');
 const { isInsecureTlsEnabled, resolveServerHost } = require('./config/serverSecurityDefaults');
 
-const preConfig = loadConfig();
+const {startupFromEnvironment,resolveStartup}=require('./startup/startupPolicy');
+const startup=startupFromEnvironment();
+const validatedStartup=resolveStartup(startup);
+const preConfig = validatedStartup ? validatedStartup.config : loadConfig();
 const insecureTlsOn = isInsecureTlsEnabled(preConfig.server);
 if (insecureTlsOn) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -12,8 +15,8 @@ const { createApp } = require('./app.js');
 const { closeDb } = require('./db/index.js');
 const logger = require('./logger.js');
 
-const { app, config } = createApp();
-const port = Number(process.env.PORT) || config.server?.port || 5679;
+const { app, config } = createApp({startup});
+const port = validatedStartup ? config.server.port : Number(process.env.PORT) || config.server?.port || 5679;
 const host = resolveServerHost(config.server);
 
 const server = app.listen(port, host, () => {

@@ -177,9 +177,43 @@ function selectedOutput(state, input) {
 function createRemoteComfyCharacterCandidateImageProvider({ repository, gateway, profile } = {}) {
   const configured = configuredProfile(profile);
   if (configured.enabled) enabledDependencies(repository, gateway);
+  function binding() {
+    if(!configured.enabled)throw new TypeError('Remote ComfyUI character provider is unavailable');
+    const current=currentConnection(repository,configured);
+    return Object.freeze({connectionUid:current.connection.uid,connectionEvidenceSha256:current.evidenceSha256,
+      profileSha256:createHash('sha256').update(JSON.stringify(configured)).digest('hex')});
+  }
+  function checkedBinding(expected){const current=binding();if(JSON.stringify(current)!==JSON.stringify(expected))throw new TypeError('Remote configuration binding changed');return current;}
+  function collectedOutput(input,current,bytes){
+    if(!Buffer.isBuffer(bytes)||isProxy(bytes)||bytes.length<PNG_SIGNATURE.length||bytes.length>MAX_IMAGE_BYTES||!bytes.subarray(0,8).equals(PNG_SIGNATURE))throw new TypeError('Remote ComfyUI image output is invalid');
+    return Object.freeze({provider:'comfyui',model:configured.checkpointName,bytes:Buffer.from(bytes),parameters:Object.freeze({adapter:'remote-comfyui.v1',size:`${input.width}x${input.height}`,requestedSeed:input.seed,ordinal:input.ordinal,
+      connectionUid:current.connectionUid,connectionEvidenceSha256:current.connectionEvidenceSha256,samplerName:configured.samplerName,scheduler:configured.scheduler,steps:configured.steps,cfg:configured.cfg,
+      negativePromptSha256:createHash('sha256').update(configured.negativePrompt).digest('hex')})});
+  }
 
   return Object.freeze({
     scope: 'configured-image',
+    recoveryBinding:binding,
+    async submit(value,expected){
+      const input=command(value),current=checkedBinding(expected);
+      return gateway.run(current.connectionUid,current.connectionEvidenceSha256,async client=>{
+        assertRuntime(await client.objectInfo(),configured.checkpointName);
+        const result=await client.submitPrompt(buildRemoteComfyCharacterPrompt(input,configured),{clientId:input.operationUid});
+        return result.promptId;
+      });
+    },
+    async collect(value,expected,promptId,onOutput){
+      const input=command(value),current=checkedBinding(expected);
+      if(typeof promptId!=='string'||!/^[A-Za-z0-9._-]{1,128}$/u.test(promptId)||typeof onOutput!=='function')throw new TypeError('Invalid collection identity');
+      const bytes=await gateway.run(current.connectionUid,current.connectionEvidenceSha256,async client=>{
+        const state=await client.waitForPrompt(promptId,Object.freeze({timeoutMs:300000,pollIntervalMs:1000}));
+        if(state.promptId!==promptId)throw new TypeError('Remote prompt identity changed');
+        const output=selectedOutput(state,input);
+        await onOutput(Object.freeze({nodeId:OUTPUT_NODE_ID,fileName:output.fileName,subfolder:output.subfolder,storageType:output.storageType}));
+        return client.downloadOutput({fileName:output.fileName,subfolder:output.subfolder,storageType:output.storageType});
+      });
+      return collectedOutput(input,current,bytes);
+    },
     isAvailable() {
       if (!configured.enabled) return false;
       try {

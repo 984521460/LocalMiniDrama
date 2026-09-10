@@ -189,7 +189,7 @@ test('candidate panel requires explicit ten-call confirmation and renders the pa
   assert.match(source, /referenceExecution\.execute/u)
   assert.match(source, /referenceHistoryPanel\.value\?\.refresh\(selection\.characterUid\)/u)
   assert.match(source, /paidActionBusy\.value \|\| busy\.value \|\| referenceExecution\.busy\.value/u)
-  assert.match(source, /:disabled="!selectedCandidateUid \|\| busy\.value \|\| paidActionBusy"/u)
+  assert.match(source, /:disabled="offlineSafe \|\| !selectedCandidateUid \|\| busy\.value \|\| paidActionBusy"/u)
 })
 
 test('reference package history UI opens ten original images and never fabricates failed output', () => {

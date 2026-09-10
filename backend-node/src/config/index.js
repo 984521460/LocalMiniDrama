@@ -2,15 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 
-const configPaths = [
+function configPaths() { return [
   path.join(process.cwd(), 'configs', 'config.yaml'),
   path.join(process.cwd(), 'config.yaml'),
   path.join(__dirname, '..', '..', 'configs', 'config.yaml'),
-];
+]; }
 
 function loadConfig() {
   let raw = null;
-  for (const p of configPaths) {
+  for (const p of configPaths()) {
     if (fs.existsSync(p)) {
       raw = fs.readFileSync(p, 'utf8');
       break;

@@ -1,5 +1,6 @@
 const { types: { isPromise } } = require('node:util');
 const { createRecoveryActivityRepository } = require('./recoveryActivityRepository');
+const {createCharacterRemoteCollectionRepository}=require('./characterRemoteCollectionRepository');
 
 const { createAssetRepository } = require('./assetRepository');
 const { createAudioTtsSubmissionStore } = require('../../audio/audioTtsSubmissionStore');
@@ -505,6 +506,7 @@ function createV2Repositories(database) {
     sessions: mvpBenchmarkSessions,
   });
   const aggregates = {
+    characterRemoteCollections:createCharacterRemoteCollectionRepository(database),
     recoveryActivity: createRecoveryActivityRepository(database),
     assets,
     audioModeIntents,

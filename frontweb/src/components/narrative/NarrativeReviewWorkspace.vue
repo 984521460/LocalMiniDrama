@@ -59,20 +59,20 @@
             maxlength="1000"
             show-word-limit
             placeholder="记录审核意见（可选）"
-            :disabled="group.result.status === 'stale'"
+            :disabled="!reviewAllowed || group.result.status === 'stale'"
           />
           <div class="review-actions">
             <el-button @click="viewEvidence(group.result.uid)">查看证据</el-button>
             <el-button
               type="danger"
               plain
-              :disabled="group.result.status === 'stale'"
+              :disabled="!reviewAllowed || group.result.status === 'stale'"
               :loading="submittingUid === group.result.uid"
               @click="submit(group, 'reject')"
             >驳回</el-button>
             <el-button
               type="success"
-              :disabled="group.result.status === 'stale'"
+              :disabled="!reviewAllowed || group.result.status === 'stale'"
               :loading="submittingUid === group.result.uid"
               @click="submit(group, 'approve')"
             >批准</el-button>
@@ -289,6 +289,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { reviewAllowed } from '../../runtimeCapabilities.js'
 import { ElMessage } from 'element-plus'
 
 import { narrativeReviewAPI } from '@/api/v2/narrativeReviews'
@@ -487,6 +488,7 @@ function resetForDrama() {
 }
 
 async function submit(group, decision) {
+  if (!reviewAllowed.value) return
   const result = group.result
   if (!result || result.status === 'stale') return
   submittingUid.value = result.uid

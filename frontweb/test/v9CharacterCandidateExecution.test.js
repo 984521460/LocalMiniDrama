@@ -32,6 +32,24 @@ function request(operationUid = uid(1)) {
   }
 }
 
+test('remote Comfy parameters pass exact response/history views while hostile or drifted fields reject', () => {
+  const value = response();
+  for (const item of value.execution.items) {
+    item.provider = 'comfyui';
+    item.parameters = { ...item.parameters, adapter: 'remote-comfyui.v1', connectionUid: uid(888),
+      connectionEvidenceSha256: sha('a'), samplerName: 'euler', scheduler: 'normal', steps: 20,
+      cfg: 6, negativePromptSha256: sha('b') };
+  }
+  assert.doesNotThrow(() => characterCandidateExecutionResponseView(value));
+  for (const patch of [{ adapter: 'unknown' }, { extra: true }, { connectionUid: 'invalid' },
+    { connectionEvidenceSha256: 'bad' }, { negativePromptSha256: 'bad' }, { steps: 0 }, { cfg: Infinity },
+    { samplerName: '../bad' }, { scheduler: 'bad scheduler' }, { requestedSeed: 999 }, { size: '64x64' }, { ordinal: 3 }]) {
+    const changed = structuredClone(value);
+    Object.assign(changed.execution.items[0].parameters, patch);
+    assert.throws(() => characterCandidateExecutionResponseView(changed));
+  }
+});
+
 function response(requestValue = request()) {
   const source = {
     schemaVersion: 'character-candidate-source.v1',

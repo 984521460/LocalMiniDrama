@@ -284,7 +284,7 @@ test('legacy recovery selects only the approved character from a multi-character
 
 test('migrations 34 and 35 create append-only character-bound recovery evidence', (t) => {
   const database = createMigratedV2Database(t);
-  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 39);
+  assert.equal(database.prepare('SELECT max(version) FROM schema_migrations').pluck().get(), 40);
   assert.equal(database.prepare(`
     SELECT count(*) FROM sqlite_master
     WHERE type='table' AND name IN ('remote_asset_recoveries','remote_asset_recovery_items')
@@ -300,7 +300,7 @@ test('migrations 34 and 35 create append-only character-bound recovery evidence'
   assert.deepEqual(repository.recoverInterrupted(), { recoveredCount: 0 });
 });
 
-test('migrations 37 through 39 preserve genuine v36 local items, media reads and replay', async (t) => {
+test('migrations 37 through 40 preserve genuine v36 local items, media reads and replay', async (t) => {
   const migrationRoot = path.resolve(__dirname, '../migrations/v2');
   const v36Root = fs.mkdtempSync(path.join(os.tmpdir(), 'local-recovery-v36-'));
   t.after(() => fs.rmSync(v36Root, { recursive: true, force: true }));
@@ -382,7 +382,7 @@ test('migrations 37 through 39 preserve genuine v36 local items, media reads and
     source.sourceSha256,
     JSON.stringify(oldItems),
   );
-  assert.equal(runV2Migrations(database, { migrationsDir: migrationRoot }).currentVersion, 39);
+  assert.equal(runV2Migrations(database, { migrationsDir: migrationRoot }).currentVersion, 40);
   assert.deepEqual(database.prepare(`
     SELECT operation_uid,state,attempt_count FROM local_recovery_import_attempts
   `).get(), { operation_uid: packageUid, state: 'succeeded', attempt_count: 1 });

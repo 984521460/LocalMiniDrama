@@ -62,6 +62,8 @@ const REQUIRED_V21_TABLES = Object.freeze([
   'character_candidate_execution_items',
   'local_recovery_import_attempts',
   'local_recovery_packages',
+  'character_remote_collections',
+  'character_remote_collection_jobs',
   'character_identity_lock_events',
   'character_reference_packages',
   'character_reference_package_items',

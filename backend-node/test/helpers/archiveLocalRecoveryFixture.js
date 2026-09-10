@@ -31,7 +31,17 @@ async function seedArchiveLocalRecovery(t, fixture, storageRoot) {
       localPackageName: 'zhao-1.png', verifiedWidth: 256, verifiedHeight: 256 }],
   })));
   zip.addFile('zhao-1.png', bytes);
-  return createLocalPackageImportService({ repositories, storage: new LocalStorageProvider({ projectRoot: storageRoot }) })
+  const imported=await createLocalPackageImportService({ repositories, storage: new LocalStorageProvider({ projectRoot: storageRoot }) })
     .execute({ dramaUid, characterUid, extractionResultUid, characterFactId: 'character-zhao-yun' }, zip.toBuffer());
+  const source=require('../../src/characterCandidates/execution/sourceResolver').createCharacterCandidateSourceResolver({repositories}).resolve({dramaUid,characterUid,extractionResultUid,characterFactId:'character-zhao-yun'});
+  const request={schemaVersion:'character-candidate-execution-request.v1',operationUid:randomUUID(),dramaUid,characterUid,extractionResultUid,characterFactId:'character-zhao-yun',width:256,height:256,seed:42};
+  const requestJson=require('../../src/characterCandidates/execution/request').canonicalCharacterCandidateExecutionRequest(request);
+  const profile=require('../../src/characterCandidates/execution/profile');
+  repositories.withTransaction(scoped=>{
+    scoped.characterCandidateExecutions.reserve({request,requestSha256:sha(requestJson),source:source.source,sourceSha256:source.sourceSha256,profileJson:profile.PROFILE_JSON,profileSha256:profile.PROFILE_SHA256,manifestJson:profile.MANIFEST_JSON,manifestSha256:profile.MANIFEST_SHA256});
+    scoped.characterRemoteCollections.create(requestJson,source.sourceSha256,{connectionUid:randomUUID(),connectionEvidenceSha256:'a'.repeat(64),profileSha256:'b'.repeat(64)},source.source);
+    scoped.characterRemoteCollections.begin(request.operationUid,0,require('../../src/characterCandidates/execution/prompt').createCharacterCandidatePrompt(source.source,0,42).promptSha256);
+  });
+  return imported;
 }
 module.exports = { seedArchiveLocalRecovery };

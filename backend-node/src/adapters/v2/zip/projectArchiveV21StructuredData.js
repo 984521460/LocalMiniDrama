@@ -1,6 +1,7 @@
 'use strict';
 
 const { types } = require('node:util');
+const {validateCollections}=require('./characterCollectionArchive');
 
 const { characterCandidateSourceSha256 } = require('../../../characterCandidates/execution/source');
 const { projectLocalRecoveryItem } = require('../../../remoteAssets/localRecoveryItem');
@@ -99,6 +100,12 @@ const STRUCTURED_RECORD_SPECS = Object.freeze({
     'uid', 'drama_uid', 'character_uid', 'package_sha256', 'manifest_sha256',
     'remote_task_uid', 'source_json', 'source_sha256', 'items_json', 'created_at',
   ], { source_json: 'object', items_json: 'array' }),
+  characterRemoteCollections: spec('character_remote_collections',[
+    'operation_uid','drama_uid','character_uid','request_json','request_sha256','source_sha256','source_json','binding_json','binding_state','created_at'
+  ],{request_json:'object',source_json:'object',binding_json:'object'}),
+  characterRemoteCollectionJobs: spec('character_remote_collection_jobs',[
+    'operation_uid','ordinal','state','prompt_sha256','prompt_id','output_json','item_json'
+  ],{output_json:'nullable-object',item_json:'nullable-object'}),
   characterIdentityLockEvents: spec('character_identity_lock_events', [
     'uid', 'character_uid', 'candidate_uid', 'identity_version_uid', 'operation',
     'state_version', 'changed_at_epoch_ms',
@@ -180,6 +187,8 @@ const OWNER_FILTERS = Object.freeze({
   characterCandidateExecutionItems: 'EXISTS (SELECT 1 FROM character_candidate_executions AS execution WHERE execution.operation_uid = row.operation_uid AND execution.drama_uid = @dramaUid)',
   localRecoveryImportAttempts: "row.drama_uid = @dramaUid AND row.state = 'succeeded'",
   localRecoveryPackages: 'row.drama_uid = @dramaUid',
+  characterRemoteCollections:'row.drama_uid = @dramaUid',
+  characterRemoteCollectionJobs:'row.operation_uid IN (SELECT operation_uid FROM character_remote_collections WHERE drama_uid=@dramaUid)',
   characterIdentityLockEvents: "EXISTS (SELECT 1 FROM characters AS owner JOIN dramas AS drama ON drama.id = owner.drama_id WHERE owner.uid = row.character_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)",
   characterReferencePackages: "EXISTS (SELECT 1 FROM characters AS owner JOIN dramas AS drama ON drama.id = owner.drama_id WHERE owner.uid = row.character_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)",
   characterReferencePackageItems: 'EXISTS (SELECT 1 FROM character_reference_packages AS package JOIN characters AS owner ON owner.uid = package.character_uid JOIN dramas AS drama ON drama.id = owner.drama_id WHERE package.uid = row.package_uid AND drama.uid = @dramaUid AND owner.deleted_at IS NULL AND drama.deleted_at IS NULL)',
@@ -337,6 +346,8 @@ function recordIdentity(name, row) {
   if (name === 'characterCandidateExecutions') return row.operation_uid;
   if (name === 'characterCandidateExecutionItems') return `${row.operation_uid}:${row.ordinal}`;
   if (name === 'localRecoveryImportAttempts') return row.operation_uid;
+  if (name === 'characterRemoteCollections') return row.operation_uid;
+  if (name === 'characterRemoteCollectionJobs') return `${row.operation_uid}:${row.ordinal}`;
   if (name === 'characterReferencePackageExecutions') return row.operation_uid;
   if (name === 'shotContinuityCharacterRefs' || name === 'shotContinuityPropRefs') {
     return `${row.snapshot_uid}:${row.ordinal}`;
@@ -351,6 +362,7 @@ function validateRecord(name, value) {
     const field = descriptors[column].value;
     const jsonKind = definition.json[column];
     if (jsonKind) {
+      if (jsonKind==='nullable-object' && field===null) continue;
       if (field === null || typeof field !== 'object' || types.isProxy(field)
         || Array.isArray(field) !== (jsonKind === 'array')) {
         invalidManifest();
@@ -365,6 +377,7 @@ function validateRecord(name, value) {
       && (typeof field !== 'string' || !UUID_V4.test(field))) invalidManifest();
   }
   if (name === 'voiceProfiles' && value.credential_binding_state !== 'needs_rebind') invalidManifest();
+  if (name === 'characterRemoteCollections' && value.binding_state !== 'needs_rebind') invalidManifest();
   return value;
 }
 
@@ -707,16 +720,19 @@ function validateProjectStructuredRecords(value, dramaUid) {
     }
     records[name] = rows;
   }
+  assertSecretFree(value);
   assertReferences(records, dramaUid);
+  validateCollections(records,invalidManifest);
   assertProjectArchiveV21CharacterCandidateExecutionStructured(records, invalidManifest);
   assertProjectArchiveV21CharacterReferencePackageExecutionStructured(records, invalidManifest);
-  assertSecretFree(value);
   assertProjectStructuredDomainEvidence(records, invalidManifest);
   return value;
 }
 
 function selectColumns(name, definition) {
   return definition.columns.map((column) => (
+    name === 'characterRemoteCollections' && column === 'binding_state'
+      ? "'needs_rebind' AS binding_state" :
     name === 'voiceProfiles' && column === 'credential_binding_state'
       ? "'needs_rebind' AS credential_binding_state"
       : `row.${column}`
@@ -730,6 +746,8 @@ function orderBy(name) {
   if (name === 'characterCandidateExecutions') return 'row.operation_uid';
   if (name === 'characterCandidateExecutionItems') return 'row.operation_uid, row.ordinal';
   if (name === 'localRecoveryImportAttempts') return 'row.operation_uid';
+  if (name === 'characterRemoteCollections') return 'row.operation_uid';
+  if (name === 'characterRemoteCollectionJobs') return 'row.operation_uid, row.ordinal';
   if (name === 'characterReferencePackageExecutions') return 'row.operation_uid';
   return 'row.uid';
 }

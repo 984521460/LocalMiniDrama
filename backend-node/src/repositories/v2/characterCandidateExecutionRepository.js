@@ -213,6 +213,8 @@ function createCharacterCandidateExecutionRepository(database) {
         error_code='CHARACTER_CANDIDATE_EXECUTION_SUBMISSION_UNKNOWN',
         updated_at_epoch_ms=unixepoch('now') * 1000
     WHERE state='reserved'
+    ${database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_remote_collections'").get()
+      ? 'AND operation_uid NOT IN (SELECT operation_uid FROM character_remote_collections)' : ''}
   `);
 
   function getCharacterSource(characterUid) {

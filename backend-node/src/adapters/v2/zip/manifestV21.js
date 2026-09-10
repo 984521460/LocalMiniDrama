@@ -1,6 +1,7 @@
 'use strict';
 
 const { types } = require('node:util');
+const {validateCollections}=require('./characterCollectionArchive');
 
 const { archiveError, isProjectArchiveError } = require('./errors');
 const {
@@ -429,6 +430,7 @@ function indexByUid(rows) {
 }
 
 function assertMediaEvidence(records, structured) {
+  validateCollections(structured,invalidManifest,records);
   const assets = indexByUid(records.assets);
   const versions = indexByUid(records.assetVersions);
 
@@ -538,6 +540,7 @@ function assertStructuredBaseReferences(records, structured, legacyRecords) {
     structured.characterCandidateExecutions,
     structured.localRecoveryImportAttempts,
     structured.localRecoveryPackages,
+    structured.characterRemoteCollections,
     structured.characterIdentityLockEvents,
     structured.characterReferencePackages,
     structured.characterReferencePackageItems,
@@ -584,13 +587,15 @@ function normalizeCharacterCandidateExecutionGroups(root) {
   );
   const hasLocalAttempts = safeHasOwn(descriptors, 'localRecoveryImportAttempts');
   const hasLocalPackages = safeHasOwn(descriptors, 'localRecoveryPackages');
-  if (hasExecutions !== hasItems || hasLocalAttempts !== hasLocalPackages) return root;
-  if (hasExecutions && hasReferenceExecutions && hasLocalAttempts) return root;
+  const hasCollections = safeHasOwn(descriptors, 'characterRemoteCollections');
+  const hasCollectionJobs = safeHasOwn(descriptors, 'characterRemoteCollectionJobs');
+  if (hasExecutions !== hasItems || hasLocalAttempts !== hasLocalPackages || hasCollections!==hasCollectionJobs) return root;
+  if (hasExecutions && hasReferenceExecutions && hasLocalAttempts && hasCollections) return root;
 
   const names = apply(REFLECT_OWN_KEYS, Reflect, [STRUCTURED_RECORD_SPECS]);
   const actual = apply(REFLECT_OWN_KEYS, Reflect, [descriptors]);
   const missingCount = (hasExecutions ? 0 : 2) + (hasReferenceExecutions ? 0 : 1)
-    + (hasLocalAttempts ? 0 : 2);
+    + (hasLocalAttempts ? 0 : 2) + (hasCollections ? 0 : 2);
   if (actual.length !== names.length - missingCount) return root;
   const normalized = apply(OBJECT_CREATE, Object, [null]);
   for (let index = 0; index < names.length; index += 1) {
@@ -599,7 +604,8 @@ function normalizeCharacterCandidateExecutionGroups(root) {
       || name === 'characterCandidateExecutionItems'
       || name === 'characterReferencePackageExecutions'
       || name === 'localRecoveryImportAttempts'
-      || name === 'localRecoveryPackages') {
+      || name === 'localRecoveryPackages' || name==='characterRemoteCollections' || name==='characterRemoteCollectionJobs') {
+      if((name==='characterRemoteCollections'||name==='characterRemoteCollectionJobs')&&hasCollections){normalized[name]=descriptors[name].value;continue;}
       if ((name === 'characterCandidateExecutions' || name === 'characterCandidateExecutionItems')
         && hasExecutions) {
         normalized[name] = descriptors[name].value;

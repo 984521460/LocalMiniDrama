@@ -39,6 +39,7 @@ const STRUCTURED_ORDER = Object.freeze([
   'characterCandidateResults', 'characterCandidateBatches',
   'characterCandidateExecutions', 'characterCandidateExecutionItems',
   'localRecoveryImportAttempts', 'localRecoveryPackages',
+  'characterRemoteCollections','characterRemoteCollectionJobs',
   'characterIdentityLockEvents',
   'characterReferencePackageItems', 'characterReferencePackages',
   'characterReferencePackageExecutions',
@@ -195,6 +196,8 @@ function serializeRow(spec, row, extra = null) {
     const value = row[column];
     output[column] = spec.json?.[column] && value !== null && typeof value !== 'string'
       ? canonicalJson(value) : value;
+    if(spec.table==='character_remote_collections'&&column==='request_json')output[column]=require('../../characterCandidates/execution/request').canonicalCharacterCandidateExecutionRequest(value);
+    if(spec.table==='character_remote_collections'&&column==='source_json')output[column]=require('../../characterCandidates/execution/source').canonicalCharacterCandidateSource(value);
   }
   if (extra) Object.assign(output, extra);
   return output;
@@ -441,7 +444,12 @@ function createProjectArchiveV21ImportRepository(database) {
       index < manifest.structuredRecords.characterCandidateExecutions.length;
       index += 1) {
       const expected = manifest.structuredRecords.characterCandidateExecutions[index];
-      const restored = characterCandidateExecutions.get(expected.operation_uid);
+      const isolatedCollection = (manifest.structuredRecords.characterRemoteCollections ?? [])
+        .some((collection) => collection.operation_uid === expected.operation_uid
+          && collection.binding_state === 'needs_rebind');
+      const restored = isolatedCollection
+        ? characterCandidateExecutions.getHistory(expected.operation_uid)
+        : characterCandidateExecutions.get(expected.operation_uid);
       if (!restored || restored.operationUid !== expected.operation_uid
         || restored.state !== expected.state || restored.items.length !== (
           expected.state === 'succeeded' ? 4 : 0

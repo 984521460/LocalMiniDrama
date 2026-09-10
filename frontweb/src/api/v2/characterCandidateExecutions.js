@@ -1,4 +1,5 @@
 import { workflowJsonTextRequest } from './workflowRequest.js'
+import { recoveryView } from '../../characterCandidates/characterRecovery.js'
 import { parseStrictJson } from '../../security/strictJson.js'
 import { workflowUidPath } from '../../security/workflowBoundary.js'
 import {
@@ -15,9 +16,7 @@ function dramaIdPath(value) {
 }
 
 function parsed(promise) {
-  return promise.then((text) => (
-    characterCandidateExecutionResponseView(parseStrictJson(text))
-  ))
+  return promise.then((text) => { const value=parseStrictJson(text);return value.schemaVersion==='character-candidate-recovery.v1'?recoveryView(value):characterCandidateExecutionResponseView(value) })
 }
 
 function historyCursor(value) {

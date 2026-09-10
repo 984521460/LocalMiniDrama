@@ -52,6 +52,9 @@ function characterCandidateExecutionRoutes(database, log, runtime) {
   }
 
   function handle(res, error, event) {
+    if (typeof error?.code === 'string' && error.code.startsWith('CHARACTER_COLLECTION_')) {
+      return response.error(res,409,error.code,'角色续收需检查；不会重新提交生成');
+    }
     if (isCharacterCandidateExecutionError(error)) {
       return response.error(res, statusFor(error.code), error.code, error.message);
     }
@@ -79,6 +82,20 @@ function characterCandidateExecutionRoutes(database, log, runtime) {
     } catch (error) {
       return handle(res, error, 'character-candidate-execution-create');
     }
+  });
+
+  router.get('/dramas/:dramaId/characters/:characterUid/candidate-recoveries', async (req,res)=>{
+    if(!runtime?.listRecoveries)return response.success(res,{schemaVersion:'character-candidate-recovery-list.v1',records:[]});
+    try{const drama=sources.findDramaByLegacyId(legacyDramaId(req.params.dramaId));if(!drama||!UUID_V4.test(req.params.characterUid))return response.badRequest(res,'角色范围无效');
+      return response.success(res,await runtime.listRecoveries({dramaUid:drama.uid,characterUid:req.params.characterUid}));
+    }catch(error){return handle(res,error,'candidate-recovery-list');}
+  });
+  router.post('/dramas/:dramaId/characters/:characterUid/candidate-recoveries/:operationUid/recover',async(req,res)=>{
+    if(!runtime?.recover||!runtime?.getRecovery)return unavailable(res);
+    try{const drama=sources.findDramaByLegacyId(legacyDramaId(req.params.dramaId));if(!drama||!UUID_V4.test(req.params.operationUid)||Object.keys(req.body||{}).length) return response.badRequest(res,'续收范围无效');
+      const current=await runtime.getRecovery(req.params.operationUid);if(current.dramaUid!==drama.uid||current.characterUid!==req.params.characterUid)return response.badRequest(res,'续收归属不匹配');
+      return response.success(res,await runtime.recover(req.params.operationUid));
+    }catch(error){return handle(res,error,'candidate-recovery');}
   });
 
   router.get('/dramas/:dramaId/characters/:characterUid/candidate-executions/history', async (req, res) => {

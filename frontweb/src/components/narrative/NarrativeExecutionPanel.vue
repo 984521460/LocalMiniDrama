@@ -54,15 +54,17 @@
       <el-button
         type="primary"
         :loading="busy"
-        :disabled="status?.state !== 'ready'"
+        :disabled="!generationAllowed || status?.state !== 'ready'"
         @click="run"
       >生成{{ stageLabel(status?.resultType) }}</el-button>
     </div>
+    <p v-if="!generationAllowed" role="status">安全模式或能力未确认：生成操作不可用。</p>
   </section>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { generationAllowed } from '../../runtimeCapabilities.js'
 import { ElMessage } from 'element-plus'
 
 import { useNarrativeExecution } from '@/composables/useNarrativeExecution.js'
@@ -114,7 +116,7 @@ function selectionLabel(item) {
 }
 
 async function run() {
-  if (status.value?.state !== 'ready') return
+  if (!generationAllowed.value || status.value?.state !== 'ready') return
   const response = await execution.execute({
     dramaId: props.dramaId,
     dramaUid: props.dramaUid,

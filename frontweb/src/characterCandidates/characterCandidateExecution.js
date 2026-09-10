@@ -176,7 +176,24 @@ function sourceView(value, request) {
 
 function itemView(value, execution, ordinal, historical = false) {
   const input = exact(value, historical ? HISTORY_ITEM_KEYS : ITEM_KEYS)
-  const parameters = exact(input.parameters, ['adapter', 'size', 'requestedSeed', 'ordinal'])
+  const adapterDescriptor = input.parameters && Object.getOwnPropertyDescriptor(input.parameters, 'adapter')
+  if (!adapterDescriptor || !Object.hasOwn(adapterDescriptor, 'value')) invalid()
+  const adapter = adapterDescriptor.value
+  const parameterKeys = ['adapter', 'size', 'requestedSeed', 'ordinal']
+  if (adapter === 'remote-comfyui.v1') {
+    parameterKeys.push('connectionUid', 'connectionEvidenceSha256', 'samplerName', 'scheduler', 'steps', 'cfg', 'negativePromptSha256')
+  } else if (adapter !== 'configured-image.v1') invalid()
+  const parameters = exact(input.parameters, parameterKeys)
+  if (adapter === 'remote-comfyui.v1') {
+    uid(parameters.connectionUid)
+    hash(parameters.connectionEvidenceSha256)
+    hash(parameters.negativePromptSha256)
+    integer(parameters.steps, 1, 100)
+    if (input.provider !== 'comfyui' || typeof parameters.samplerName !== 'string'
+      || !TOKEN.test(parameters.samplerName) || typeof parameters.scheduler !== 'string'
+      || !TOKEN.test(parameters.scheduler) || typeof parameters.cfg !== 'number'
+      || !Number.isFinite(parameters.cfg) || parameters.cfg < 0 || parameters.cfg > 30) invalid()
+  }
   const expectedSeed = (execution.request.seed + ordinal * 2_654_435_761) % 4_294_967_296
   const expectedUri = `asset://characters/${execution.request.characterUid}/candidate-batches/${execution.operationUid}/${ordinal}`
   const expectedPath = `characters/${execution.request.characterUid}/candidate-batches/${execution.operationUid}/${ordinal}.png`
@@ -185,7 +202,6 @@ function itemView(value, execution, ordinal, historical = false) {
     || typeof input.model !== 'string' || new TextEncoder().encode(input.model).byteLength < 1
     || new TextEncoder().encode(input.model).byteLength > 128
     || input.model.trim() !== input.model || input.model.includes('\0')
-    || parameters.adapter !== 'configured-image.v1'
     || parameters.size !== `${execution.request.width}x${execution.request.height}`
     || parameters.requestedSeed !== expectedSeed || parameters.ordinal !== ordinal
     || input.logicalUri !== expectedUri || input.relativePath !== expectedPath

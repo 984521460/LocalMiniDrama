@@ -215,6 +215,7 @@ function assertNarrativeSource(
   narrativeReviews,
   narrativeEvidenceByUid,
   invalid,
+  historicalReadOnly = false,
 ) {
   const result = mapGet(narrativeResults, execution.extraction_result_uid);
   const review = mapGet(narrativeReviews, execution.extraction_review_uid);
@@ -223,8 +224,8 @@ function assertNarrativeSource(
   if (result.drama_uid !== execution.drama_uid
     || result.source_selection_uid !== execution.source_selection_uid
     || result.result_type !== 'extraction' || result.task_type !== evidence.contract.taskType
-    || result.schema_version !== evidence.contract.schemaVersion || result.status !== 'approved'
-    || result.current_review_uid !== execution.extraction_review_uid
+    || result.schema_version !== evidence.contract.schemaVersion
+    || (!historicalReadOnly && (result.status !== 'approved' || result.current_review_uid !== execution.extraction_review_uid))
     || result.input_hash !== evidence.normalized.inputHash
     || result.result_hash !== execution.extraction_result_hash
     || result.envelope_hash !== execution.extraction_envelope_hash
@@ -369,6 +370,7 @@ function assertProjectArchiveV21CharacterCandidateExecutionStructured(records, i
       narrativeReviewByUid,
       narrativeEvidenceByUid,
       invalid,
+      records.characterRemoteCollections?.some(collection => collection.operation_uid === row.operation_uid && collection.binding_state === 'needs_rebind') === true,
     );
     if (row.state === 'succeeded') {
       const batch = mapGet(batchByUid, row.operation_uid);

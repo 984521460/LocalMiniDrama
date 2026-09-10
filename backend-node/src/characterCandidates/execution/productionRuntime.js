@@ -7,6 +7,7 @@ const {
   createRemoteComfyCharacterCandidateImageProvider,
 } = require('./remoteComfyImageProvider');
 const { createCharacterCandidateExecutionService } = require('./service');
+const {createRemoteCollectionService}=require('./remoteCollectionService');
 const {
   createCharacterReferencePackageExecutionService,
 } = require('../referencePackage');
@@ -47,9 +48,11 @@ function createProductionCharacterCandidateExecutionRuntime({
     || (dependencies.remoteComfyUi ? UNAVAILABLE_REFERENCE_PROVIDER : getConfiguredProvider());
   const storage = dependencies.storage || new LocalStorageProvider({ projectRoot: localRoot });
   const repositories = createV2Repositories(database);
+  const remoteRecovery = !dependencies.provider && Boolean(dependencies.remoteComfyUi);
+  const legacyProvider = remoteRecovery ? Object.freeze({scope:provider.scope,isAvailable:provider.isAvailable,generate:provider.generate}) : provider;
   const service = createCharacterCandidateExecutionService({
     repositories,
-    provider,
+    provider: legacyProvider,
     storage,
     ...(dependencies.createUid ? { createUid: dependencies.createUid } : {}),
     ...(dependencies.normalizeImage ? { normalizeImage: dependencies.normalizeImage } : {}),
@@ -73,12 +76,16 @@ function createProductionCharacterCandidateExecutionRuntime({
       ? { timeoutMs: dependencies.referenceTimeoutMs }
       : dependencies.timeoutMs ? { timeoutMs: dependencies.timeoutMs } : {}),
   });
+  const collection=remoteRecovery?createRemoteCollectionService({repositories,storage,provider,...(dependencies.createUid?{createUid:dependencies.createUid}:{})}):null;
   return Object.freeze({
     characterCandidates: Object.freeze({
-      execute: service.execute,
+      execute: collection ? collection.execute : service.execute,
       get: service.get,
       listHistory: service.listHistory,
       isAvailable: provider.isAvailable,
+      recover: collection?.recover,
+      getRecovery: collection?.get,
+      listRecoveries: collection?.list,
     }),
     characterReferencePackages: Object.freeze({
       execute: referencePackageService.execute,

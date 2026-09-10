@@ -1,5 +1,7 @@
 <template>
   <section class="recovery-panel">
+    <p v-if="offlineSafe" role="status">离线安全模式：远端连接与恢复未检查，外部恢复不可用。</p>
+    <p v-else-if="!capabilitiesReady" role="status">运行能力尚未确认，暂不检查远端连接。</p>
     <div class="recovery-heading">
       <div>
         <h4>远端资产恢复</h4>
@@ -10,7 +12,7 @@
 
     <div class="recovery-form">
       <el-form-item label="远程连接">
-        <el-select v-model="connectionUid" placeholder="选择已就绪连接" :disabled="recovery.busy.value">
+        <el-select v-model="connectionUid" placeholder="选择已就绪连接" :disabled="offlineSafe || !capabilitiesReady || recovery.busy.value">
           <el-option
             v-for="item in readyConnections"
             :key="item.uid"
@@ -20,7 +22,7 @@
         </el-select>
       </el-form-item>
       <el-form-item label="远端任务 UID">
-        <el-input v-model="remoteTaskUid" placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx" />
+        <el-input v-model="remoteTaskUid" :disabled="offlineSafe || !capabilitiesReady" placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx" />
       </el-form-item>
       <el-button
         type="warning"
@@ -37,8 +39,8 @@
       title="先在上方选择对应的已批准角色事实"
       :closable="false"
     />
-    <p v-if="connectionError" class="recovery-error">无法读取远程连接配置。</p>
-    <p v-if="recovery.error.value" class="recovery-error">
+    <p v-if="connectionError && !offlineSafe" class="recovery-error">无法读取远程连接配置。</p>
+    <p v-if="recovery.error.value && !offlineSafe" class="recovery-error">
       恢复失败；请确认实例可连接、任务 UID 正确且远端 manifest/文件未变化。
     </p>
 
@@ -65,6 +67,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { offlineSafe, capabilitiesReady, loadRuntimeCapabilities } from '../../runtimeCapabilities.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { remoteConnectionAPI } from '@/api/v2/remoteConnections.js'
@@ -89,7 +92,7 @@ const selectedConnection = computed(() => readyConnections.value.find((item) => 
   item.uid === connectionUid.value
 )) || null)
 const canRecover = computed(() => Boolean(
-  props.selection && selectedConnection.value
+  capabilitiesReady.value && !offlineSafe.value && props.selection && selectedConnection.value
   && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(remoteTaskUid.value),
 ))
 const succeeded = computed(() => recovery.recoveries.value.filter((item) => (
@@ -102,6 +105,7 @@ function shortHash(value) {
 
 async function loadConnections() {
   connectionError.value = false
+  if (!capabilitiesReady.value || offlineSafe.value) { connections.value = Object.freeze([]); return }
   try {
     connections.value = remoteConnectionListView(await remoteConnectionAPI.list())
     if (!readyConnections.value.some((item) => item.uid === connectionUid.value)) {
@@ -114,7 +118,7 @@ async function loadConnections() {
 }
 
 async function refreshHistory() {
-  if (!props.selection) {
+  if (!props.selection || !capabilitiesReady.value || offlineSafe.value) {
     recovery.invalidate()
     return
   }
@@ -151,8 +155,8 @@ async function recover() {
   if (result) ElMessage.success(`已把 ${result.recovery.items.length} 项远端素材保存到本地隔离库`)
 }
 
-onMounted(loadConnections)
-watch(() => props.selection?.identity || '', refreshHistory, { immediate: true })
+onMounted(async () => { await loadRuntimeCapabilities(); await loadConnections() })
+watch(() => [props.selection?.identity || '', capabilitiesReady.value, offlineSafe.value], refreshHistory, { immediate: true })
 </script>
 
 <style scoped>

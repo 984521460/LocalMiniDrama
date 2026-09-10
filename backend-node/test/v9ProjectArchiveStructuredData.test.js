@@ -22,6 +22,7 @@ const { createNarrativeStalenessService } = require('../src/narrative/staleness'
 const { seedArchiveLocalRecovery } = require('./helpers/archiveLocalRecoveryFixture');
 
 const EXPECTED_TABLES = Object.freeze([
+  'character_remote_collections','character_remote_collection_jobs',
   'local_recovery_import_attempts',
   'local_recovery_packages',
   'narrative_results',
@@ -200,8 +201,8 @@ test('2.1 structured evidence exports every P9-04B domain without credential ref
 
   const records = repositories.projectArchives.exportStructuredV21(dramaUid);
   for (const [name, rows] of Object.entries(records)) {
-    if (name === 'characterCandidateExecutions'
-      || name === 'characterCandidateExecutionItems'
+    if(name==='characterCandidateExecutions'){assert.equal(rows.length,1);assert.equal(rows[0].state,'reserved');continue;}
+    if (name === 'characterCandidateExecutionItems'
       || name === 'characterReferencePackageExecutions') {
       assert.deepEqual(rows, []);
       continue;

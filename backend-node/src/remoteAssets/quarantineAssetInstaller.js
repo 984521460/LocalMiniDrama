@@ -34,10 +34,10 @@ function createQuarantineAssetInstaller({ repositories, storage, createUid = ran
   }
 
   return Object.freeze({
-    async install({ ownerType, ownerUid, assetType, items, destination, complete } = {}) {
+    async install({ ownerType, ownerUid, assetType, items, destination, complete, reuseVerifiedFile = false } = {}) {
       if (ownerType !== 'character'
         || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(ownerUid)
-        || !['local_recovery', 'remote_recovery'].includes(assetType)
+        || !['local_recovery', 'remote_recovery', 'character_candidate'].includes(assetType)
         || !Array.isArray(items) || items.length < 1 || items.length > 16
         || items.some((item) => typeof item !== 'function')
         || typeof destination !== 'function' || typeof complete !== 'function') {
@@ -70,8 +70,22 @@ function createQuarantineAssetInstaller({ repositories, storage, createUid = ran
             throw new TypeError('Quarantined asset destination is invalid');
           }
           const contentSha256 = digest(prepared.bytes);
-          await storage.write(locator, prepared.bytes);
-          installed.push(locator);
+          let reused = false;
+          if (reuseVerifiedFile) {
+            try {
+              const existing = await storage.readBounded(locator, MAX_ITEM_BYTES);
+              if (existing.length !== prepared.bytes.length || digest(existing) !== contentSha256) {
+                throw new TypeError('Existing asset file does not match the recovered output');
+              }
+              reused = true;
+            } catch (error) {
+              if (error?.code !== 'LOCAL_STORAGE_ENTRY_NOT_FOUND') throw error;
+            }
+          }
+          if (!reused) {
+            await storage.write(locator, prepared.bytes);
+            installed.push(locator);
+          }
           evidence.push(Object.freeze({
             ...(prepared.source || {}),
             ordinal,

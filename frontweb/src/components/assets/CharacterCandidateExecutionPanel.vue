@@ -54,7 +54,7 @@
       <el-button
         type="success"
         :loading="referenceExecution.busy.value"
-        :disabled="!selectedCandidateUid || busy.value || paidActionBusy"
+        :disabled="offlineSafe || !selectedCandidateUid || busy.value || paidActionBusy"
         @click="lockAndGenerateReferencePackage"
       >锁定并生成 10 项参考包</el-button>
     </div>
@@ -74,7 +74,7 @@
       <el-button
         type="primary"
         :loading="busy"
-        :disabled="!selected || referenceExecution.busy.value || paidActionBusy"
+        :disabled="offlineSafe || !selected || referenceExecution.busy.value || paidActionBusy"
         @click="run"
       >
         生成四候选
@@ -87,6 +87,7 @@
       :selection="selected"
     />
     <LocalRecoveryPackagePanel :drama-id="dramaId" :selection="selected" />
+    <CharacterRecoveryPanel :drama-id="dramaId" :selection="selected" :revision="recoveryRevision" @recovered="onRecovered" />
 
     <CharacterCandidateHistory
       ref="historyPanel"
@@ -104,6 +105,9 @@
 </template>
 
 <script setup>
+import { offlineSafe } from '../../runtimeCapabilities.js'
+import CharacterRecoveryPanel from './CharacterRecoveryPanel.vue'
+import { characterCandidateExecutionAPI } from '../../api/v2/characterCandidateExecutions.js'
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -130,6 +134,7 @@ const execution = useCharacterCandidateExecution()
 const referenceExecution = useCharacterReferencePackageExecution()
 const { busy, error } = execution
 const selectedIdentity = ref('')
+const recoveryRevision = ref(0)
 const width = ref(512)
 const height = ref(512)
 const seed = ref(42)
@@ -193,6 +198,7 @@ function remember(identity, response) {
 }
 
 async function run() {
+  if (offlineSafe.value) return
   if (paidActionBusy.value || busy.value || referenceExecution.busy.value || !selected.value) return
   const selection = selected.value
   if (width.value * height.value > 4_194_304) {
@@ -220,7 +226,10 @@ async function run() {
       height: height.value,
       seed: seed.value,
     })
-    if (response) {
+    recoveryRevision.value += 1
+    if (response?.schemaVersion === 'character-candidate-recovery.v1') {
+      ElMessage.warning(`已保存 ${response.receivedCount}/4；请查看继续回收状态，不会自动补发生成`)
+    } else if (response) {
       remember(selection.identity, response)
       await historyPanel.value?.refresh()
       ElMessage.success(`${selection.characterName}的四张角色候选已生成并保存`)
@@ -231,6 +240,7 @@ async function run() {
 }
 
 async function lockAndGenerateReferencePackage() {
+  if (offlineSafe.value) return
   if (paidActionBusy.value || busy.value || referenceExecution.busy.value) return
   const selection = selected.value
   let completed = null
@@ -279,6 +289,18 @@ async function lockAndGenerateReferencePackage() {
   } finally {
     paidActionBusy.value = false
   }
+}
+
+async function onRecovered(row) {
+  await historyPanel.value?.refresh()
+  const selection = selected.value
+  if (!row?.batchReady || row.characterUid !== selection?.characterUid) return
+  try {
+    const complete = await characterCandidateExecutionAPI.get(row.operationUid)
+    if (selected.value?.identity !== selection.identity || complete.execution.request.extractionResultUid !== selection.extractionResultUid) return
+    remember(selection.identity, complete)
+    ElMessage.success('完整候选批次已载入，角色身份仍需人工选择确认')
+  } catch { ElMessage.error('完整批次读取失败') }
 }
 
 watch(options, (items) => {

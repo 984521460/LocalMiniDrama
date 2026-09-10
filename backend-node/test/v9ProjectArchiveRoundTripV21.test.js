@@ -257,8 +257,8 @@ test('a complete migrated project round-trips through a clean database as normal
   );
 
   for (const [name, rows] of Object.entries(firstManifest.structuredRecords)) {
-    if (name === 'characterCandidateExecutions'
-      || name === 'characterCandidateExecutionItems'
+    if(name==='characterCandidateExecutions'){assert.equal(rows.length,1);assert.equal(rows[0].state,'reserved');continue;}
+    if (name === 'characterCandidateExecutionItems'
       || name === 'characterReferencePackageExecutions') {
       assert.deepEqual(rows, [], `structured ${name} is an optional production extension`);
     } else {
@@ -297,6 +297,37 @@ test('a complete migrated project round-trips through a clean database as normal
     quietLog,
     firstExport.buffer,
   );
+  const importedRepositories = require('../src/repositories/v2').createV2Repositories(target);
+  const isolated = firstManifest.structuredRecords.characterRemoteCollections[0];
+  assert.equal(importedRepositories.characterRemoteCollections.get(isolated.operation_uid).bindingState, 'needs_rebind');
+  assert.throws(() => importedRepositories.characterCandidateExecutions.get(isolated.operation_uid));
+  assert.equal(importedRepositories.characterCandidateExecutions.getHistory(isolated.operation_uid).sourceCurrent, false);
+  let submitCalls = 0;
+  let collectCalls = 0;
+  const recovery = require('../src/characterCandidates/execution/remoteCollectionService').createRemoteCollectionService({
+    repositories: importedRepositories,
+    storage: new (require('../src/adapters/v2/storage/localStorageProvider')).LocalStorageProvider({ projectRoot: targetStorage }),
+    provider: {
+      recoveryBinding() { assert.fail('isolated history must not inspect a connection'); },
+      submit() { submitCalls += 1; },
+      collect() { collectCalls += 1; },
+    },
+  });
+  await assert.rejects(recovery.recover(isolated.operation_uid), { code: 'CHARACTER_COLLECTION_REBIND_REQUIRED' });
+  assert.equal(submitCalls, 0);
+  assert.equal(collectCalls, 0);
+  assert.equal(importedRepositories.characterRemoteCollections.get(isolated.operation_uid).bindingState, 'needs_rebind');
+  assert.doesNotThrow(() => parseProjectManifestV21(firstManifest));
+  for (const mutation of ['missing', 'wrong-operation', 'bound']) {
+    const invalid = structuredClone(firstManifest);
+    if (mutation === 'missing') {
+      invalid.structuredRecords.characterRemoteCollections = [];
+      invalid.structuredRecords.characterRemoteCollectionJobs = [];
+    } else if (mutation === 'wrong-operation') {
+      invalid.structuredRecords.characterRemoteCollections[0].operation_uid = '00000000-0000-4000-8000-000000000001';
+    } else invalid.structuredRecords.characterRemoteCollections[0].binding_state = 'bound';
+    assert.throws(() => parseProjectManifestV21(invalid), undefined, mutation);
+  }
   const secondExport = projectZipService.exportDrama(
     target,
     { storage: { local_path: targetStorage } },

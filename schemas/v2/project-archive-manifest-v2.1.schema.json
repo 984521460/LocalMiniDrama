@@ -184,7 +184,9 @@
         "characterCandidateExecutions": ["characterCandidateExecutionItems"],
         "characterCandidateExecutionItems": ["characterCandidateExecutions"],
         "localRecoveryImportAttempts": ["localRecoveryPackages"],
-        "localRecoveryPackages": ["localRecoveryImportAttempts"]
+        "localRecoveryPackages": ["localRecoveryImportAttempts"],
+        "characterRemoteCollections": ["characterRemoteCollectionJobs"],
+        "characterRemoteCollectionJobs": ["characterRemoteCollections"]
       },
       "properties": {
         "narrativeResults": { "$ref": "#/$defs/recordRows" },
@@ -202,6 +204,8 @@
         "characterCandidateExecutionItems": { "$ref": "#/$defs/characterCandidateExecutionItemRows" },
         "localRecoveryImportAttempts": { "$ref": "#/$defs/recordRows" },
         "localRecoveryPackages": { "$ref": "#/$defs/recordRows" },
+        "characterRemoteCollections": { "$ref": "#/$defs/recordRows" },
+        "characterRemoteCollectionJobs": { "$ref": "#/$defs/recordRows" },
         "characterIdentityLockEvents": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackages": { "$ref": "#/$defs/recordRows" },
         "characterReferencePackageItems": { "$ref": "#/$defs/recordRows" },

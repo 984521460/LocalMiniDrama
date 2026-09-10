@@ -1,4 +1,6 @@
 const express = require('express');
+const {resolveStartup,capabilities,installSafeHttpBoundary}=require('./startup/startupPolicy');
+const {createOfflineRuntime}=require('./startup/offlineRuntime');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -97,18 +99,20 @@ function installApplicationCors(app, configuredOrigins) {
 }
 
 function createApp({
+  startup,
   remoteDependencies = {}, h3Dependencies = {}, mediaExportDependencies = {},
   audioTtsDependencies = {}, benchmarkDependencies = {}, narrativeDependencies = {},
   characterCandidateDependencies = {}, bgmDependencies = {},
 } = {}) {
-  const config = loadConfig();
-  const db = getDb(config.database);
+  const policy = resolveStartup(startup);
+  const config = policy ? policy.config : loadConfig();
+  const db = getDb(config.database,{mode:policy?'offline-safe':'normal'});
   const { runMigrationsAndEnsure } = require('./db/migrate.js');
   runMigrationsAndEnsure(db);
 
   // 厂商锁定模式：在迁移完成后同步 vendor_lock 配置
   const { applyVendorLock } = require('./services/aiConfigService');
-  applyVendorLock(db, logger, config);
+  if(!policy) applyVendorLock(db, logger, config);
   const log = logger;
 
   // 静态资源目录：统一转为绝对路径（打包 exe 下相对路径可能解析异常）
@@ -120,7 +124,9 @@ function createApp({
   const mediaExportWorkspaceRoot = path.join(storageRoot, '.media-export-workspaces');
   fs.mkdirSync(storageRoot, { recursive: true });
   fs.mkdirSync(mediaExportWorkspaceRoot, { recursive: true });
-  const remoteRuntime = createProductionRemoteRuntime({
+  let runtime, remoteRuntime, mediaExportRuntime;
+  if(policy){runtime=createOfflineRuntime({database:db,localRoot:storageRoot});}else{
+  remoteRuntime = createProductionRemoteRuntime({
     database: db,
     localRoot: storageRoot,
     dependencies: remoteDependencies,
@@ -131,7 +137,7 @@ function createApp({
     storageBaseUrl: config.storage?.base_url || '',
     dependencies: h3Dependencies,
   });
-  const mediaExportRuntime = createProductionMediaExportRuntime({
+  mediaExportRuntime = createProductionMediaExportRuntime({
     database: db,
     localRoot: storageRoot,
     workspaceRoot: mediaExportWorkspaceRoot,
@@ -180,7 +186,7 @@ function createApp({
     localRoot: storageRoot,
     dependencies: resolvedCharacterCandidateDependencies,
   });
-  const runtime = Object.freeze({
+  runtime = Object.freeze({
     ...remoteRuntime,
     h3: h3Runtime,
     h3Local: h3Runtime.localExecution,
@@ -192,11 +198,12 @@ function createApp({
     ...narrativeRuntime,
     ...characterCandidateRuntime,
   });
+  }
   const taskService = require('./services/taskService');
   const { resumeProcessingVideoGenerations } = require('./services/videoService');
   const recoveryLog = Object.freeze({ info() {}, warn() {}, error() {} });
   const recoveryRepositories = createV2Repositories(db);
-  const startupRecovery = createStartupRecoveryCoordinator({
+  const startupRecovery = policy ? Object.freeze({run:()=>Promise.resolve(Object.freeze({schemaVersion:'startup-recovery.v1',status:'disabled_offline_safe',families:[]}))}) : createStartupRecoveryCoordinator({
     legacyAsyncTasks: Object.freeze({
       recover() {
         return Object.freeze({
@@ -228,15 +235,19 @@ function createApp({
     remoteTasks: remoteRuntime.remoteExecution.remoteTasks,
     log,
   });
-  const startupRecoveryPromise = startupRecovery.run();
+  const startupRecoveryPromise = policy
+    ? Promise.resolve(Object.freeze({schemaVersion:'startup-recovery.v1',status:'disabled_offline_safe',families:[]}))
+    : startupRecovery.run();
 
   const app = express();
+  if(policy)installSafeHttpBoundary(app);
+  app.get('/api/v1/runtime-capabilities',(_req,res)=>response.success(res,capabilities(Boolean(policy))));
   installProviderCredentialBodyBoundary(app);
   installLocalV2OriginBoundary(app);
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  installApplicationCors(app, config.server.cors_origins);
+  if (!policy) installApplicationCors(app, config.server.cors_origins);
 
   app.use((req, res, next) => {
     log.info(req.method, req.path);
@@ -261,7 +272,7 @@ function createApp({
   app.use('/api/v1', setupRouter(config, db, log, runtime));
 
   // 前端静态资源（sxy：web/dist）；Electron 打包时可设 WEB_DIST_PATH
-  const webDist = process.env.WEB_DIST_PATH || path.join(process.cwd(), '..', 'frontweb', 'dist');
+  const webDist = policy ? path.resolve(__dirname,'../../frontweb/dist') : process.env.WEB_DIST_PATH || path.join(process.cwd(), '..', 'frontweb', 'dist');
   console.log('webDist', webDist);
   if (fs.existsSync(webDist)) {
     app.use('/assets', express.static(path.join(webDist, 'assets')));
